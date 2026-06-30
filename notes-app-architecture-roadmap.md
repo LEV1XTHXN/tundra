@@ -40,6 +40,12 @@ This is what makes "same vault on phone and PC later" a packaging change instead
 ```
 MyVault/
   .vault/                 # index, config, app metadata (not user content)
+    cache/              # derived, rebuildable — NEVER synced
+      search/           # Tantivy full-text index
+      graph/            # node/edge index derived from notes
+    config/             # user/app settings — MAY sync
+      graph-view.json   # zoom, color groups, filters, pinned positions
+      workspace.json    # panes, last-open note
   notes/                  # note documents (block JSON or .md)
   attachments/
     images/               # all images across the vault
