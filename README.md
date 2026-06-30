@@ -1,2 +1,2 @@
 # tundra
-Nota taking app
+Note taking app
