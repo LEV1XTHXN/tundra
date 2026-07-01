@@ -203,7 +203,7 @@ Each module lists its **purpose**, **responsibilities**, **key tech**, and **fir
 - **Tech:** `serde`, `uuid`; Phase 4: `yrs`.
 - **Phase:** 0–1 (CRDT wrapping: 4).
 
-#### `markdown` — Markdown ⇄ blocks //BlockNote уже умеет импортировать и экспортировать Markdown средствами JS. Если мы параллельно создадите независимый парсер на Rust то получим две реализации Markdown. Они неизбежно начнут расходиться во вложенных списках, таблицах и собственных типах блоков.   
+#### `markdown` — Markdown ⇄ blocks //BlockNote уже умеет импортировать и экспортировать Markdown средствами JS. Если мы параллельно создадите независимый парсер на Rust то получим две реализации Markdown. Они начнут расходиться во вложенных списках, таблицах и собственных типах блоков, что скорее всего приведет к багам.   
 - **Purpose:** import/export and Markdown input handling.
 - **Responsibilities:** convert Markdown → block tree and back; round-trip fidelity; paste-as-Markdown.
 - **Tech:** a Markdown parser (`comrak` / `pulldown-cmark`), aligned with BlockNote's Markdown semantics.
