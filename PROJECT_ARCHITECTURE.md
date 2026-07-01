@@ -1,4 +1,4 @@
-# Note-Taking App — Master Architecture & Project Specification
+# Tundra Note-Taking App — Master Architecture & Project Specification
 
 A **local-first**, **Notion-style**, **Markdown-aware** desktop note app built for speed and robustness. Notes are structured blocks stored as JSON on the local file system; all data logic lives in Rust; React only renders. The design scales — without rewrites — to self-hosted, conflict-free sync across PC and phone, and later to a locally running AI agent over your notes.
 
