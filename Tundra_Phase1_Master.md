@@ -1,0 +1,290 @@
+# Tundra — Phase 1 Master Build Document
+
+This is the single source for building Phase 1 of Tundra. It contains the **authoritative decisions/conventions preamble** followed by **nine build-step prompts** in order, then the Phase 1 acceptance bar and scope boundary.
+
+## How to use this file (for Claude Code)
+
+- Work **one step at a time, in order** (Step 1 → Step 9). Do not skip ahead or combine steps.
+- The **Preamble** below applies to *every* step — treat it as always-prepended context. Where it conflicts with your own judgment, the preamble wins; surface any new fork-in-the-road instead of guessing.
+- Each step ends with a **done-bar**. Do not move to the next step until the current step meets it (code + tests + the stated acceptance check, with the layering rule intact).
+- After Step 9, run the **Phase 1 verification pass** at the end of this document.
+- Phase 0 is already built: a `tundra-core` crate (`document` / `vault` / `error`), a tauri-specta command layer, a `services` layer, and a placeholder `App.tsx`. Read the existing code and match its conventions rather than inventing new ones.
+
+---
+
+# PREAMBLE — Locked decisions & conventions (authoritative)
+
+*Do not introduce alternatives to these choices without flagging them first.*
+
+## Data-on-disk
+
+**Block format — store BlockNote's document JSON verbatim.**
+Each note file is a typed *envelope* plus BlockNote's serialized document as the `blocks` array, unchanged:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "<uuid>",
+  "title": "Photosynthesis",
+  "icon": { "type": "emoji", "value": "1f331" },
+  "created": "<rfc3339>",
+  "modified": "<rfc3339>",
+  "meta": { "pinned": false, "tags": [] },
+  "blocks": [ /* BlockNote blocks, verbatim — each has a stable string `id` */ ]
+}
+```
+- Rust owns and strongly types the envelope. Rust treats `blocks` as validated-but-opaque: assert every block has a stable string `id`, the tree is well-formed, and there are no duplicate IDs. Do **not** define a parallel Rust block schema and do **not** map block types field-by-field.
+- Never let a block lose its `id` (CRDT-ready guarantee for Phase 4).
+- `title` is an **explicit envelope field**, written by a dedicated title input. Never derive it from the first heading block.
+
+**Filenames — `<slug(title)>.json`, with a numeric `-N` suffix on collision, frozen at creation.**
+- e.g. `photosynthesis.json`, then `photosynthesis-2.json` if the slug is taken. (This matches the Phase 0 `unique_note_path` / `slugify` already in `vault.rs`.)
+- Canonical identity is the in-file `id` (UUID), **not** the path. The on-disk slug is a human-readable hint only.
+- Do **not** rename the file when the title changes — `save_note` writes back to the id-matched path, so the filename is effectively frozen at creation. (An optional explicit "rename file to match title" action may come later; the watcher must not depend on it.)
+- Folders are real directories on disk (nesting = real nesting).
+
+## Editor & UI stack
+- **BlockNote flavor: `@blocknote/shadcn`** (shadcn/ui on Radix + Tailwind). The rest of the app's UI is built in Tailwind/shadcn — you own component code, lean bundle, no large component-kit dependency. Do **not** use `@blocknote/mantine`.
+- **Pin BlockNote to `0.51.4`** (current stable). BlockNote is pre-1.0, so even minor bumps can break — pin exactly, upgrade deliberately, and treat any bump that changes block JSON as a `schemaVersion` migration event with round-trip tests.
+
+## Scale target
+- **Design Phase 1 for a ~50k-note vault.** This makes the following mandatory Phase 1 work, not polish: virtualize the nav tree (`@tanstack/react-virtual`), lazy-load note bodies (eagerly load only the tree + envelopes), and incrementally update the search index (compare mtimes on open — no full rebuild every launch). Do note lookups through an in-memory `id → path` index, never a full-vault scan.
+
+## Persistence & reconciliation (implement exactly this)
+
+**Save contract:**
+- Trigger: BlockNote `onChange` → debounce ~400–800 ms idle, with a max-wait cap ~2–3 s so continuous typing still flushes periodically → one write.
+- Atomic write: serialize → write to a sibling temp file → fsync the temp → atomic rename over the target → fsync the parent directory. On Windows a naive rename over an existing file must use `ReplaceFile` semantics / `tempfile`'s `persist`.
+- Keep the last-saved snapshot in memory so a crash costs at most one debounce window. A single rolling `.bak` of the prior version is acceptable cheap insurance.
+- **Change-source tagging:** every app-initiated write records `(path, mtime/hash)` in an in-memory "we just wrote this" set. The file watcher drops incoming events that match, so the app never reacts to its own saves. Build saving first, then the watcher — never wire both up fresh at the same time.
+
+**External-change reconciliation (`{editor state} × {file event}`):**
+- Clean editor + file changed → reload silently.
+- Dirty editor + file changed → **never overwrite.** Show a "changed on disk" banner offering keep-mine / take-theirs.
+- File deleted while open → keep the editor buffer, offer "recreate."
+- (Three-way merge is out of scope until Phase 4/CRDT.)
+
+## Standing invariants (true for every step)
+
+- **Strict layering:** React renders only. `@tauri-apps/api` may be imported **only** inside `src/services/` (the generated `bindings.ts` also lives there — do not hand-edit it). All FS I/O and data logic live in the Rust core. No localhost HTTP between React and Rust — Tauri IPC only.
+- **Done-bar:** a step isn't complete until it ships code **+ tests + a demonstrated acceptance criterion**, and the layering invariant still holds. specta is pinned at `2.0.0-rc.25` across both crates — match it. Bindings regenerate on dev launch and via the `export_bindings` test.
+- **Cache is derived:** anything under `.vault/cache/` (search index, graph data) must be rebuildable and is never a source of truth.
+- **No Rust Markdown parser in Phase 1** — rely on BlockNote's built-in Markdown input rules and import/export.
+
+## UI conventions (applies to every frontend step)
+
+**Styling — shadcn/ui + Tailwind.**
+- Initialize shadcn with the **new-york** style, base color **neutral**, CSS variables enabled. Components live in `src/components/ui/`, the `cn` helper in `src/lib/utils.ts`. Overridable defaults — change the base color ONCE here if you prefer another, not per-component.
+- Tailwind version: use whatever `@blocknote/shadcn@0.51.4` requires — check its setup docs and match it; do NOT assume v3 vs v4. The app and the editor must share one Tailwind config so their shadcn themes agree.
+- Dark mode: class-based (`darkMode: "class"`), defaulting to the OS setting. A persisted theme preference is global app state — store it via Rust app-config (the same `state.json` mechanism as `last_vault`), never `localStorage`.
+- Stay lean: add only the shadcn components you actually use; no other component kit.
+
+**Icons.**
+- Twemoji via the maintained fork **`@twemoji/api`** (jdecked's fork — the original `twitter/twemoji` is archived). Render emoji as **SVG** (crisp at any size) from the stored codepoint (`Icon::Emoji(codepoint)`).
+- Emoji picker: **`frimousse`** (unstyled — theme it with your shadcn/Tailwind tokens).
+- Custom image icons live under `attachments/icons/`. Displaying a local vault image in the webview needs Tauri's asset protocol (`convertFileSrc`) — that import belongs in the `services` layer; expose a helper that turns a vault-relative path into a displayable URL.
+
+**Drag-and-drop.** Native HTML5 DnD first. Do NOT add a DnD library without explicit approval; if native proves unworkable against virtualized rows, stop and flag it rather than adding one silently.
+
+**View state.** `zustand` holds ONLY view state (open note id, expanded folders, theme). Never note content.
+
+## Out of scope for Phase 1 (do not start)
+
+Links / `[[wikilinks]]` / backlinks, the graph view, quick notes, the home dashboard, and rich embeds (tables, image/video/attachment) are **Phase 2**. Calendar, backup, spellcheck are **Phase 3**. CRDT/sync is **Phase 4**. AI is **Phase 5**. The only obligation Phase 1 owes the future: never let a block lose its stable `id`, and keep `.vault/cache/` derived.
+
+---
+
+# BUILD STEPS
+
+Steps 1–4 extend/harden the existing Phase 0 core and stand up the real editor. Steps 5–9 build the surrounding daily-driver surface.
+
+---
+
+## Step 1 — `document`: add validation (small; most of this module already exists)
+
+```text
+The Preamble above is authoritative. Phase 1, step 1. Do NOT touch the file system, Tauri, or the frontend.
+
+The `document` module (crates/tundra-core/src/document.rs) already defines Note, Block (typed id/type/children with opaque props/content), Icon, NoteMeta, NoteSummary, SCHEMA_VERSION, and Note::new. Do not rebuild these. Add ONLY what's missing: block-tree validation.
+
+1. Add a `Note::validate(&self) -> crate::error::Result<()>` that enforces the CRDT-ready invariants across the full block tree (blocks + nested children, recursively): every block's `id` is a non-empty string, and no `id` repeats anywhere in the tree.
+2. Add the matching error variants to CoreError in error.rs, following the existing `#[serde(tag = "kind", content = "message")]` style so they cross the IPC boundary as typed errors and appear in generated bindings.ts. Suggested: EmptyBlockId and DuplicateBlockId(String) — or a single InvalidNote(String). Keep the serde/specta derives consistent with the other variants.
+3. Call `validate()` inside Vault::save_note (vault.rs) BEFORE writing, so malformed block trees are rejected rather than persisted. (Leave the atomic-write internals for step 2.)
+
+Tests: validate() passes on a Note::new note; fails on a tree with a duplicate id and on a block with an empty id; save_note returns the new typed error for an invalid note and writes nothing.
+
+Done-bar: `cargo test` green; only document.rs / error.rs / the one save_note guard changed; bindings.ts regenerates cleanly with the new error variant(s) (run the export_bindings test). Show changed files and test output.
+```
+
+---
+
+## Step 2 — `vault`: make it scale to 50k, harden the write, then extend (the big one)
+
+```text
+The Preamble above is authoritative. Phase 1, step 2. vault.rs is the ONLY module allowed to touch the FS. Reuse document.rs types; do not re-model anything.
+
+CONTEXT — two real problems in the current vault.rs to fix first:
+(a) read_note(id) and save_note locate files via path_for_id, which walks and fully parses EVERY note until the id matches; list_notes fully deserializes EVERY note (whole block trees) just for summaries. At the ~50k target this makes every open/save/list O(N) over the whole vault.
+(b) write_note_at does fs::write(tmp) + fs::rename with NO fsync, so a crash can still lose a write.
+
+1. In-memory index. On Vault::open, do a single pass over notes/ and build an index the Vault holds: id -> { path, NoteSummary }. Serve list_notes (and the new list_tree) from this index WITHOUT re-reading disk. Replace path_for_id lookups with an index lookup. Keep the index correct on every create/save/delete/move. Guard it for interior mutability (e.g. RwLock) since Vault is cloned into commands. Leave a clearly-commented seam where a persisted stub cache under .vault/cache/ could later skip even the open-time walk — do not build that now.
+2. Add `icon` to NoteSummary (document.rs) so the nav can show per-note icons; populate it in the index.
+3. Harden the atomic write: write temp -> fsync the temp file -> rename over target -> fsync the parent directory. Keep temp+rename. Optionally keep a single rolling `.bak` of the prior version. No .tmp left behind on success or failure.
+4. Self-write registry: an in-memory set recording (path, mtime-or-hash) for every write the vault performs, with a public API to query/consume it. Populate on every write now; the file watcher (step 8) will use it to ignore the app's own writes. Do NOT build the watcher here.
+5. Extend the API: delete_note(id) (updates the index), move_note(id, new_folder_rel_path) (moves the file, preserves the in-file id, updates the index), and folder ops on real dirs under notes/: create_folder, rename_folder, move_folder, delete_folder (define + document non-empty-folder delete behavior). Add list_tree() -> a folder/note tree built from the index. Setting a note's icon/title goes through the existing save_note (no separate command) — but do NOT rename the file when the title changes.
+
+Tests (against a temp fixture vault): index correct after create/save/move/delete; list_notes and list_tree serve from the index without re-reading block bodies; a crash-simulating test confirms no partial/.tmp remains AND the previous version survives an interrupted write; move_note preserves the in-file id and updates the index; folder ops behave as documented; the self-write registry records each write.
+
+Done-bar: `cargo test` green; only vault.rs (+ the NoteSummary.icon field) changed; no IPC/frontend. Show changed files and test output.
+```
+
+---
+
+## Step 3 — `ipc` + `services`: expose the new commands (extend the existing pattern)
+
+```text
+The Preamble above is authoritative. Phase 1, step 3. Extend the existing command surface; do not restructure it. Follow the exact patterns already in src-tauri/src/commands.rs and lib.rs: each handler is #[tauri::command] #[specta::specta], resolves the vault via current(&state), and delegates to tundra-core with NO logic. Register every new command in collect_commands![...] in lib.rs.
+
+Rust (commands.rs + lib.rs):
+1. Add commands wrapping step 2: delete_note(id), move_note(id, new_folder), create_folder(path), rename_folder(path, new_name), move_folder(path, new_parent), delete_folder(path), and list_tree() -> the folder/note tree. Reuse CoreError.
+2. Register them in collect_commands! so bindings.ts regenerates. Confirm the headless export_bindings test still produces valid bindings.
+
+Frontend (src/services/index.ts):
+3. Extend the typed service API in the existing style (the unwrap() helper + namespaces). Add to `notes`: delete(id), move(id, folder). Add a `folders` namespace (create/rename/move/delete) and `tree()`. Keep this the ONLY module importing @tauri-apps/api (bindings.ts, also under services/, is generated).
+
+Verification: a smoke test driving create_note -> list_tree -> move_note -> delete_note asserting the tree reflects each change; regenerate bindings and confirm they compile against the service wrappers (tsc); a check that FAILS if @tauri-apps/api is imported anywhere under src/ except src/services/.
+
+Done-bar: bindings regenerate and compile, smoke test green, layering check passes. Show changed files, the regenerated bindings.ts diff, and test output.
+```
+
+---
+
+## Step 4 — `editor`: real BlockNote editor with debounced autosave
+
+```text
+The Preamble above is authoritative. Phase 1, step 4. Replace the placeholder textarea in App.tsx with a real BlockNote editor. React renders only; all data flows through the existing `services` layer (notes.read / notes.save) — never import @tauri-apps/api here.
+
+Setup:
+1. Add @blocknote/core, @blocknote/react, and @blocknote/shadcn, all pinned to 0.51.4, plus the Tailwind + shadcn setup they require (see Preamble UI conventions). Confirm compatibility with React 19; if a peer range needs attention, resolve it explicitly rather than forcing.
+
+Editor:
+2. Build an `editor` module/component: given a note id, load it via notes.read and initialize BlockNote (@blocknote/shadcn) from note.blocks — BlockNote's own document JSON, loaded verbatim, no transformation.
+3. A title input bound to note.title (the explicit envelope field), above the editor.
+4. Autosave: on BlockNote change, debounce ~400-800ms idle with a ~2-3s max-wait cap (extend the single-timer approach already in App.tsx so continuous typing still flushes), then serialize the editor document back into note.blocks verbatim and call notes.save. Title edits also debounce-save. Never rename the file.
+5. Migration guard: the Phase 0 skeleton stored the first block's `content` as a raw string, which is NOT BlockNote's shape. When loading a note whose blocks aren't valid BlockNote content, normalize/reset to an empty document rather than crashing. Do this narrowly and log it.
+6. State: keep React local state as the skeleton does. If you need shared view state (e.g. the open note id), use zustand for THAT only — never cache note content in a store.
+
+Verification: create a note, type content and a title, wait for the debounce, reload the app, confirm both persist; a round-trip test that a BlockNote document serialized to note.blocks and reloaded is lossless with block ids preserved; confirm the max-wait cap fires under continuous typing; a check that @tauri-apps/api is not imported in the editor module.
+
+Done-bar: content and title survive restart; round-trip lossless with stable block ids; layering check passes; app builds (tsc + vite build). Show changed files and verification output.
+```
+
+---
+
+## Step 5 — `nav`: virtualized folder/note tree
+
+```text
+The Preamble above is authoritative. Phase 1, step 5. React renders only; all data flows through the existing `services` layer (vault/notes/folders/tree). Never import @tauri-apps/api outside src/services/.
+
+Build the `nav` module and replace the flat note-list sidebar currently in App.tsx.
+
+1. Render the folder/note tree from services (tree()/list_tree). Folders expand/collapse; notes show their icon (NoteSummary.icon) and title; clicking a note opens it in the editor.
+2. Virtualize with @tanstack/react-virtual: flatten the visible (expanded) tree into a linear row list and virtualize THAT, so a vault with tens of thousands of notes only mounts visible rows. Expand/collapse changes the flattened list.
+3. Actions: "new note" (in the selected folder) and "new folder", via services.
+4. State with zustand, VIEW STATE ONLY: the open note id and the set of expanded folder paths. Never cache note content.
+5. Add a DEV-ONLY seed command (Rust, behind #[cfg(debug_assertions)] or a clearly-gated command) that generates N notes across a folder hierarchy, so the tree and later search can be tested at ~50k. Wire a small dev affordance to call it. Do not ship it in release.
+
+Verification: the tree renders nested folders correctly; with a seeded ~10k+ vault, confirm only visible rows are in the DOM (virtualization working) and scrolling/expand stay smooth; create-note and create-folder update the tree; selecting a note opens it. A check that @tauri-apps/api isn't imported outside src/services/.
+
+Done-bar: virtualized tree works on a large seeded vault, create/select work, layering check passes, app builds (tsc + vite build). Show changed files and verification output.
+```
+
+---
+
+## Step 6 — move / rename / delete in the tree
+
+```text
+The Preamble above is authoritative. Phase 1, step 6. Build organizing actions on top of the step-5 tree. Data through `services` only.
+
+1. Move: drag-and-drop a note or folder to another folder, calling services.notes.move / folders.move. Use native HTML5 drag-and-drop — do NOT add a DnD library (not on the allow-list; flag it for approval if you think one is truly needed). After a move, the note must still open by its id — prove this.
+2. Rename: inline-rename a note (updates note.title via notes.save — the FILE is not renamed on title change) and a folder (a real directory rename via folders.rename).
+3. Delete: delete a note (notes.delete) and a folder (folders.delete). Use an IN-APP confirmation UI, not window.confirm/alert. For a non-empty folder, surface the documented behavior from step 2 before deleting.
+4. Keep everything consistent with the virtualized tree (drag targets must work with virtualized rows).
+
+Verification: move a note between folders — the tree updates AND the note still opens by id; rename a note (confirm the on-disk filename does NOT change) vs rename a folder (confirm the directory IS renamed); delete a note and an empty/non-empty folder with the in-app confirm. Layering check passes.
+
+Done-bar: move/rename/delete work through services, id survives moves, no new disallowed dependency, app builds. Show changed files and verification output.
+```
+
+---
+
+## Step 7 — per-note icons + emoji picker
+
+```text
+The Preamble above is authoritative. Phase 1, step 7. Icons are already modeled: document.rs has Icon { Emoji(codepoint) | Custom(path) } and Note.icon, and NoteSummary.icon exists. Wire up setting and rendering them (see Preamble UI conventions).
+
+1. Emoji picker: add `frimousse` (unstyled — style it with your Tailwind/shadcn tokens). An icon button in the editor header (and a nav context-menu action) opens the picker; choosing an emoji sets Note.icon = Emoji(<codepoint>) and persists via notes.save.
+2. Render emojis via Twemoji using the maintained fork `@twemoji/api`, as SVG, from the stored codepoint — in both the nav rows and the editor header.
+3. Custom image icons: FS work goes through Rust. Add a vault method + command import_icon(src_path) that copies the chosen image into attachments/icons/ and returns its vault-relative path; the frontend sets Note.icon = Custom(<rel path>) and saves. Display via the convertFileSrc helper (in services). Add the command to collect_commands! and a services wrapper.
+4. A "remove icon" action (sets Note.icon = None).
+
+Verification: set an emoji icon — renders as Twemoji SVG in nav + header, survives reload, codepoint stored in JSON; import a custom image — lands under attachments/icons/, Note.icon is the relative path, renders; remove-icon clears it. Layering check passes.
+
+Done-bar: emoji + custom icons set/render/persist, import goes through Rust, bindings regenerate, app builds. Show changed files and verification output.
+```
+
+---
+
+## Step 8 — file watching + external-change reconciliation
+
+```text
+The Preamble above is authoritative. Phase 1, step 8. This is where the self-write registry from step 2 pays off. Implement exactly the reconciliation policy in the Preamble.
+
+Rust (vault + a watcher module):
+1. Watch the notes/ tree with `notify`. Debounce raw events. FILTER OUT the app's own writes using the self-write registry, so a save never triggers a reload loop. On Windows, notify uses ReadDirectoryChangesW: it coalesces events and can report a rename as delete+create — tolerate that.
+2. On a genuine external change, update the in-memory id->path index (add/modify/remove), then emit a TYPED Tauri event to the frontend. Use tauri-specta's event support (collect_events! alongside collect_commands!) so the event types land in bindings.ts. Suggested events: note_changed_externally { id } and tree_changed.
+
+Frontend:
+3. On tree_changed, refresh the nav tree. On note_changed_externally for the currently open note, apply the Preamble policy: CLEAN editor -> reload silently; DIRTY -> "changed on disk" banner offering keep-mine / take-theirs, NEVER auto-overwrite; DELETED -> keep the buffer, offer "recreate". Track editor dirty-state to drive this. Subscribe to events only inside the services layer; expose them to the UI as typed callbacks.
+
+Verification: editing a note's .json in an external editor while the app is open triggers the correct branch (clean reload / dirty banner / delete handling) with NO data loss; the app's OWN saves do NOT cause a reload (self-write filter proven); an external create/delete updates the tree. Exercise on Windows specifically.
+
+Done-bar: external changes reconcile per policy, self-writes filtered (no save->watch->reload loop), typed events generate in bindings, app builds. Show changed files, the new event types, and verification output.
+```
+
+---
+
+## Step 9 — `index`: Tantivy full-text search + search UI
+
+```text
+The Preamble above is authoritative. Phase 1, step 9 — the last build step. Add local full-text search.
+
+Rust (`index` module in tundra-core):
+1. Text extraction: ONE function that walks a note's opaque block tree (Block.content / children) and concatenates the human text. BlockNote stores inline content as arrays of objects carrying `text` fields — pull those recursively. This single function is the shared source of truth for what is searchable; unit-test it against representative trees (nested lists, headings, mixed inline).
+2. Tantivy index under .vault/cache/search/ (derived, rebuildable — never a source of truth). Fields: title (boosted), body (extracted text), tags, id, path.
+3. Update on write: after a successful save, (re)index that one note. On vault open, do an INCREMENTAL catch-up — compare note mtimes against the index and only reindex what changed — not a full rebuild every launch. Provide search_query(query, limit) -> ranked hits (id, title, snippet) and a rebuild_index() command. Add both to collect_commands! + services wrappers.
+4. Also index on the external-change events from step 8 so search stays correct when files change on disk.
+
+Frontend (`search`):
+5. A command-palette search using `cmdk`: type a query -> ranked results -> Enter/click opens the note. Fast and keyboard-driven.
+
+Verification: text-extraction unit tests pass on the representative trees; create/seed notes and confirm queries return the right notes ranked sensibly and open them; editing a note updates its results; rebuild_index reconstructs from scratch; incremental catch-up reindexes an externally-modified note on open. Layering check passes.
+
+Done-bar: extraction unit-tested, search returns/opens correct notes, index incremental + rebuildable, bindings regenerate, app builds. Show changed files and test output.
+```
+
+---
+
+# PHASE 1 VERIFICATION PASS (after Step 9)
+
+Confirm the daily-driver bar holds end-to-end:
+
+- Create, open, edit, and organize notes in nested folders; changes survive an app restart.
+- Kill the app mid-edit → reopen → no corruption, at most the last debounce window lost.
+- Edit a note's `.json` externally → the app reflects it (clean) or warns without data loss (dirty); the app's own saves never trigger a reload loop.
+- Move/rename a note → identity holds by UUID (the file name may stay; the id must resolve).
+- Full-text search returns the right notes and opens them; the index rebuilds from scratch on command and catches up incrementally on open.
+- A per-note emoji or custom icon can be set and is shown in nav and the editor header.
+- The app stays responsive on a **seeded ~50k-note vault** — virtualization, lazy body-load, the in-memory id index, and incremental indexing all in place.
+
+Clear that bar and Phase 1 is done. The next decision is scoping **Phase 2** (links/backlinks → graph → quick notes → home dashboard → rich embeds).
