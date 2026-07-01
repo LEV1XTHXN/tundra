@@ -60,7 +60,7 @@ The product vision, consolidated from the original concept and the locked stack 
 
 - **React** is responsible only for rendering, UI, screen state, and handling user actions. It must **not** read files, save data, or hold business logic.
 - **Tauri** only connects React and Rust and exposes system functions. No logic.
-- **Rust** owns all data and all rules.
+- **Rust** owns all data and all rules. // Не думаю что это правильное решение, поскольку BlockNote уже будет хранить в себе актуальное состояние документа. Схема блоков фактически определяется библиотекой BlockNote, а не вашим модулем документа на Rust. BlockNote может конфликтовать со схемой библиотек Rust. Я бы написал типа того (Rust owns storage, derived data, and cross-note logic (links, search, backup), and concede that the editing model lives in BlockNote)
 - Communication is **Tauri IPC only** — never localhost HTTP.
 
 **Local-first.** The app is fully functional with no network. Sync is an *additive* layer introduced later, not a dependency.
