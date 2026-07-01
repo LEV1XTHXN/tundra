@@ -1,0 +1,127 @@
+# ==============================================================================
+# .gitignore — Local-first note app  (Rust + Tauri v2 + React/TS/Vite)
+# ------------------------------------------------------------------------------
+# Ignore build output, dependencies, caches, secrets, and local scratch data.
+# COMMIT lockfiles (Cargo.lock, package-lock.json) — this is a shipped
+# application, so reproducible builds matter.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Rust / Cargo  (core crate + src-tauri)
+# ------------------------------------------------------------------------------
+# Build artifacts — root workspace and any nested crate (e.g. src-tauri/target)
+/target/
+**/target/
+# rustfmt backups (legacy)
+**/*.rs.bk
+#
+# NOTE: Cargo.lock IS committed for applications — do not ignore it.
+
+# ------------------------------------------------------------------------------
+# Tauri v2
+# ------------------------------------------------------------------------------
+# Generated JSON schemas
+/src-tauri/gen/schemas/
+# Tauri temp/build state
+.tauri/
+# Installers/bundles land under src-tauri/target/ (already ignored above)
+#
+# --- Mobile targets (DEFERRED — Phase 4). Uncomment once they exist. ---
+# /src-tauri/gen/android/
+# /src-tauri/gen/apple/
+# src-tauri/gen/android/local.properties
+# *.keystore
+
+# ------------------------------------------------------------------------------
+# Node / package manager  (frontend)
+# ------------------------------------------------------------------------------
+node_modules/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+#
+# NOTE: keep exactly ONE committed lockfile (package-lock.json / pnpm-lock.yaml
+# / yarn.lock) for reproducible installs — do not ignore it.
+
+# ------------------------------------------------------------------------------
+# Vite / frontend build output
+# ------------------------------------------------------------------------------
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ------------------------------------------------------------------------------
+# TypeScript
+# ------------------------------------------------------------------------------
+*.tsbuildinfo
+
+# ------------------------------------------------------------------------------
+# Generated IPC bindings  (specta / tauri-specta)
+# ------------------------------------------------------------------------------
+# Default policy here: COMMIT the generated Rust->TS types so the frontend
+# type-checks without a prior Rust build (matches the "frontend can't drift"
+# rule). If you'd rather generate them on every build, uncomment to ignore:
+# src/services/bindings.ts
+
+# ------------------------------------------------------------------------------
+# Tests / coverage / lint caches
+# ------------------------------------------------------------------------------
+coverage/
+.nyc_output/
+.eslintcache
+.vitest/
+
+# ------------------------------------------------------------------------------
+# Environment & secrets
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ------------------------------------------------------------------------------
+# Local dev scratch data  (this app specifically)
+# ------------------------------------------------------------------------------
+# Test vaults must never be committed. Use one of these names, or point the app
+# at a vault path OUTSIDE the repo.
+/dev-vault/
+/test-vault/
+# Backup archives produced by the backup feature while testing
+backups/
+*.vault.tar.zst
+*.vault.zip
+
+# ------------------------------------------------------------------------------
+# Editors / IDEs
+# ------------------------------------------------------------------------------
+# JetBrains
+.idea/
+# VS Code — ignore per-user cruft, keep shared project config
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+# Vim
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------------------------
+# OS cruft
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+# Linux
+.directory
+.Trash-*
