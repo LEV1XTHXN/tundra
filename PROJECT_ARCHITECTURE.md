@@ -27,6 +27,9 @@ The product vision, consolidated from the original concept and the locked stack 
 
 ## 2. Architectural principles
 
+> **⭐ Prime directive: prefer stable, long-term solutions over short-term convenience.**
+> Every technology, library, and pattern choice is judged first on durability, maintenance health, and how well it scales as the vault and feature set grow — *not* on how quickly it gets something on screen. When two options trade "faster to wire up now" against "holds up at scale and over years," choose the latter. This principle outranks convenience everywhere in this document and settles ties in every "open decision." We assume the user's vault will grow larger, not smaller, and design for that upper bound.
+
 **One Rust core, thin front doors.** All domain logic, storage, indexing, and (later) sync live in a platform-agnostic Rust core. The desktop app calls it in-process via Tauri commands today; a future sync server and mobile app reuse the *same* crate. This is what makes "same vault on phone and PC later" a packaging change, not a rewrite.
 
 **Strict layering (non-negotiable).**
@@ -91,7 +94,7 @@ The product vision, consolidated from the original concept and the locked stack 
 - `zustand` — lightweight UI state (UI state only; never a data store)
 - `@tanstack/react-virtual` — virtualization for long lists
 - `cmdk` — command palette
-- `sigma` + `graphology` (graph view; scales to many nodes) — or `react-force-graph` (simpler, smaller graphs)
+- `sigma` + `graphology` — WebGL graph view (chosen for scale; holds up on large vaults)
 - Twemoji assets + an emoji picker (e.g. `emoji-mart` or `frimousse`) — see §5.4
 - `date-fns` — date math for the calendar UI
 - `yjs` (Phase 4, with BlockNote collaboration)
@@ -103,7 +106,7 @@ The product vision, consolidated from the original concept and the locked stack 
 - `walkdir` — vault traversal
 - `tantivy` — full-text search
 - `zstd`/`flate2` + `tar` (or `zip`) — backup archives
-- `zspell` (pure-Rust, Hunspell-compatible) — spellcheck; or `hunspell-rs` binding
+- `zspell` — pure-Rust, Hunspell-compatible spellcheck (uses standard Hunspell dictionaries)
 - `chrono` or `time` — calendar/date handling
 - `thiserror` + `anyhow` — error handling
 - `specta` + `tauri-specta` — generate TypeScript types from Rust (typed IPC)
@@ -126,10 +129,16 @@ The product vision, consolidated from the original concept and the locked stack 
 
 ## 5. Data & storage model
 
-### 5.1 Vault vs. app data (recommended split — see §8 feedback)
+### 5.1 Vault vs. app data (LOCKED)
 
 - **Vault** = a **user-chosen folder** (like Obsidian). Portable, backup-able, sync-able. Holds all notes + attachments.
 - **App Data Directory** (Tauri) = app-level config only: list of known vaults, last-open vault, window state, global preferences. *Not* note content.
+
+**First-run onboarding — two paths:**
+- *Choose a folder* — native folder picker; the user selects (or creates) any directory as their vault. For power users who want control over location and backups.
+- *Use a default vault* (the "don't make me think" option) — one click creates a ready-to-go vault at a sensible, user-visible location: `{Documents}/<AppName>` via Tauri's `documentDir()`. Not App Data — it stays browsable, backup-able, and movable later.
+
+After first run the app remembers the last-opened vault and skips onboarding. Users can switch or add vaults anytime from settings. Whichever path is chosen, the on-disk format is identical — the default vault is just a pre-created user folder, not a special mode.
 
 ### 5.2 Vault layout
 
@@ -277,7 +286,7 @@ Each module lists its **purpose**, **responsibilities**, **key tech**, and **fir
 #### `graph` — graph view
 - **Purpose:** visualize the link graph.
 - **Responsibilities:** render nodes/edges from the `links` cache; pan/zoom/filter; click-to-open; persist view settings.
-- **Tech:** `sigma` + `graphology` (or `react-force-graph`).
+- **Tech:** `sigma` + `graphology` (WebGL; chosen for scale — see prime directive).
 - **Phase:** 2.
 
 #### `quicknotes` — quick notes
@@ -328,21 +337,23 @@ Each module lists its **purpose**, **responsibilities**, **key tech**, and **fir
 
 **Phase 3 — Productivity layer.** Calendar + note-date linking, backup-to-archive, multilingual spellcheck + custom dictionary, settings polish.
 
-**Phase 4 — Sync & mobile (local → self-hosted).** Wrap the document model in `yrs`; build the Axum sync server (reuses core); Tauri mobile app (reuses core + most of the frontend); conflict-free multi-device. *This is the only phase that introduces a network transport — the local app's "no HTTP" rule stays intact.*
+> **Current scope = Phases 0–3.** Phases 4 and 5 are deferred and will not be built yet. They remain documented because two decisions in the current phases exist *to serve them cheaply later* — the CRDT-ready block schema (for Phase 4) and the derived/rebuildable `cache/` split (for both). Design for them; don't build them.
 
-**Phase 5 — Local AI agent.** Embeddings + vector index (semantic search), RAG chat, tool-calling (create note / calendar event), voice.
+**Phase 4 — Sync & mobile (local → self-hosted) — DEFERRED.** Wrap the document model in `yrs`; build the Axum sync server (reuses core); Tauri mobile app (reuses core + most of the frontend); conflict-free multi-device. *This is the only phase that introduces a network transport — the local app's "no HTTP" rule stays intact.*
+
+**Phase 5 — Local AI agent — DEFERRED.** Embeddings + vector index (semantic search), RAG chat, tool-calling (create note / calendar event), voice.
 
 ---
 
 ## 8. Architectural feedback & suggestions
 
-1. **Move the vault out of App Data.** (Recommended above.) Storing notes in the Tauri App Data Directory fights your backup, portability, and sync goals. Keep the vault a user-chosen folder; use App Data for app config + a registry of vaults. This is the Obsidian model and it's the right one here.
+1. **Vault lives in a user-chosen folder — LOCKED.** Storing notes in the Tauri App Data Directory would fight backup, portability, and sync. The vault is a user-chosen folder (Obsidian model), with a one-click default vault under `{Documents}/<AppName>` for users who don't want to decide. App Data holds only app config + the registry of known vaults. (See §5.1.)
 
 2. **Generate TS types from Rust (`specta`/`tauri-specta`).** Your strict boundary is only as safe as its contract. Auto-generating TypeScript types from the Rust command signatures means the frontend can't drift from the core, and refactors surface as compile errors instead of runtime bugs. High payoff for low cost — set it up in Phase 0.
 
 3. **"CRDT-ready" beats "CRDT-now" given the JSON decision.** Persisting a raw Yjs update-log isn't "JSON files," so full CRDT-on-disk conflicts with your storage choice. Storing JSON snapshots with stable block IDs (and a block tree that maps to Yjs) keeps files clean *and* makes Phase 4 a wrapping step. Just never let a block lose its ID.
 
-4. **Pick the graph library by scale.** `react-force-graph` is quick to wire up but struggles past a few thousand nodes. `sigma.js` + `graphology` renders with WebGL and holds up on large vaults. Since the graph is a headline feature and a perf-critical surface, lean `sigma`.
+4. **Graph library `sigma` + `graphology` — LOCKED.** Per the prime directive, chosen for durability at scale over the quicker-to-wire `react-force-graph`, which struggles past a few thousand nodes. The graph is a headline, perf-critical surface and we design for an unknown-but-large vault size, so the WebGL renderer is the long-term-correct call.
 
 5. **Zustand for UI state, nothing more.** A lean signal-of-truth for view state (open note, panes, selection). Resist the temptation to cache note *content* in the frontend store — that reintroduces the "data logic in React" problem. The store holds UI state; the core holds data.
 
@@ -358,10 +369,15 @@ Each module lists its **purpose**, **responsibilities**, **key tech**, and **fir
 
 ---
 
-## 9. Open decisions to lock
+## 9. Decisions
 
-- **Vault location:** user-chosen folder (recommended) vs. App Data Directory (as originally written).
-- **Folders on disk vs. logical:** real directories (recommended, portable) vs. `parentId` in JSON.
-- **Graph library:** `sigma`/`graphology` (scale) vs. `react-force-graph` (simplicity).
-- **Spellcheck engine:** `zspell` pure-Rust (recommended) vs. `hunspell-rs` C binding.
-- **Phase 5 LLM host:** Ollama (external local runtime) vs. `candle` (in-process Rust).
+### Locked
+- **Vault location:** user-chosen folder + one-click default vault under `{Documents}/<AppName>`.
+- **Folder model:** real directories on disk (portable, browsable); note identity is UUID-in-file so links survive moves/renames.
+- **Graph library:** `sigma` + `graphology` (WebGL, scales) — long-term over short-term.
+- **Spellcheck engine:** `zspell` (pure Rust) over any C binding.
+- **UI framework:** React + TypeScript. **Shell:** Tauri v2. **Editor:** BlockNote. **Storage:** JSON files.
+
+### Deferred (revisit when the phase arrives — not now)
+- **Phase 4 — sync transport & CRDT persistence:** Axum + WebSocket details; how CRDT state is stored alongside JSON.
+- **Phase 5 — LLM host:** Ollama (external local runtime) vs. `candle` (in-process Rust).
