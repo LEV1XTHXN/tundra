@@ -1,0 +1,180 @@
+:root {
+  --bg: #1e1f22;
+  --panel: #26272b;
+  --border: #34363c;
+  --text: #e6e7ea;
+  --muted: #8a8d94;
+  --accent: #4c7fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+.centered {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.onboarding h1 {
+  margin: 0;
+  font-size: 2.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* App shell */
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+}
+
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+
+.vault-name {
+  font-weight: 600;
+  padding: 0.25rem 0.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.new-note {
+  text-align: left;
+}
+
+.note-list {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.note-list li {
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-list li:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.note-list li.active {
+  background: rgba(76, 127, 255, 0.18);
+}
+
+.note-list li.empty {
+  cursor: default;
+}
+
+.note-list li.empty:hover {
+  background: none;
+}
+
+/* Editor */
+.editor {
+  padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.title-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.body-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  resize: none;
+  flex: 1;
+  min-height: 40vh;
+  font-family: inherit;
+}
+
+.status {
+  height: 1.25rem;
+  font-size: 0.85rem;
+}
+
+.error {
+  color: #ff6b6b;
+}
+
+.error.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: var(--panel);
+  border: 1px solid #ff6b6b;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  max-width: 60ch;
+}

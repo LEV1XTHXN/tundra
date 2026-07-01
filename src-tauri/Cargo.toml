@@ -1,0 +1,24 @@
+[package]
+name = "tundra"
+description = "Tundra — local-first, Notion-style, Markdown-aware note app (desktop shell)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin on Windows.
+name = "tundra_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tundra-core = { path = "../crates/tundra-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde.workspace = true
+serde_json.workspace = true
+specta = { version = "=2.0.0-rc.25", features = ["derive", "function"] }
+specta-typescript = "0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }

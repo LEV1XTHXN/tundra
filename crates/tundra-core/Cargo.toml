@@ -1,0 +1,23 @@
+[package]
+name = "tundra-core"
+description = "Platform-agnostic core: vault storage, note/block model, domain logic."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "tundra_core"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+walkdir = "2.5.0"
+# specta derives the TS-facing types. `chrono` lets it represent DateTime.
+# Block props/content are arbitrary JSON exported as TS `any` (see document.rs),
+# so we avoid expanding serde_json::Value (which specta forbids for i64/u64).
+# Pinned to match tauri-specta in src-tauri.
+specta = { version = "=2.0.0-rc.25", features = ["derive", "chrono"] }
+specta-typescript = "0.0.12"
