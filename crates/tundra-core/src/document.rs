@@ -5,11 +5,15 @@
 //! the on-disk format; Phase 4 wraps the same tree in `yrs` with no data-model
 //! rewrite. Never let a block lose its `id`.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 use uuid::Uuid;
+
+use crate::error::{CoreError, Result};
 
 /// Bump when the on-disk shape changes; migrations key off this (CLAUDE.md §8.10).
 pub const SCHEMA_VERSION: u32 = 1;
@@ -94,6 +98,31 @@ impl Note {
             }],
         }
     }
+
+    /// Enforce the CRDT-ready invariants across the full block tree (blocks +
+    /// nested children, recursively): every block's `id` is non-empty, and no
+    /// `id` repeats anywhere in the tree. A block can never lose its `id`
+    /// (CLAUDE.md §5.3) — this is what makes that guarantee real rather than aspirational.
+    pub fn validate(&self) -> Result<()> {
+        let mut seen = HashSet::new();
+        for block in &self.blocks {
+            validate_block(block, &mut seen)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_block(block: &Block, seen: &mut HashSet<String>) -> Result<()> {
+    if block.id.is_empty() {
+        return Err(CoreError::EmptyBlockId);
+    }
+    if !seen.insert(block.id.clone()) {
+        return Err(CoreError::DuplicateBlockId(block.id.clone()));
+    }
+    for child in &block.children {
+        validate_block(child, seen)?;
+    }
+    Ok(())
 }
 
 /// Lightweight listing entry for the note tree — avoids loading full block trees.
@@ -104,4 +133,52 @@ pub struct NoteSummary {
     /// Path of the note file relative to the vault root (portable identity aid).
     pub path: String,
     pub modified: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block(id: &str, children: Vec<Block>) -> Block {
+        Block {
+            id: id.to_string(),
+            block_type: "paragraph".to_string(),
+            props: None,
+            content: None,
+            children,
+        }
+    }
+
+    #[test]
+    fn validate_passes_on_fresh_note() {
+        let note = Note::new("Photosynthesis");
+        assert!(note.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_fails_on_duplicate_id_across_nesting() {
+        let mut note = Note::new("Untitled");
+        // Duplicate lives inside a nested child, not just at the top level.
+        note.blocks = vec![block("a", vec![block("b", vec![])]), block("a", vec![])];
+        match note.validate() {
+            Err(CoreError::DuplicateBlockId(id)) => assert_eq!(id, "a"),
+            other => panic!("expected DuplicateBlockId, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_fails_on_empty_id() {
+        let mut note = Note::new("Untitled");
+        note.blocks = vec![block("", vec![])];
+        assert!(matches!(note.validate(), Err(CoreError::EmptyBlockId)));
+    }
+
+    #[test]
+    fn validate_fails_on_empty_id_nested() {
+        let mut note = Note::new("Untitled");
+        note.blocks = vec![block("a", vec![block("", vec![])])];
+        assert!(matches!(note.validate(), Err(CoreError::EmptyBlockId)));
+    }
 }

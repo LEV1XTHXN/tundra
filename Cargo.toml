@@ -17,3 +17,10 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 thiserror = "2"
+# Cross-platform atomic file replace (`persist` uses `ReplaceFile` semantics on
+# Windows, `rename` on Unix) — see CLAUDE.md Phase 1 preamble, "Persistence".
+tempfile = "3"
+# File watching (Phase 1 step 8) — uses ReadDirectoryChangesW on Windows.
+notify = "8"
+# Local full-text search (Phase 1 step 9) — index lives under .vault/cache/search/.
+tantivy = "0.26"

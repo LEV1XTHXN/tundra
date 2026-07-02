@@ -5,7 +5,8 @@
 //! plain value or a thrown typed `CoreError`, so React never sees IPC plumbing.
 
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { commands } from "./bindings";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { commands, events } from "./bindings";
 import type { CoreError } from "./bindings";
 
 export type {
@@ -16,8 +17,11 @@ export type {
   Block,
   Icon,
   VaultInfo,
+  TreeNode,
+  FolderNode,
+  SearchHit,
 } from "./bindings";
-import type { Note, NoteSummary, VaultInfo } from "./bindings";
+import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
 
@@ -44,8 +48,72 @@ export const vault = {
 export const notes = {
   list: (): Promise<NoteSummary[]> => unwrap(commands.listNotes()),
   create: (title: string): Promise<Note> => unwrap(commands.createNote(title)),
+  /** Create a note directly inside `folder` (relative to the notes root, `""` for the root). */
+  createIn: (title: string, folder: string): Promise<Note> =>
+    unwrap(commands.createNoteIn(title, folder)),
   read: (id: string): Promise<Note> => unwrap(commands.readNote(id)),
   save: (note: Note): Promise<null> => unwrap(commands.saveNote(note)),
+  delete: (id: string): Promise<null> => unwrap(commands.deleteNote(id)),
+  /** Move a note to a different folder (relative to the notes root, e.g. `"Biology/Plants"` or `""` for the root). */
+  move: (id: string, folder: string): Promise<null> => unwrap(commands.moveNote(id, folder)),
+};
+
+/** Folder ops on real directories under `notes/`. Paths are `/`-separated and relative to the notes root. */
+export const folders = {
+  create: (path: string): Promise<null> => unwrap(commands.createFolder(path)),
+  rename: (path: string, newName: string): Promise<null> =>
+    unwrap(commands.renameFolder(path, newName)),
+  move: (path: string, newParent: string): Promise<null> =>
+    unwrap(commands.moveFolder(path, newParent)),
+  delete: (path: string): Promise<null> => unwrap(commands.deleteFolder(path)),
+};
+
+/** The folder/note tree for the open vault. */
+export const tree = (): Promise<TreeNode[]> => unwrap(commands.listTree());
+
+/** Local full-text search (Phase 1 step 9) — the index lives under `.vault/cache/search/`. */
+export const search = {
+  /** Ranked hits (id, title, snippet) for `query`, most relevant first. */
+  query: (query: string, limit: number): Promise<SearchHit[]> =>
+    unwrap(commands.searchQuery(query, limit)),
+  /** Rebuild the index from scratch — a recovery action; the index is derived/rebuildable. */
+  rebuild: (): Promise<null> => unwrap(commands.rebuildIndex()),
+};
+
+/**
+ * External-change notifications (Phase 1 step 8): the Rust file watcher
+ * detects changes to the vault's `notes/` tree that weren't caused by this
+ * app's own writes, and emits these. Exposed as typed subscribe functions
+ * (each returning an unsubscribe callback) so the UI never touches
+ * `@tauri-apps/api`'s raw event plumbing directly.
+ */
+export const watcher = {
+  /** The folder/note tree changed on disk externally — refresh the nav tree. */
+  onTreeChanged(callback: () => void): () => void {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void events.treeChanged.listen(() => callback()).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
+  /** A note's content changed on disk externally (by id), not via this app's own save. */
+  onNoteChangedExternally(callback: (id: string) => void): () => void {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void events.noteChangedExternally.listen((event) => callback(event.payload.id)).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
 };
 
 /** Native folder picker for onboarding — OS access via the Tauri dialog plugin. */
@@ -57,3 +125,25 @@ export async function pickVaultFolder(): Promise<string | null> {
   });
   return typeof selected === "string" ? selected : null;
 }
+
+/** Per-note icons (CLAUDE.md Phase 1 preamble): emoji codepoints render as
+ * local Twemoji SVGs client-side (see `nav/twemoji.ts`) with no FS work.
+ * Custom image icons need Rust (copying into `attachments/icons/`) and the
+ * Tauri asset protocol (`convertFileSrc`) to display — both live here. */
+export const icons = {
+  /** Native file picker for choosing a custom icon image. */
+  async pickFile(): Promise<string | null> {
+    const selected = await openFolderDialog({
+      directory: false,
+      multiple: false,
+      title: "Choose an icon image",
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp"] }],
+    });
+    return typeof selected === "string" ? selected : null;
+  },
+  /** Copy `srcPath` into `attachments/icons/`, returning its vault-relative path. */
+  import: (srcPath: string): Promise<string> => unwrap(commands.importIcon(srcPath)),
+  /** A displayable URL for a custom icon's vault-relative path. */
+  assetUrl: (vaultPath: string, relPath: string): string =>
+    convertFileSrc(`${vaultPath}/${relPath}`),
+};

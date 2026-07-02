@@ -31,6 +31,14 @@ pub enum CoreError {
     /// JSON (de)serialization failure — a corrupt or malformed note file.
     #[error("data error: {0}")]
     Serde(String),
+
+    /// A block in the tree had an empty `id` (violates the CRDT-ready guarantee).
+    #[error("block has an empty id")]
+    EmptyBlockId,
+
+    /// The same block `id` appeared more than once in the tree.
+    #[error("duplicate block id: {0}")]
+    DuplicateBlockId(String),
 }
 
 impl From<std::io::Error> for CoreError {

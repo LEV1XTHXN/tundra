@@ -15,10 +15,19 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tundra-core = { path = "../crates/tundra-core" }
-tauri = { version = "2", features = [] }
+# `protocol-asset` powers `convertFileSrc` (services layer), used to display
+# custom note icons — user images living in the (arbitrary, user-chosen)
+# vault's attachments/icons/, not the app bundle.
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 serde.workspace = true
 serde_json.workspace = true
 specta = { version = "=2.0.0-rc.25", features = ["derive", "function"] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+
+[dev-dependencies]
+# `tauri::test::mock_builder`/`mock_context` — lets command-wiring tests build a
+# mock app + managed state without a real window or generate_context!().
+tauri = { version = "2", features = ["test"] }
+uuid.workspace = true

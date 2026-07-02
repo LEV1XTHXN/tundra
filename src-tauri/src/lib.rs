@@ -4,16 +4,27 @@
 //! state, and generate the typed TS bindings. No business logic (CLAUDE.md §2).
 
 mod commands;
+mod events;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use tauri_specta::{collect_commands, Builder};
-use tundra_core::Vault;
+use tauri_specta::{collect_commands, collect_events, Builder};
+use tundra_core::{SearchIndex, Vault, Watcher};
 
-/// Managed application state: the single currently-open vault.
+/// Managed application state: the single currently-open vault, its file
+/// watcher (Phase 1 step 8), and its search index (Phase 1 step 9) — all
+/// replaced, not accumulated, whenever a different vault is opened; dropping
+/// the old watcher stops it.
 #[derive(Default)]
 pub struct AppState {
     pub vault: Mutex<Option<Vault>>,
+    pub watcher: Mutex<Option<Watcher>>,
+    pub search: Mutex<Option<Arc<SearchIndex>>>,
+    /// Held for the whole `open_vault` operation (not just the state swap at
+    /// the end) so two overlapping calls — e.g. a duplicate IPC call — can
+    /// never both construct a `SearchIndex` for the same directory at once,
+    /// which races for Tantivy's directory lock and fails with `LockBusy`.
+    pub opening: Mutex<()>,
 }
 
 /// TypeScript export config. Block `props`/`content` are already exported as
@@ -22,19 +33,32 @@ fn ts_exporter() -> specta_typescript::Typescript {
     specta_typescript::Typescript::default()
 }
 
-/// The `tauri-specta` builder — the one source of truth for the command set,
-/// shared by `run()` (to mount them) and the bindings-export test.
+/// The `tauri-specta` builder — the one source of truth for the command +
+/// event set, shared by `run()` (to mount them) and the bindings-export test.
 fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new().commands(collect_commands![
-        commands::default_vault_path,
-        commands::last_vault,
-        commands::open_vault,
-        commands::current_vault,
-        commands::list_notes,
-        commands::create_note,
-        commands::read_note,
-        commands::save_note,
-    ])
+    Builder::<tauri::Wry>::new()
+        .commands(collect_commands![
+            commands::default_vault_path,
+            commands::last_vault,
+            commands::open_vault,
+            commands::current_vault,
+            commands::list_notes,
+            commands::create_note,
+            commands::create_note_in,
+            commands::read_note,
+            commands::save_note,
+            commands::delete_note,
+            commands::move_note,
+            commands::list_tree,
+            commands::create_folder,
+            commands::rename_folder,
+            commands::move_folder,
+            commands::delete_folder,
+            commands::import_icon,
+            commands::search_query,
+            commands::rebuild_index,
+        ])
+        .events(collect_events![events::TreeChanged, events::NoteChangedExternally])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
