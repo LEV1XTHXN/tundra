@@ -13,6 +13,7 @@ would also have to, drop a note here.
 - [`dev-setup.md`](dev-setup.md) — toolchain + per-OS prerequisites (Linux / Windows / macOS) to build and run.
 - [`ipc-and-bindings.md`](ipc-and-bindings.md) — the typed Rust↔TS boundary, specta version pinning, how/when to regenerate `bindings.ts`, and the `serde_json::Value` export gotcha.
 - [`vault-and-state.md`](vault-and-state.md) — vault layout, where the "last vault" pointer lives per OS, and how to repoint it (there's no in-app vault switch yet).
+- [`file-watcher.md`](file-watcher.md) — how external-change detection works, and the `notify` "reads look like changes" gotcha that caused an infinite reload loop (open a note → reloads every second).
 
 ## Conventions
 
