@@ -672,13 +672,17 @@ fn sync_dir(_dir: &Path) {}
 
 fn read_note_at(path: &Path) -> Result<Note> {
     let bytes = fs::read(path)?;
-    let note: Note = serde_json::from_slice(&bytes)?;
+    let mut note: Note = serde_json::from_slice(&bytes)?;
     if note.schema_version > SCHEMA_VERSION {
         return Err(CoreError::SchemaTooNew {
             found: note.schema_version,
             supported: SCHEMA_VERSION,
         });
     }
+    // Upgrade older on-disk notes to the current shape before anyone sees them
+    // (lazy — persisted on the next save). This is the single choke point every
+    // read passes through (direct reads and the `build_index` walk both land here).
+    note.migrate();
     Ok(note)
 }
 
@@ -1144,6 +1148,41 @@ mod tests {
             new_folder.children
         );
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_note_migrates_a_v1_string_content_file_on_disk() {
+        // A Phase 0 note file written straight to disk (schemaVersion 1, with a
+        // paragraph whose `content` is a raw string). Reading it must upgrade it
+        // to the current shape with the text preserved — not discarded.
+        // `temp_vault` lays down the `notes/` dir; we then drop a legacy file in
+        // it and re-open so the index picks the hand-written note up.
+        let (_seed, dir) = temp_vault();
+        let path = dir.join("notes/legacy.json");
+        let legacy = serde_json::json!({
+            "schemaVersion": 1,
+            "id": "11111111-1111-1111-1111-111111111111",
+            "title": "Legacy",
+            "created": "2026-07-01T10:00:00Z",
+            "modified": "2026-07-01T10:00:00Z",
+            "meta": { "pinned": false, "tags": [] },
+            "blocks": [
+                { "id": "b1", "type": "paragraph", "content": "hello\n# world" }
+            ]
+        });
+        fs::write(&path, serde_json::to_vec_pretty(&legacy).unwrap()).unwrap();
+
+        // Rebuild the index so the vault knows about the hand-written file.
+        let vault = Vault::open(&dir).unwrap();
+        let note = vault.read_note("11111111-1111-1111-1111-111111111111").unwrap();
+
+        assert_eq!(note.schema_version, SCHEMA_VERSION);
+        assert_eq!(
+            note.blocks[0].content.as_ref().unwrap(),
+            &serde_json::json!([{ "type": "text", "text": "hello\n# world", "styles": {} }]),
+            "the legacy string text must be preserved as an inline text node"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -16,7 +16,14 @@ use uuid::Uuid;
 use crate::error::{CoreError, Result};
 
 /// Bump when the on-disk shape changes; migrations key off this (CLAUDE.md §8.10).
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// History:
+/// - v1: original block tree. Phase 0's skeleton stored a paragraph's text as a
+///   raw *string* in `content`.
+/// - v2: `content` is BlockNote's array of inline nodes (its real shape). The
+///   v1→v2 migration in `Note::migrate` converts the old string form to a single
+///   text node so no text is lost.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// A per-note icon: a Twemoji codepoint or a custom vector/image in the vault.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -110,6 +117,48 @@ impl Note {
         }
         Ok(())
     }
+
+    /// Upgrade an older on-disk note to the current schema, in memory, so the
+    /// rest of the app only ever sees the current shape (CLAUDE.md §8.10:
+    /// migrations key off `schemaVersion`). Called on every read.
+    ///
+    /// This is a **lazy** migration: it does not rewrite the file — the upgraded
+    /// form is persisted the next time the note is saved. That keeps `open` from
+    /// mass-rewriting (and bumping the mtime of) every note in the vault.
+    ///
+    /// Idempotent: running it on an already-current note is a no-op beyond
+    /// stamping `schema_version`.
+    pub fn migrate(&mut self) {
+        if self.schema_version < 2 {
+            // v1 → v2: Phase 0 stored a paragraph's text as a raw string in
+            // `content`; BlockNote uses an array of inline nodes, and the editor
+            // *discards* any block whose `content` is a string (see
+            // `toInitialContent`), which silently lost the text. Convert each
+            // string to a single text node so every character is preserved. A
+            // block already in the array shape is left untouched.
+            for block in &mut self.blocks {
+                migrate_string_content_to_inline(block);
+            }
+        }
+        self.schema_version = SCHEMA_VERSION;
+    }
+}
+
+/// v1→v2 helper: rewrite a block's (and its children's) legacy string `content`
+/// into BlockNote's inline shape `[{ "type": "text", "text": <s>, "styles": {} }]`.
+/// Only string content is touched; array/absent content is left as-is. The text
+/// is preserved verbatim (including any Markdown-looking characters/newlines) —
+/// faithfully re-parsing Markdown is the `markdown` module's job, not this
+/// data-preserving migration's.
+fn migrate_string_content_to_inline(block: &mut Block) {
+    if let Some(Value::String(text)) = &block.content {
+        block.content = Some(serde_json::json!([
+            { "type": "text", "text": text, "styles": {} }
+        ]));
+    }
+    for child in &mut block.children {
+        migrate_string_content_to_inline(child);
+    }
 }
 
 fn validate_block(block: &Block, seen: &mut HashSet<String>) -> Result<()> {
@@ -180,5 +229,72 @@ mod tests {
         let mut note = Note::new("Untitled");
         note.blocks = vec![block("a", vec![block("", vec![])])];
         assert!(matches!(note.validate(), Err(CoreError::EmptyBlockId)));
+    }
+
+    /// A Phase 0 (v1) block with raw *string* content, as written by the old
+    /// textarea skeleton — the shape the editor used to silently discard.
+    fn v1_string_block(id: &str, text: &str) -> Block {
+        Block {
+            id: id.to_string(),
+            block_type: "paragraph".to_string(),
+            props: None,
+            content: Some(Value::String(text.to_string())),
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn migrate_v1_string_content_becomes_a_text_node_preserving_text() {
+        let mut note = Note::new("Legacy");
+        note.schema_version = 1;
+        note.blocks = vec![v1_string_block("b1", "note note note\n\n# Note \n\nHello")];
+
+        note.migrate();
+
+        assert_eq!(note.schema_version, SCHEMA_VERSION);
+        let expected = serde_json::json!([
+            { "type": "text", "text": "note note note\n\n# Note \n\nHello", "styles": {} }
+        ]);
+        assert_eq!(note.blocks[0].content.as_ref().unwrap(), &expected);
+    }
+
+    #[test]
+    fn migrate_recurses_into_children() {
+        let mut note = Note::new("Nested");
+        note.schema_version = 1;
+        let mut parent = v1_string_block("p", "parent text");
+        parent.children = vec![v1_string_block("c", "child text")];
+        note.blocks = vec![parent];
+
+        note.migrate();
+
+        assert_eq!(
+            note.blocks[0].children[0].content.as_ref().unwrap(),
+            &serde_json::json!([{ "type": "text", "text": "child text", "styles": {} }])
+        );
+    }
+
+    #[test]
+    fn migrate_is_a_noop_for_already_current_array_content() {
+        // A v2 note whose content is already BlockNote's inline array must be
+        // left byte-for-byte identical (only the version stamp is idempotent).
+        let mut note = Note::new("Modern");
+        let array = serde_json::json!([{ "type": "text", "text": "hi", "styles": {} }]);
+        note.blocks[0].content = Some(array.clone());
+
+        note.migrate();
+
+        assert_eq!(note.schema_version, SCHEMA_VERSION);
+        assert_eq!(note.blocks[0].content.as_ref().unwrap(), &array);
+    }
+
+    #[test]
+    fn migrate_leaves_contentless_blocks_alone() {
+        // Fresh notes have `content: None` — nothing to convert, just re-stamp.
+        let mut note = Note::new("Empty");
+        note.schema_version = 1;
+        note.migrate();
+        assert_eq!(note.schema_version, SCHEMA_VERSION);
+        assert!(note.blocks[0].content.is_none());
     }
 }
