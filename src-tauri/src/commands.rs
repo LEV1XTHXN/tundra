@@ -10,8 +10,8 @@ use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
 use tundra_core::{
-    ChangeEvent, CoreError, Note, NoteSummary, SearchHit, SearchIndex, TreeNode, Vault, VaultInfo,
-    Watcher,
+    AttachmentKind, ChangeEvent, CoreError, Note, NoteSummary, SearchHit, SearchIndex, TreeNode,
+    Vault, VaultInfo, Watcher,
 };
 
 use crate::events::{NoteChangedExternally, TreeChanged};
@@ -111,14 +111,15 @@ pub fn open_vault(
     let vault = Vault::open(&path)?;
     let info = vault.info();
 
-    // Grant the webview's asset protocol read access to this vault's icon
-    // library, so custom note icons can be displayed via `convertFileSrc`
-    // (services layer) without opening the sandbox to the whole disk — the
-    // vault lives at a user-chosen, arbitrary path, so this can't be a fixed
-    // scope declared up front in tauri.conf.json.
-    let icons_dir = std::path::Path::new(&info.path).join("attachments/icons");
+    // Grant the webview's asset protocol read access to this vault's whole
+    // `attachments/` tree (icons + images/videos/files), so custom note icons
+    // and embedded attachments can be displayed via `convertFileSrc` (services
+    // layer) without opening the sandbox to the whole disk — the vault lives at
+    // a user-chosen, arbitrary path, so this can't be a fixed scope declared up
+    // front in tauri.conf.json.
+    let attachments_dir = std::path::Path::new(&info.path).join("attachments");
     app.asset_protocol_scope()
-        .allow_directory(&icons_dir, true)
+        .allow_directory(&attachments_dir, true)
         .map_err(|e| CoreError::Io(e.to_string()))?;
 
     // Open the search index and bring it up to date incrementally — not a
@@ -259,6 +260,22 @@ pub fn import_icon(state: State<AppState>, src_path: String) -> Result<String, C
     current(&state)?.import_icon(std::path::Path::new(&src_path))
 }
 
+/// Import an attachment by content (Phase 2 step 1): the frontend reads a
+/// browser `File`'s bytes and forwards them here; the core hashes them (blake3),
+/// stores them content-addressed under `attachments/<kind>/`, and returns the
+/// vault-relative path the editor stores in the embedding block. No attachment
+/// bytes are ever written from the frontend.
+#[tauri::command]
+#[specta::specta]
+pub fn import_attachment(
+    state: State<AppState>,
+    kind: AttachmentKind,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, CoreError> {
+    current(&state)?.import_attachment(kind, &file_name, &bytes)
+}
+
 /// Create a note directly inside `folder` (relative to the notes root, `""`
 /// for the root) — the "new note in the selected folder" nav action.
 #[tauri::command]
@@ -294,6 +311,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use tauri::Manager;
+    use tundra_core::Block;
 
     fn temp_vault_state() -> AppState {
         let dir = std::env::temp_dir().join(format!("tundra-cmd-test-{}", uuid::Uuid::new_v4()));
@@ -343,5 +361,57 @@ mod tests {
         delete_note(state.clone(), note.id.clone()).expect("delete_note");
         let tree = list_tree(state).expect("list_tree after delete");
         assert!(!tree_contains_note(&tree, &note.id));
+    }
+
+    /// Phase 2 step 1 acceptance at the command boundary: importing an image
+    /// through the command stores it content-addressed under
+    /// `attachments/images/<shard>/`, and a note embedding that attachment
+    /// alongside a table survives a save → reload unchanged (persistence).
+    #[test]
+    fn import_attachment_and_embed_survive_reload_through_commands() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        // Import an image by content, exactly as the editor's uploadFile does.
+        let png = b"\x89PNG demo bytes".to_vec();
+        let rel = import_attachment(state.clone(), AttachmentKind::Image, "photo.png".into(), png.clone())
+            .expect("import_attachment");
+        assert!(rel.replace('\\', "/").starts_with("attachments/images/"));
+
+        // Build a note with an image embed (storing the vault-relative path +
+        // original filename) and a table block, then persist it.
+        let mut note = create_note(state.clone(), "Rich".into()).expect("create_note");
+        note.blocks = vec![
+            Block {
+                id: "img-1".into(),
+                block_type: "image".into(),
+                props: Some(serde_json::json!({ "url": rel, "name": "photo.png" })),
+                content: None,
+                children: vec![],
+            },
+            Block {
+                id: "tbl-1".into(),
+                block_type: "table".into(),
+                props: None,
+                content: Some(serde_json::json!({
+                    "type": "tableContent",
+                    "rows": [{ "cells": ["a", "b"] }]
+                })),
+                children: vec![],
+            },
+        ];
+        save_note(state.clone(), note.clone()).expect("save_note");
+
+        // Reload from disk: both the image embed (with its stored path) and the
+        // table must come back intact.
+        let reread = read_note(state.clone(), note.id.clone()).expect("read_note");
+        assert_eq!(reread.blocks.len(), 2);
+        assert_eq!(reread.blocks[0].block_type, "image");
+        assert_eq!(reread.blocks[0].props.as_ref().unwrap()["url"], serde_json::json!(rel));
+        assert_eq!(reread.blocks[1].block_type, "table");
+        assert!(reread.blocks[1].content.is_some());
     }
 }

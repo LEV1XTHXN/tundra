@@ -13,8 +13,8 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/shadcn/style.css";
 
-import { notes, watcher } from "@/services";
-import type { Icon, Note } from "@/services";
+import { attachments, notes, watcher } from "@/services";
+import type { AttachmentKind, Icon, Note } from "@/services";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { IconPicker } from "@/nav/IconPicker";
@@ -24,6 +24,13 @@ import { decideReconciliation } from "./reconcile";
 
 const DEBOUNCE_MS = 600;
 const MAX_WAIT_MS = 2500;
+
+/** Map a browser File's MIME type onto an attachment library (CLAUDE.md §5.2). */
+function attachmentKindFromMime(mime: string): AttachmentKind {
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  return "file";
+}
 
 interface NoteEditorProps {
   noteId: string;
@@ -90,7 +97,23 @@ function LoadedNoteEditor({
   // BlockNote's own document JSON, loaded verbatim (no transformation) — the
   // core treats blocks as opaque, validated-but-unmodeled JSON (Phase 1
   // preamble), so this is the one place the shape actually matters.
-  const editor = useCreateBlockNote({ initialContent: toInitialContent(note.blocks) });
+  const editor = useCreateBlockNote({
+    initialContent: toInitialContent(note.blocks),
+    // Attachments (Phase 2 step 1): BlockNote's built-in image/video/file blocks
+    // upload through here. We route the bytes through Rust's content-addressed
+    // store and store the returned vault-RELATIVE path in the block (portable —
+    // survives moving/syncing the vault). No attachment bytes are written from
+    // the frontend; the core owns all FS work.
+    uploadFile: async (file: File) => {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      return attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
+    },
+    // Turn the stored vault-relative path into a displayable asset URL at render
+    // time (like note icons). Anything else (e.g. a pasted external URL) is left
+    // untouched.
+    resolveFileUrl: async (url: string) =>
+      url.startsWith("attachments/") ? attachments.assetUrl(vaultPath, url) : url,
+  });
 
   const [title, setTitle] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);

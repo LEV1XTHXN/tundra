@@ -43,6 +43,14 @@ export const commands = {
 	 *  `attachments/icons/`, returning its vault-relative path for `Icon::Custom`.
 	 */
 	importIcon: (srcPath: string) => typedError<string, CoreError>(__TAURI_INVOKE("import_icon", { srcPath })),
+	/**
+	 *  Import an attachment by content (Phase 2 step 1): the frontend reads a
+	 *  browser `File`'s bytes and forwards them here; the core hashes them (blake3),
+	 *  stores them content-addressed under `attachments/<kind>/`, and returns the
+	 *  vault-relative path the editor stores in the embedding block. No attachment
+	 *  bytes are ever written from the frontend.
+	 */
+	importAttachment: (kind: AttachmentKind, fileName: string, bytes: number[]) => typedError<string, CoreError>(__TAURI_INVOKE("import_attachment", { kind, fileName, bytes })),
 	/**  Ranked full-text search hits (id, title, snippet) for `query`. */
 	searchQuery: (query: string, limit: number) => typedError<SearchHit[], CoreError>(__TAURI_INVOKE("search_query", { query, limit })),
 	/**
@@ -59,6 +67,13 @@ export const events = {
 };
 
 /* Types */
+/**
+ *  Which attachment library an import lands in (CLAUDE.md §5.2:
+ *  `attachments/{images,videos,files}`). Crosses the IPC boundary, so it is
+ *  serialized; the frontend maps a file's MIME type onto one of these.
+ */
+export type AttachmentKind = "image" | "video" | "file";
+
 /**
  *  A single typed block in the note tree.
  * 

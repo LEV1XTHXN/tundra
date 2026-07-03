@@ -20,7 +20,9 @@ export type {
   TreeNode,
   FolderNode,
   SearchHit,
+  AttachmentKind,
 } from "./bindings";
+import type { AttachmentKind } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
@@ -114,6 +116,23 @@ export const watcher = {
       unlisten?.();
     };
   },
+};
+
+/**
+ * Attachments (Phase 2 step 1) — content-addressed image/video/file embeds.
+ * The editor reads a dropped/pasted/picked `File`'s bytes and forwards them
+ * here; the core (Rust) hashes + stores them and returns a stable vault-relative
+ * path. That relative path is what gets stored in the note (portable across
+ * machines/vault moves); it is turned into a displayable URL only at render time
+ * via `assetUrl`, exactly like custom note icons.
+ */
+export const attachments = {
+  /** Import a file by content, returning its vault-relative hashed path. */
+  import: (kind: AttachmentKind, fileName: string, bytes: Uint8Array): Promise<string> =>
+    unwrap(commands.importAttachment(kind, fileName, Array.from(bytes))),
+  /** A displayable asset URL for a stored vault-relative attachment path. */
+  assetUrl: (vaultPath: string, relPath: string): string =>
+    convertFileSrc(`${vaultPath}/${relPath}`),
 };
 
 /** Native folder picker for onboarding — OS access via the Tauri dialog plugin. */

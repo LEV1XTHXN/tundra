@@ -17,6 +17,9 @@ thiserror.workspace = true
 tempfile.workspace = true
 notify.workspace = true
 walkdir = "2.5.0"
+# Content-addressed attachment store (Phase 2 step 1): attachments are named by
+# the blake3 hash of their bytes, so identical content dedupes automatically.
+blake3 = "1"
 # specta derives the TS-facing types. `chrono` lets it represent DateTime.
 # Block props/content are arbitrary JSON exported as TS `any` (see document.rs),
 # so we avoid expanding serde_json::Value (which specta forbids for i64/u64).

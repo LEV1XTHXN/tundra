@@ -46,6 +46,28 @@ pub struct VaultInfo {
     pub path: String,
 }
 
+/// Which attachment library an import lands in (CLAUDE.md §5.2:
+/// `attachments/{images,videos,files}`). Crosses the IPC boundary, so it is
+/// serialized; the frontend maps a file's MIME type onto one of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum AttachmentKind {
+    Image,
+    Video,
+    File,
+}
+
+impl AttachmentKind {
+    /// The `attachments/` subdirectory this kind stores into.
+    fn subdir(self) -> &'static str {
+        match self {
+            AttachmentKind::Image => "images",
+            AttachmentKind::Video => "videos",
+            AttachmentKind::File => "files",
+        }
+    }
+}
+
 /// A folder/note tree node, as served by `list_tree` (built from the
 /// in-memory index — no disk reads beyond what `Vault::open` already did).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -528,6 +550,59 @@ impl Vault {
         let dest = first_available_with_ext(&icons_dir, &stem, ext.as_deref());
 
         fs::copy(src_path, &dest)?;
+        Ok(self.rel_to_root(&dest))
+    }
+
+    /// Import an attachment by **content** (Phase 2 step 1): hash the bytes with
+    /// blake3, store them at `attachments/<kind>/<aa>/<hash>.<ext>` — sharded by
+    /// the first two hex chars of the hash — and return the path relative to the
+    /// vault root, which the caller stores in the embedding block.
+    ///
+    /// Content-addressed, so **identical content dedupes automatically**: the
+    /// same bytes always map to the same path, and if that file already exists
+    /// the write is skipped. The write itself is atomic (temp file + rename) so a
+    /// hashed path never names a torn/partial file. The original filename is not
+    /// part of the path — the caller keeps it in the block for display/download.
+    ///
+    /// This is the byte-fed generalization of `import_icon`: attachments arrive
+    /// from the editor as in-memory bytes (a browser `File`), not a filesystem
+    /// path, so all FS work still happens here in the core — never the frontend.
+    pub fn import_attachment(
+        &self,
+        kind: AttachmentKind,
+        file_name: &str,
+        bytes: &[u8],
+    ) -> Result<String> {
+        let hex = blake3::hash(bytes).to_hex();
+        let shard = &hex[..2];
+        let dir = self
+            .root
+            .join("attachments")
+            .join(kind.subdir())
+            .join(shard);
+        fs::create_dir_all(&dir)?;
+
+        // Keep the original extension so the asset protocol serves the right
+        // Content-Type (the webview needs it to render <img>/<video>).
+        let ext = Path::new(file_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase());
+        let name = match &ext {
+            Some(e) => format!("{hex}.{e}"),
+            None => hex.to_string(),
+        };
+        let dest = dir.join(&name);
+
+        // Dedupe: identical content is already stored — nothing to write.
+        if !dest.exists() {
+            let mut tmp = tempfile::Builder::new()
+                .prefix(".att-tmp-")
+                .tempfile_in(&dir)?;
+            tmp.write_all(bytes)?;
+            tmp.as_file().sync_all()?;
+            tmp.persist(&dest).map_err(|e| CoreError::Io(e.to_string()))?;
+        }
         Ok(self.rel_to_root(&dest))
     }
 
@@ -1112,6 +1187,66 @@ mod tests {
         assert!(dir.join(&rel2).exists());
 
         std::fs::remove_dir_all(&src_dir).ok();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_attachment_is_content_addressed_sharded_and_dedupes() {
+        let (vault, dir) = temp_vault();
+
+        let png = b"\x89PNG fake image bytes";
+        let rel = vault.import_attachment(AttachmentKind::Image, "photo.png", png).unwrap();
+
+        // Sharded under attachments/images/<first 2 hex of hash>/<hash>.png.
+        let hex = blake3::hash(png).to_hex();
+        let expected = format!("attachments/images/{}/{}.png", &hex[..2], hex);
+        assert_eq!(rel.replace('\\', "/"), expected);
+
+        // The returned path round-trips to a real file holding exactly the bytes.
+        assert_eq!(fs::read(dir.join(&rel)).unwrap(), png);
+
+        // Same content (even via a different original filename) dedupes to the
+        // very same path, and does not create a second file in the shard dir.
+        let rel2 = vault
+            .import_attachment(AttachmentKind::Image, "renamed.png", png)
+            .unwrap();
+        assert_eq!(rel2, rel);
+        let shard_dir = dir.join(format!("attachments/images/{}", &hex[..2]));
+        let count = fs::read_dir(&shard_dir).unwrap().count();
+        assert_eq!(count, 1, "identical content must not create a second file");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_attachment_distinct_content_gets_distinct_paths_and_kinds() {
+        let (vault, dir) = temp_vault();
+
+        let a = vault.import_attachment(AttachmentKind::Image, "a.png", b"aaaa").unwrap();
+        let b = vault.import_attachment(AttachmentKind::Image, "b.png", b"bbbb").unwrap();
+        assert_ne!(a, b, "different bytes must hash to different paths");
+
+        // Kind selects the library subdirectory.
+        let vid = vault.import_attachment(AttachmentKind::Video, "clip.mp4", b"movie").unwrap();
+        let file = vault.import_attachment(AttachmentKind::File, "doc.pdf", b"%PDF").unwrap();
+        assert!(vid.replace('\\', "/").starts_with("attachments/videos/"));
+        assert!(file.replace('\\', "/").starts_with("attachments/files/"));
+        assert!(dir.join(&vid).exists());
+        assert!(dir.join(&file).exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_attachment_handles_a_missing_extension() {
+        let (vault, dir) = temp_vault();
+        let rel = vault.import_attachment(AttachmentKind::File, "READ ME", b"data").unwrap();
+        let hex = blake3::hash(b"data").to_hex();
+        assert_eq!(
+            rel.replace('\\', "/"),
+            format!("attachments/files/{}/{}", &hex[..2], hex)
+        );
+        assert!(dir.join(&rel).exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 

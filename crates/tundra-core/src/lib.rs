@@ -14,7 +14,7 @@ pub mod watcher;
 pub use document::{Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};
 pub use error::{CoreError, Result};
 pub use index::{extract_text, SearchHit, SearchIndex};
-pub use vault::{ChangeEvent, FolderNode, TreeNode, Vault, VaultInfo};
+pub use vault::{AttachmentKind, ChangeEvent, FolderNode, TreeNode, Vault, VaultInfo};
 pub use watcher::Watcher;
 
 #[cfg(test)]
