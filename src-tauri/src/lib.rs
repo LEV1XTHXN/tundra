@@ -9,17 +9,18 @@ mod events;
 use std::sync::{Arc, Mutex};
 
 use tauri_specta::{collect_commands, collect_events, Builder};
-use tundra_core::{SearchIndex, Vault, Watcher};
+use tundra_core::{LinkIndex, SearchIndex, Vault, Watcher};
 
 /// Managed application state: the single currently-open vault, its file
-/// watcher (Phase 1 step 8), and its search index (Phase 1 step 9) — all
-/// replaced, not accumulated, whenever a different vault is opened; dropping
-/// the old watcher stops it.
+/// watcher (Phase 1 step 8), its search index (Phase 1 step 9), and its link
+/// index (Phase 2 step 2) — all replaced, not accumulated, whenever a different
+/// vault is opened; dropping the old watcher stops it.
 #[derive(Default)]
 pub struct AppState {
     pub vault: Mutex<Option<Vault>>,
     pub watcher: Mutex<Option<Watcher>>,
     pub search: Mutex<Option<Arc<SearchIndex>>>,
+    pub links: Mutex<Option<Arc<LinkIndex>>>,
     /// Held for the whole `open_vault` operation (not just the state swap at
     /// the end) so two overlapping calls — e.g. a duplicate IPC call — can
     /// never both construct a `SearchIndex` for the same directory at once,
@@ -58,6 +59,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::import_attachment,
             commands::search_query,
             commands::rebuild_index,
+            commands::backlinks,
+            commands::graph_data,
+            commands::resolve_titles,
+            commands::rebuild_graph,
         ])
         .events(collect_events![events::TreeChanged, events::NoteChangedExternally])
 }

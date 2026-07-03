@@ -58,6 +58,27 @@ export const commands = {
 	 *  the index is derived/rebuildable, never a source of truth).
 	 */
 	rebuildIndex: () => typedError<null, CoreError>(__TAURI_INVOKE("rebuild_index")),
+	/**
+	 *  Notes that link *to* `id` (incoming links), as current summaries — the
+	 *  editor's backlinks panel (Phase 2 step 2).
+	 */
+	backlinks: (id: string) => typedError<NoteSummary_Serialize[], CoreError>(__TAURI_INVOKE("backlinks", { id })),
+	/**
+	 *  The whole directed link graph (nodes = notes, edges = resolved links) for
+	 *  the graph view (Phase 2 step 2/4). Broken links are excluded.
+	 */
+	graphData: () => typedError<GraphData, CoreError>(__TAURI_INVOKE("graph_data")),
+	/**
+	 *  Resolve note ids to their CURRENT summaries (title/icon) — for live link
+	 *  labels; ids that no longer resolve are omitted (the caller uses the stored
+	 *  label for those).
+	 */
+	resolveTitles: (ids: string[]) => typedError<NoteSummary_Serialize[], CoreError>(__TAURI_INVOKE("resolve_titles", { ids })),
+	/**
+	 *  Rebuild the link graph from the notes on disk (recovery action — the graph
+	 *  cache is derived/rebuildable).
+	 */
+	rebuildGraph: () => typedError<null, CoreError>(__TAURI_INVOKE("rebuild_graph")),
 };
 
 /** Events */
@@ -152,6 +173,30 @@ export type FolderNode_Serialize = {
 	 */
 	path: string,
 	children: TreeNode_Serialize[],
+};
+
+/**
+ *  The whole link graph for the vault: every note as a node, resolved links as
+ *  directed edges.
+ */
+export type GraphData = {
+	nodes: GraphNode[],
+	edges: GraphEdge[],
+};
+
+/**
+ *  A directed graph edge — note `source` links to note `target`. Only emitted
+ *  when both ends resolve to existing notes (broken links are not edges).
+ */
+export type GraphEdge = {
+	source: string,
+	target: string,
+};
+
+/**  A graph node — one note. */
+export type GraphNode = {
+	id: string,
+	title: string,
 };
 
 /**  A per-note icon: a Twemoji codepoint or a custom vector/image in the vault. */

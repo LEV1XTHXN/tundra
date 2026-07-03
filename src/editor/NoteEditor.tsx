@@ -8,19 +8,24 @@
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useRef, useState } from "react";
-import { useCreateBlockNote } from "@blocknote/react";
+import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/shadcn/style.css";
 
 import { attachments, notes, watcher } from "@/services";
-import type { AttachmentKind, Icon, Note } from "@/services";
+import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { IconPicker } from "@/nav/IconPicker";
 import { toInitialContent } from "./blockContent";
 import { createDebouncedFlush, type DebouncedFlush } from "./debouncedFlush";
 import { decideReconciliation } from "./reconcile";
+import { editorSchema } from "./schema";
+import { NOTE_LINK_TYPE } from "./NoteLink";
+import { filterLinkCandidates } from "./linkMenu";
+import { BacklinksPanel } from "./BacklinksPanel";
+import { NoteLinkPicker } from "./NoteLinkPicker";
 
 const DEBOUNCE_MS = 600;
 const MAX_WAIT_MS = 2500;
@@ -35,6 +40,9 @@ function attachmentKindFromMime(mime: string): AttachmentKind {
 interface NoteEditorProps {
   noteId: string;
   vaultPath: string;
+  /** Current note summaries (id + title) — drives the backlinks panel refresh
+   * and the `[[` link menu; changes whenever the nav tree refreshes. */
+  noteSummaries: Map<string, NoteSummary>;
   onError: (message: string) => void;
   onSaved?: () => void;
   /** The note changed shape externally (rename/icon from elsewhere, or a
@@ -47,7 +55,7 @@ interface NoteEditorProps {
  * always created fresh with the correct `initialContent` for that note, never
  * reused/rehydrated across notes.
  */
-export function NoteEditor({ noteId, vaultPath, onError, onSaved, onNeedsReload }: NoteEditorProps) {
+export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved, onNeedsReload }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
 
   useEffect(() => {
@@ -74,6 +82,7 @@ export function NoteEditor({ noteId, vaultPath, onError, onSaved, onNeedsReload 
       key={note.id}
       note={note}
       vaultPath={vaultPath}
+      noteSummaries={noteSummaries}
       onError={onError}
       onSaved={onSaved}
       onNeedsReload={onNeedsReload}
@@ -84,12 +93,14 @@ export function NoteEditor({ noteId, vaultPath, onError, onSaved, onNeedsReload 
 function LoadedNoteEditor({
   note,
   vaultPath,
+  noteSummaries,
   onError,
   onSaved,
   onNeedsReload,
 }: {
   note: Note;
   vaultPath: string;
+  noteSummaries: Map<string, NoteSummary>;
   onError: (message: string) => void;
   onSaved?: () => void;
   onNeedsReload?: () => void;
@@ -98,7 +109,12 @@ function LoadedNoteEditor({
   // core treats blocks as opaque, validated-but-unmodeled JSON (Phase 1
   // preamble), so this is the one place the shape actually matters.
   const editor = useCreateBlockNote({
-    initialContent: toInitialContent(note.blocks),
+    // Shared schema with the custom `noteLink` inline node (Phase 2 step 3).
+    schema: editorSchema,
+    // Opaque block JSON from the core; the editor's exact PartialBlock type for
+    // the custom schema isn't worth reconstructing here (blocks are validated
+    // but unmodeled by the core — Phase 1 preamble).
+    initialContent: toInitialContent(note.blocks) as never,
     // Attachments (Phase 2 step 1): BlockNote's built-in image/video/file blocks
     // upload through here. We route the bytes through Rust's content-addressed
     // store and store the returned vault-RELATIVE path in the block (portable —
@@ -113,7 +129,29 @@ function LoadedNoteEditor({
     // untouched.
     resolveFileUrl: async (url: string) =>
       url.startsWith("attachments/") ? attachments.assetUrl(vaultPath, url) : url,
+    // Web links: use BlockNote's built-in behaviour — select text and paste a
+    // URL over it (or Ctrl+K) to create a link. BlockNote's default paste
+    // already parses Markdown, so no custom pasteHandler is needed. (We tried a
+    // `[text](url)` typing input rule, but it didn't fire reliably in the
+    // WebKitGTK webview, so we dropped it in favour of the built-in path.)
   });
+
+  // Word → note linking (Phase 2 step 3): select text, press Ctrl/Cmd+Shift+K,
+  // pick a note; the selected word becomes a link whose display text is kept.
+  const [linkPicker, setLinkPicker] = useState<{ open: boolean; display: string }>({
+    open: false,
+    display: "",
+  });
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === "k" && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setLinkPicker({ open: true, display: editor.getSelectedText() });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editor]);
 
   const [title, setTitle] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
@@ -292,7 +330,42 @@ function LoadedNoteEditor({
         onChange={scheduleSave}
         theme="light"
         className="min-h-0 flex-1"
+      >
+        {/* `[[` opens a keyboard-driven menu of notes; selecting one inserts an
+            id-backed link node. Added as a child, which keeps BlockNote's
+            default UI (slash menu, toolbars) intact. */}
+        <SuggestionMenuController
+          triggerCharacter="[["
+          getItems={async (query) => {
+            const list = await notes.list();
+            return filterLinkCandidates(list, note.id, query).map((n) => ({
+              title: n.title || "Untitled",
+              onItemClick: () => {
+                editor.insertInlineContent([
+                  // display: "" → renders the target's live title.
+                  { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: "" } },
+                  " ",
+                ]);
+              },
+            }));
+          }}
+        />
+      </BlockNoteView>
+      <NoteLinkPicker
+        open={linkPicker.open}
+        onOpenChange={(o) => setLinkPicker((p) => ({ ...p, open: o }))}
+        currentNoteId={note.id}
+        display={linkPicker.display}
+        onPick={(n) => {
+          // The editor kept its selection over the word while the picker had
+          // focus (ProseMirror preserves it), so inserting replaces that word
+          // with the link — its display text stays the selected word.
+          editor.insertInlineContent([
+            { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: linkPicker.display } },
+          ]);
+        }}
       />
+      <BacklinksPanel noteId={note.id} vaultPath={vaultPath} refreshKey={noteSummaries} />
       <div className="status muted">
         {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
       </div>

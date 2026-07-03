@@ -10,8 +10,8 @@ use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
 use tundra_core::{
-    AttachmentKind, ChangeEvent, CoreError, Note, NoteSummary, SearchHit, SearchIndex, TreeNode,
-    Vault, VaultInfo, Watcher,
+    AttachmentKind, ChangeEvent, CoreError, GraphData, LinkIndex, Note, NoteSummary, SearchHit,
+    SearchIndex, TreeNode, Vault, VaultInfo, Watcher,
 };
 
 use crate::events::{NoteChangedExternally, TreeChanged};
@@ -62,6 +62,16 @@ fn current(state: &State<AppState>) -> Result<Vault, CoreError> {
 fn current_search(state: &State<AppState>) -> Result<Arc<SearchIndex>, CoreError> {
     state
         .search
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| CoreError::Vault("no vault is open".into()))
+}
+
+/// The link index for the currently open vault (Phase 2 step 2).
+fn current_links(state: &State<AppState>) -> Result<Arc<LinkIndex>, CoreError> {
+    state
+        .links
         .lock()
         .unwrap()
         .clone()
@@ -127,19 +137,29 @@ pub fn open_vault(
     let search = Arc::new(SearchIndex::open(std::path::Path::new(&info.path))?);
     search.catch_up(&vault)?;
 
+    // Open the link index and catch it up the same way (Phase 2 step 2). Both
+    // derived indexes live under .vault/cache/ and are rebuildable.
+    let links = Arc::new(LinkIndex::open(std::path::Path::new(&info.path))?);
+    links.catch_up(&vault)?;
+
     // Watch this vault's notes/ tree for external changes (Phase 1 step 8),
     // replacing any watcher for a previously open vault — dropping it stops
-    // its background thread. Also keeps search current on external changes
-    // (Phase 1 step 9 item 4).
+    // its background thread. Also keeps the search AND link indexes current on
+    // external changes (Phase 1 step 9 item 4 / Phase 2 step 2).
     let events_app = app.clone();
     let search_for_watcher = search.clone();
+    let links_for_watcher = links.clone();
     let vault_for_watcher = vault.clone();
     let watcher = Watcher::watch(vault.clone(), move |event| {
         if let ChangeEvent::NoteChangedExternally { id } = &event {
             match vault_for_watcher.read_note(id) {
-                Ok(note) => reindex_after_write(&vault_for_watcher, search_for_watcher.as_ref(), &note),
+                Ok(note) => {
+                    reindex_after_write(&vault_for_watcher, search_for_watcher.as_ref(), &note);
+                    let _ = links_for_watcher.index_note(&note);
+                }
                 Err(_) => {
                     let _ = search_for_watcher.remove_note(id);
+                    let _ = links_for_watcher.remove_note(id);
                 }
             }
         }
@@ -153,6 +173,7 @@ pub fn open_vault(
     *state.vault.lock().unwrap() = Some(vault);
     *state.watcher.lock().unwrap() = Some(watcher);
     *state.search.lock().unwrap() = Some(search);
+    *state.links.lock().unwrap() = Some(links);
     save_config(
         &app,
         &AppConfig {
@@ -181,6 +202,7 @@ pub fn create_note(state: State<AppState>, title: String) -> Result<Note, CoreEr
     let vault = current(&state)?;
     let note = vault.create_note(&title)?;
     reindex_after_write(&vault, current_search(&state)?.as_ref(), &note);
+    let _ = current_links(&state)?.index_note(&note);
     Ok(note)
 }
 
@@ -196,6 +218,7 @@ pub fn save_note(state: State<AppState>, note: Note) -> Result<(), CoreError> {
     let vault = current(&state)?;
     vault.save_note(note.clone())?;
     reindex_after_write(&vault, current_search(&state)?.as_ref(), &note);
+    let _ = current_links(&state)?.index_note(&note);
     Ok(())
 }
 
@@ -204,6 +227,7 @@ pub fn save_note(state: State<AppState>, note: Note) -> Result<(), CoreError> {
 pub fn delete_note(state: State<AppState>, id: String) -> Result<(), CoreError> {
     current(&state)?.delete_note(&id)?;
     let _ = current_search(&state)?.remove_note(&id);
+    let _ = current_links(&state)?.remove_note(&id);
     Ok(())
 }
 
@@ -288,6 +312,7 @@ pub fn create_note_in(
     let vault = current(&state)?;
     let note = vault.create_note_in(&title, &folder)?;
     reindex_after_write(&vault, current_search(&state)?.as_ref(), &note);
+    let _ = current_links(&state)?.index_note(&note);
     Ok(note)
 }
 
@@ -306,6 +331,39 @@ pub fn rebuild_index(state: State<AppState>) -> Result<(), CoreError> {
     current_search(&state)?.rebuild(&current(&state)?)
 }
 
+/// Notes that link *to* `id` (incoming links), as current summaries — the
+/// editor's backlinks panel (Phase 2 step 2).
+#[tauri::command]
+#[specta::specta]
+pub fn backlinks(state: State<AppState>, id: String) -> Result<Vec<NoteSummary>, CoreError> {
+    Ok(current_links(&state)?.backlinks(&current(&state)?, &id))
+}
+
+/// The whole directed link graph (nodes = notes, edges = resolved links) for
+/// the graph view (Phase 2 step 2/4). Broken links are excluded.
+#[tauri::command]
+#[specta::specta]
+pub fn graph_data(state: State<AppState>) -> Result<GraphData, CoreError> {
+    current_links(&state)?.graph_data(&current(&state)?)
+}
+
+/// Resolve note ids to their CURRENT summaries (title/icon) — for live link
+/// labels; ids that no longer resolve are omitted (the caller uses the stored
+/// label for those).
+#[tauri::command]
+#[specta::specta]
+pub fn resolve_titles(state: State<AppState>, ids: Vec<String>) -> Result<Vec<NoteSummary>, CoreError> {
+    Ok(current_links(&state)?.resolve_titles(&current(&state)?, &ids))
+}
+
+/// Rebuild the link graph from the notes on disk (recovery action — the graph
+/// cache is derived/rebuildable).
+#[tauri::command]
+#[specta::specta]
+pub fn rebuild_graph(state: State<AppState>) -> Result<(), CoreError> {
+    current_links(&state)?.rebuild(&current(&state)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,9 +375,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tundra-cmd-test-{}", uuid::Uuid::new_v4()));
         let vault = Vault::open(&dir).expect("open temp vault");
         let search = SearchIndex::open(&dir).expect("open temp search index");
+        let links = LinkIndex::open(&dir).expect("open temp link index");
         AppState {
             vault: Mutex::new(Some(vault)),
             search: Mutex::new(Some(Arc::new(search))),
+            links: Mutex::new(Some(Arc::new(links))),
             ..Default::default()
         }
     }
@@ -413,5 +473,55 @@ mod tests {
         assert_eq!(reread.blocks[0].props.as_ref().unwrap()["url"], serde_json::json!(rel));
         assert_eq!(reread.blocks[1].block_type, "table");
         assert!(reread.blocks[1].content.is_some());
+    }
+
+    /// Phase 2 step 2 acceptance at the command boundary: an id-backed link
+    /// drives backlinks + graph_data, a rename does NOT rewrite the referrer,
+    /// and title resolution returns the current title.
+    #[test]
+    fn links_backlinks_graph_and_rename_through_commands() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        let target = create_note(state.clone(), "Target".into()).expect("create target");
+        let mut referrer = create_note(state.clone(), "Referrer".into()).expect("create referrer");
+        referrer.blocks = vec![Block {
+            id: "b1".into(),
+            block_type: "paragraph".into(),
+            props: None,
+            content: Some(serde_json::json!([
+                { "type": "text", "text": "see ", "styles": {} },
+                { "type": tundra_core::LINK_INLINE_TYPE,
+                  "props": { "noteId": target.id, "label": "Target" } }
+            ])),
+            children: vec![],
+        }];
+        save_note(state.clone(), referrer.clone()).expect("save referrer");
+
+        // Backlinks of the target include the referrer.
+        let back = backlinks(state.clone(), target.id.clone()).expect("backlinks");
+        assert_eq!(back.iter().map(|s| s.id.clone()).collect::<Vec<_>>(), vec![referrer.id.clone()]);
+
+        // Graph has both notes and the one resolved edge.
+        let graph = graph_data(state.clone()).expect("graph_data");
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.edges[0].source, referrer.id);
+        assert_eq!(graph.edges[0].target, target.id);
+
+        // Rename the target; the referrer file must be untouched (no repair),
+        // and title resolution reflects the NEW title.
+        let mut renamed = read_note(state.clone(), target.id.clone()).expect("read target");
+        renamed.title = "Renamed Target".into();
+        save_note(state.clone(), renamed).expect("save renamed");
+
+        let referrer_after = read_note(state.clone(), referrer.id.clone()).expect("read referrer");
+        assert_eq!(referrer_after.blocks[0].content, referrer.blocks[0].content,
+            "referrer must not be rewritten on target rename");
+        let resolved = resolve_titles(state.clone(), vec![target.id.clone()]).expect("resolve");
+        assert_eq!(resolved[0].title, "Renamed Target");
     }
 }

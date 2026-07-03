@@ -21,8 +21,12 @@ export type {
   FolderNode,
   SearchHit,
   AttachmentKind,
+  GraphData,
+  GraphNode,
+  GraphEdge,
 } from "./bindings";
 import type { AttachmentKind } from "./bindings";
+import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
@@ -72,6 +76,23 @@ export const folders = {
 
 /** The folder/note tree for the open vault. */
 export const tree = (): Promise<TreeNode[]> => unwrap(commands.listTree());
+
+/**
+ * Inter-note links & graph (Phase 2 step 2) — all derived by the Rust `links`
+ * module from id-backed link nodes in the block tree. Links survive rename/move
+ * because identity is the note's UUID; `resolveTitles` gives the CURRENT title
+ * for live link labels.
+ */
+export const links = {
+  /** Notes that link TO `id` (incoming), as current summaries — backlinks panel. */
+  backlinks: (id: string): Promise<NoteSummary[]> => unwrap(commands.backlinks(id)),
+  /** The whole directed graph (nodes = notes, edges = resolved links). */
+  graph: (): Promise<GraphData> => unwrap(commands.graphData()),
+  /** Resolve note ids to their current summaries; unresolved ids are omitted. */
+  resolveTitles: (ids: string[]): Promise<NoteSummary[]> => unwrap(commands.resolveTitles(ids)),
+  /** Rebuild the graph cache from disk (recovery — it's derived/rebuildable). */
+  rebuild: (): Promise<null> => unwrap(commands.rebuildGraph()),
+};
 
 /** Local full-text search (Phase 1 step 9) — the index lives under `.vault/cache/search/`. */
 export const search = {

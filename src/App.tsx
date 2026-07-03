@@ -12,6 +12,7 @@ import { NavTree } from "./nav/NavTree";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
 import { useViewState } from "./store/viewState";
+import { useLinkTitles } from "./store/linkTitles";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,6 +102,16 @@ export default function App() {
   // disk for a reason other than our own writes (self-writes are filtered
   // before it ever reaches here) — refresh the nav tree to match.
   useEffect(() => watcher.onTreeChanged(() => void refreshTree()), [refreshTree]);
+
+  // Phase 2 step 3: keep the live id→title map current so note links always
+  // render the target's CURRENT title (a rename updates every link's label).
+  useEffect(() => {
+    const titles: Record<string, string> = {};
+    noteSummaries.forEach((s, id) => {
+      titles[id] = s.title;
+    });
+    useLinkTitles.getState().setTitles(titles);
+  }, [noteSummaries]);
 
   // Phase 1 step 9: Ctrl+K / Cmd+K opens the search palette, from anywhere.
   useEffect(() => {
@@ -316,6 +327,7 @@ export default function App() {
             key={`${openNoteId}:${editorRefreshToken}`}
             noteId={openNoteId}
             vaultPath={vaultInfo.path}
+            noteSummaries={noteSummaries}
             onError={setError}
             onSaved={refreshTree}
             onNeedsReload={() => setEditorRefreshToken((t) => t + 1)}
