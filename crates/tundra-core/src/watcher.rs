@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::time::Duration;
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 
 use crate::vault::{ChangeEvent, Vault};
 
@@ -35,6 +35,17 @@ impl Watcher {
         let (tx, rx) = channel::<notify::Event>();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
+                // Ignore pure access events (file opened/read/closed-without-write).
+                // These do NOT change a file, yet the OS emits them for our own
+                // reads too — e.g. every `read_note` when the editor (re)loads a
+                // note. Reacting to them turned an ordinary open into an endless
+                // reload loop: read -> IN_OPEN event -> "changed externally" ->
+                // reload -> read -> … A genuine change always arrives as a
+                // Create / Modify / Remove event, so dropping Access here is safe
+                // and never resets the debounce window below on a mere read.
+                if matches!(event.kind, EventKind::Access(_)) {
+                    return;
+                }
                 let _ = tx.send(event);
             }
         })?;
@@ -139,6 +150,42 @@ mod tests {
             wait_for(&rx, &ChangeEvent::NoteChangedExternally { id: note.id.clone() }, Duration::from_secs(5)),
             "expected a NoteChangedExternally event for the edited note"
         );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Merely *reading* a note file must never be reported as a change. The OS
+    /// emits open/access events for our own reads too (every `read_note` when
+    /// the editor loads a note), and reacting to them created an endless
+    /// open→"changed externally"→reload→read loop. A read is not a write, so no
+    /// event should reach the frontend.
+    #[test]
+    fn watcher_does_not_report_a_pure_read() {
+        let (vault, dir) = temp_vault();
+
+        let (tx, rx) = channel::<ChangeEvent>();
+        let _watcher = Watcher::watch(vault.clone(), move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+
+        let note = vault.create_note("Sedge").unwrap();
+        let path = dir.join("notes/sedge.json");
+
+        // Open/read the file repeatedly, exactly as the editor does when it
+        // (re)loads a note — no writes, so nothing genuinely changed.
+        for _ in 0..5 {
+            let _ = fs::read(&path).unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if let Ok(ChangeEvent::NoteChangedExternally { id }) = rx.recv_timeout(Duration::from_millis(200)) {
+                assert_ne!(id, note.id, "reading a note must not be reported as an external change");
+            }
+        }
 
         std::fs::remove_dir_all(&dir).ok();
     }
