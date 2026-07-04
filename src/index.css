@@ -1198,3 +1198,129 @@ body,
   justify-content: flex-end;
   padding-top: 0.25rem;
 }
+
+/* --- Graph info & settings panel ----------------------------------------- */
+.graph-panel-toggle {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.graph-panel-toggle:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+
+.graph-panel {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10;
+  width: 240px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.graph-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.5rem 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.graph-panel-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.graph-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.graph-panel-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.graph-panel-section {
+  padding: 0.75rem 0.85rem;
+}
+.graph-panel-section + .graph-panel-section {
+  border-top: 1px solid var(--border);
+}
+
+/* Stats row: three even columns of value-over-label. */
+.graph-panel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  text-align: center;
+}
+.graph-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.graph-stat-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.graph-stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.graph-panel-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.graph-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+.graph-setting-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-setting-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-setting input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.graph-setting input[type="checkbox"] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}

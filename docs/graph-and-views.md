@@ -35,9 +35,41 @@ Default view is `editor` for now; step 6 flips the default to `home`.
   settles (bounded by node count) so it doesn't pin a CPU core, and `kill()`ed on
   unmount.
 - Nodes are **dots + labels**, sized by degree; no per-note icons (rendering
-  images per node in WebGL is out of scope). Hover highlights a node + its
+  images per node in WebGL needs sigma's node-image program — a dep off the
+  allow-list — so it's a deferred task, not wired). Hover highlights a node + its
   neighbors and fades the rest (node/edge reducers + `enterNode`/`leaveNode`).
   Click opens the note (`openNote`, which also switches to the editor view).
+- **Node dragging** is hand-rolled (sigma has none): `downNode` starts it,
+  the mouse captor's `mousemovebody` + `preventSigmaDefault()` moves the node and
+  suppresses the camera pan, `mouseup` ends it. A quick click still opens the note;
+  a `dragMoved` flag suppresses that open at the end of a real drag. While dragging,
+  a small spring relaxation runs on `requestAnimationFrame` so connected notes
+  trail along with soft physics (FA2 can't drive this — its worker owns an internal
+  position matrix and ignores graph edits mid-run). **Perf gotcha:** write all node
+  positions in ONE `graph.updateEachNodeAttributes` per frame — per-node writes each
+  emit a graphology event and make sigma re-react N times a frame (visible jitter).
+- **Labels sit centered directly under the node** (not sigma's default
+  upper-right). Custom `defaultDrawNodeLabel` + `defaultDrawNodeHover` in
+  `nodeLabel.ts` (their function types are derived from sigma's own constructor
+  settings so no subpath type imports are needed). **Gotcha:** they set
+  `context.textAlign = "center"` and must restore it to `"left"` — edge labels
+  center themselves manually and assume a left-aligned canvas.
+- **Info & settings panel** (`GraphInfoPanel.tsx`, Alt+I or the corner button):
+  live stats (notes / links / leaves) and display settings — show names
+  (`renderLabels`), node size (a multiplier over each node's stored `baseSize`),
+  and line length. The panel is React and reaches the live sigma/graph through
+  refs; it never rebuilds them. Open/closed is `useViewState.graphInspectorOpen`;
+  Alt+I is dispatched in `App.tsx` to whichever panel fits the view (note
+  inspector in the editor, this one in the graph).
+- **Line length gotcha:** `autoRescale` (on by default) refits the node
+  bounding-box to the viewport every frame, so spreading nodes via the layout is
+  normalized away and looks unchanged — the first attempt (FA2 `scalingRatio`) did
+  nothing on screen for this reason. The working lever is `setCustomBBox`: a box
+  *smaller* than the real extent (`extent / spread`) maps the graph to more than
+  the viewport, so edges render longer while screen-referenced node sizes stay
+  put. `setCustomBBox` only schedules a render, so call `refresh()` after to
+  recompute the normalization. Applied on the slider and once the initial layout
+  settles (`spread = 1` clears the custom box, back to auto-fit).
 
 ## Vault-scoped config (`.vault/config/*.json`)
 
@@ -53,8 +85,10 @@ by Rust — **never** `localStorage` (CLAUDE.md §4 blacklist, §5.2).
   JSON (de)serialization; a corrupt/missing file reads as `null` (it's
   rebuildable UI state, so callers fall back to defaults instead of throwing).
 
-The graph persists its camera (zoom/pan) to `graph-view.json`, debounced. This is
-the same store Home's `home.json` will use in step 6.
+The graph persists its camera (zoom/pan) **and** its panel display settings
+(`showLabels`, `nodeSizeScale`, `edgeLength`) to `graph-view.json`, debounced —
+all merged into one `settingsRef` object so writing one field never clobbers
+another. This is the same store Home's `home.json` will use in step 6.
 
 ## Atomic-write test portability (fixed here)
 

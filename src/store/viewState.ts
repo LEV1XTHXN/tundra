@@ -30,6 +30,12 @@ interface ViewState {
   inspectorOpen: boolean;
   setInspectorOpen: (open: boolean) => void;
   toggleInspector: () => void;
+
+  /** Whether the graph view's info/settings panel is open. Separate from the
+   *  note inspector — the same key (Alt+I) toggles whichever fits the view. */
+  graphInspectorOpen: boolean;
+  setGraphInspectorOpen: (open: boolean) => void;
+  toggleGraphInspector: () => void;
 }
 
 export const useViewState = create<ViewState>((set) => ({
@@ -56,4 +62,8 @@ export const useViewState = create<ViewState>((set) => ({
   inspectorOpen: false,
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
+
+  graphInspectorOpen: false,
+  setGraphInspectorOpen: (open) => set({ graphInspectorOpen: open }),
+  toggleGraphInspector: () => set((state) => ({ graphInspectorOpen: !state.graphInspectorOpen })),
 }));

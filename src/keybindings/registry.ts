@@ -56,8 +56,8 @@ export const COMMANDS: readonly CommandDef[] = [
   },
   {
     id: "inspector.toggle",
-    label: "Toggle note info",
-    description: "Show or hide the note metadata panel",
+    label: "Toggle info panel",
+    description: "Show or hide the info panel (note metadata, or graph stats in the graph view)",
     category: "navigation",
     defaultBinding: "Alt+I",
   },

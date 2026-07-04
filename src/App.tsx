@@ -90,6 +90,7 @@ export default function App() {
   const inspectorOpen = useViewState((s) => s.inspectorOpen);
   const toggleInspector = useViewState((s) => s.toggleInspector);
   const setInspectorOpen = useViewState((s) => s.setInspectorOpen);
+  const toggleGraphInspector = useViewState((s) => s.toggleGraphInspector);
 
   const refreshTree = useCallback(async () => {
     const [t, list] = await Promise.all([fetchTree(), notes.list()]);
@@ -308,18 +309,21 @@ export default function App() {
           void onNewNote();
           break;
         case "inspector.toggle":
-          // Only meaningful for an open note in the editor view — same guard as
-          // the inspector toggle button below.
+          // Context-dependent: the note-metadata panel in the editor (needs an
+          // open note), or the graph's info/settings panel in the graph view.
           if (view === "editor" && openNoteId) {
             e.preventDefault();
             toggleInspector();
+          } else if (view === "graph") {
+            e.preventDefault();
+            toggleGraphInspector();
           }
           break;
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindings, onNewNote, view, openNoteId, toggleInspector]);
+  }, [bindings, onNewNote, view, openNoteId, toggleInspector, toggleGraphInspector]);
 
   if (booting) {
     return <div className="centered muted">Loading…</div>;
