@@ -58,6 +58,9 @@ export function GraphView() {
     let cancelled = false;
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
     let stopTimer: ReturnType<typeof setTimeout> | undefined;
+    // Ends an in-progress node drag; kept at effect scope so cleanup can detach
+    // the window-level mouseup listener it's registered on.
+    let endDrag: (() => void) | undefined;
 
     void (async () => {
       try {
@@ -141,8 +144,134 @@ export function GraphView() {
           return { ...attrs, hidden: true };
         });
 
-        // Click-to-open: open the note and switch to the editor view.
-        sigma.on("clickNode", ({ node }) => openNote(node));
+        // --- Node dragging (sigma has no built-in drag) --------------------
+        // Press-and-move over a node pins it to the cursor; a lightweight spring
+        // relaxation (running only while dragging) lets the connected notes trail
+        // after it with soft, flowy motion instead of moving as a rigid block.
+        // FA2 can't drive this — its worker owns an internal position matrix and
+        // overwrites the graph each tick, so it ignores a pinned node — hence this
+        // small self-contained sim.
+        let draggedNode: string | null = null;
+        // True once the pointer actually moves after pressing a node — lets us
+        // tell a drag from a click so releasing a drag doesn't open the note.
+        let dragMoved = false;
+        let lastMouse: { x: number; y: number } | null = null;
+        let rafId: number | undefined;
+        // Authoritative position/velocity/force state for the sim, owned here for
+        // the whole drag (FA2 is stopped, so nothing else writes positions). Kept
+        // in reused maps and written back to the graph in ONE batched pass per
+        // frame — per-node graph writes would each emit a graphology event and
+        // make sigma re-react N times a frame, which is what caused the jitter.
+        const px = new Map<string, number>();
+        const py = new Map<string, number>();
+        const vx = new Map<string, number>();
+        const vy = new Map<string, number>();
+        const fx = new Map<string, number>();
+        const fy = new Map<string, number>();
+        const restLength = new Map<string, number>();
+        const mouseCaptor = sigma.getMouseCaptor();
+
+        // One physics frame: pin the dragged node, pull every edge toward the
+        // length it had when the drag began, integrate with damping. Edges at rest
+        // exert no force, so only the dragged node's connected component moves.
+        const SPRING = 0.05; // stiffness
+        const DAMPING = 0.8; // velocity kept per frame (< 1 so motion settles)
+        function step() {
+          if (!draggedNode || !sigma) return;
+          if (lastMouse) {
+            px.set(draggedNode, lastMouse.x);
+            py.set(draggedNode, lastMouse.y);
+          }
+          fx.clear();
+          fy.clear();
+          graph.forEachEdge((edge, _attr, s, t) => {
+            const dx = (px.get(t) ?? 0) - (px.get(s) ?? 0);
+            const dy = (py.get(t) ?? 0) - (py.get(s) ?? 0);
+            const dist = Math.hypot(dx, dy) || 1e-6;
+            const rest = restLength.get(edge) ?? dist;
+            const f = (SPRING * (dist - rest)) / dist;
+            const ux = dx * f;
+            const uy = dy * f;
+            fx.set(s, (fx.get(s) ?? 0) + ux);
+            fy.set(s, (fy.get(s) ?? 0) + uy);
+            fx.set(t, (fx.get(t) ?? 0) - ux);
+            fy.set(t, (fy.get(t) ?? 0) - uy);
+          });
+          // Integrate into the local maps (no graph writes yet).
+          for (const n of px.keys()) {
+            if (n === draggedNode) continue;
+            const nvx = ((vx.get(n) ?? 0) + (fx.get(n) ?? 0)) * DAMPING;
+            const nvy = ((vy.get(n) ?? 0) + (fy.get(n) ?? 0)) * DAMPING;
+            vx.set(n, nvx);
+            vy.set(n, nvy);
+            px.set(n, (px.get(n) ?? 0) + nvx);
+            py.set(n, (py.get(n) ?? 0) + nvy);
+          }
+          // Single batched write → one graphology event → one sigma refresh.
+          graph.updateEachNodeAttributes(
+            (n, attr) => {
+              attr.x = px.get(n) ?? attr.x;
+              attr.y = py.get(n) ?? attr.y;
+              return attr;
+            },
+            { attributes: ["x", "y"] },
+          );
+          rafId = requestAnimationFrame(step);
+        }
+
+        sigma.on("downNode", ({ node }) => {
+          draggedNode = node;
+          dragMoved = false;
+          lastMouse = null;
+          graph.setNodeAttribute(node, "highlighted", true);
+          // Take manual control — stop FA2 so it doesn't fight the drag.
+          if (stopTimer) clearTimeout(stopTimer);
+          layout?.stop();
+          // Seed the sim from the current settled layout: node positions, zero
+          // velocities, and each edge's current length as its spring rest length.
+          px.clear();
+          py.clear();
+          vx.clear();
+          vy.clear();
+          graph.forEachNode((n) => {
+            px.set(n, graph.getNodeAttribute(n, "x"));
+            py.set(n, graph.getNodeAttribute(n, "y"));
+          });
+          restLength.clear();
+          graph.forEachEdge((edge, _attr, s, t) => {
+            const dx = (px.get(t) ?? 0) - (px.get(s) ?? 0);
+            const dy = (py.get(t) ?? 0) - (py.get(s) ?? 0);
+            restLength.set(edge, Math.hypot(dx, dy));
+          });
+          rafId = requestAnimationFrame(step);
+        });
+
+        mouseCaptor.on("mousemovebody", (e) => {
+          if (!draggedNode || !sigma) return;
+          dragMoved = true;
+          lastMouse = sigma.viewportToGraph(e);
+          // Stop sigma from also panning the camera while dragging a node.
+          e.preventSigmaDefault();
+          e.original.preventDefault();
+          e.original.stopPropagation();
+        });
+
+        // Open the note on a genuine click, but NOT at the end of a drag.
+        sigma.on("clickNode", ({ node }) => {
+          if (dragMoved) return;
+          openNote(node);
+        });
+
+        endDrag = () => {
+          if (rafId !== undefined) cancelAnimationFrame(rafId);
+          rafId = undefined;
+          if (draggedNode) graph.removeNodeAttribute(draggedNode, "highlighted");
+          draggedNode = null;
+          lastMouse = null;
+        };
+        mouseCaptor.on("mouseup", endDrag);
+        // Releasing the button outside the canvas must still end the drag.
+        window.addEventListener("mouseup", endDrag);
 
         // Persist camera changes (pan/zoom), debounced, through Rust.
         sigma.getCamera().on("updated", (state) => {
@@ -174,6 +303,10 @@ export function GraphView() {
       cancelled = true;
       if (saveTimer) clearTimeout(saveTimer);
       if (stopTimer) clearTimeout(stopTimer);
+      if (endDrag) {
+        window.removeEventListener("mouseup", endDrag);
+        endDrag(); // cancel any in-flight drag animation frame
+      }
       layout?.kill();
       sigma?.kill();
     };
