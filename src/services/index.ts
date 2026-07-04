@@ -207,9 +207,10 @@ export async function pickVaultFolder(): Promise<string | null> {
 }
 
 /** Per-note icons (CLAUDE.md Phase 1 preamble): emoji codepoints render as
- * local Twemoji SVGs client-side (see `nav/twemoji.ts`) with no FS work.
- * Custom image icons need Rust (copying into `attachments/icons/`) and the
- * Tauri asset protocol (`convertFileSrc`) to display — both live here. */
+ * glyphs from the bundled Twemoji COLR font client-side (see `nav/NoteIcon.tsx`)
+ * with no FS work. Custom image icons need Rust (copying into
+ * `attachments/icons/`) and the Tauri asset protocol (`convertFileSrc`) to
+ * display — both live here. */
 export const icons = {
   /** Native file picker for choosing a custom icon image. */
   async pickFile(): Promise<string | null> {

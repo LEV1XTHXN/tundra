@@ -37,11 +37,70 @@ variable font through its *own* defaults, with no reaching into BlockNote intern
   variable `--bn-font-family: var(--app-font)` on `.bn-root`, so its fallback chain
   matches the shell.
 - **Editor content** — BlockNote's own `.bn-default-styles { font-family: Inter, … }`
-  now resolves to our `'Inter'` by name. We deliberately do **not** override that
-  internal class, so a BlockNote upgrade that renames it can't break us.
+  resolves to our `'Inter'` by name. We **do** override that internal class in one
+  narrow way — `.editor-pane .bn-editor .bn-default-styles { font-family: var(--app-font) }`
+  — but only to append the emoji fallback (see [Emoji](#emoji-a-single-twemoji-font)).
+  `--app-font` is still `'Inter'`-first, so text is unchanged; if a BlockNote
+  upgrade renames the class the worst case is emoji regressing to the platform
+  font, never a text regression.
 
 This also replaces BlockNote's bundled latin-only static `"Inter"`, which we no
 longer import.
+
+## Emoji: a single Twemoji font
+
+Every emoji in the app — **note icons**, the **emoji picker**, and emoji **typed
+into note bodies** — renders from one self-hosted face, **`'Twemoji'`**
+(`src/styles/twemoji.css`, vendored to `public/fonts/twemoji/twemoji.woff2` from
+the `twemoji-colr-font` npm package, **v15**). Before this, only note icons used
+Twemoji (as per-emoji SVG `<img>`s); the picker and editor fell through to the
+platform emoji font, so the same emoji looked different in three places.
+
+- **Why a font, not SVGs.** Emoji typed into a `contenteditable` can't be swapped
+  for `<img>`s without fighting the cursor/IME/undo — fragile, against the prime
+  directive. A color font is the robust way to render emoji in editable text, and
+  it also fixes the picker and icons for free. It's a **COLR/CPAL vector** font
+  (layered shapes, not embedded bitmaps), so it stays sharp at any size — a large
+  open-note header icon is as crisp as the SVGs it replaced.
+- **How text/picker pick it up.** `'Twemoji'` **leads** `--app-font`, but its
+  `@font-face` is `unicode-range`-scoped to the emoji blocks (styles/twemoji.css).
+  For non-emoji characters the browser skips the face entirely and falls through to
+  Inter, so it can't hijack plain text/digits/`#`/`*`; for emoji it wins because
+  it's first. **Leading is required, not optional, on Linux/WebKitGTK:** fontconfig
+  auto-substitutes Noto Color Emoji whenever an *earlier* family (Inter, system-ui,
+  sans-serif…) is asked for an emoji glyph, so a `'Twemoji'` listed *last* is never
+  reached — the emoji resolves via Noto first. (This was the bug: note icons, which
+  set `'Twemoji'` first explicitly, rendered correctly while the picker and typed
+  text — Twemoji last — showed the system emoji.) The platform emoji faces
+  (`Apple Color Emoji`/`Segoe UI Emoji`/`Noto Color Emoji`) stay at the tail as a
+  load-failure fallback. Keycap emoji degrade gracefully: ASCII is excluded from
+  the range, so the base digit stays Inter and only the enclosing keycap is Twemoji.
+- **Two surfaces don't inherit `--app-font` and needed explicit wiring** (each
+  silently fell back to the platform emoji font until fixed):
+  - **Editor content.** BlockNote puts both classes on the *same* element
+    (`class="bn-editor bn-default-styles"`), so the override must be the COMPOUND
+    selector `.editor-pane .bn-editor.bn-default-styles` (no space). A descendant
+    `.bn-editor .bn-default-styles` matches nothing.
+  - **Emoji picker.** frimousse renders each emoji button with an INLINE
+    `font-family: var(--frimousse-emoji-font)` **and** sets that var inline on its
+    own root (default: Apple Color Emoji / Twemoji Mozilla / …). Inline beats a
+    stylesheet, so overriding the var in CSS does nothing — we override the button's
+    `font-family` directly with `!important` (`.icon-picker-emoji-root
+    [frimousse-emoji]`), which is what beats an inline style.
+- **How icons pick it up.** `NoteIcon.tsx` renders the stored codepoint(s) back to
+  the emoji string (`@twemoji/api`'s `convert.fromCodePoint`, joining hyphenated
+  ZWJ sequences) inside a `.twemoji-emoji` span sized from the caller's size class.
+  The old SVG path (`nav/twemoji.ts`, `nav/twemojiImg.tsx`) and the `@twemoji/svg`
+  dependency were removed; `@twemoji/api` stays only for codepoint conversion.
+- **Bigger emoji in note bodies, same-size text.** A second `@font-face`
+  `'TwemojiText'` points at the same file with `size-adjust: 125%` — the descriptor
+  scales only that font's glyphs, so emoji get larger while the surrounding Inter
+  text is untouched. It's used only in the editor content stack
+  (`.bn-editor.bn-default-styles { font-family: 'TwemojiText', var(--app-font) }`),
+  not in icons/picker. Tune the percentage in `styles/twemoji.css`.
+- **WebKitGTK.** COLRv0 is supported there; still worth an eyeball on a large icon
+  per the usual Linux-render caveat. `size-adjust` needs a recent WebKitGTK — if
+  it's unsupported the emoji simply render at 1× (harmless no-op).
 
 ### Loading the woff2 (self-hosted, offline-first)
 

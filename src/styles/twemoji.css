@@ -1,0 +1,62 @@
+/* Twemoji Color Font — the SINGLE source for every emoji in the app (note
+   icons, the emoji picker, and emoji typed into note bodies), so all three
+   surfaces render identically instead of the icons being Twemoji SVGs while the
+   picker/editor fell through to the platform emoji font. See docs/ui-fonts.md.
+
+   It is a COLR/CPAL font — layered *vector* glyphs, not embedded bitmaps — so it
+   scales sharply to any size (a big open-note header icon stays crisp, exactly
+   like the SVGs it replaces). Self-hosted from public/fonts/twemoji/ (copied
+   from the `twemoji-colr-font` npm package, v15 — matching the Twemoji artwork
+   version we shipped as SVGs) rather than a bare node_modules specifier, which
+   resolves at build but NOT in Vite dev. Standard `format('woff2')` hint (not
+   `woff2-variations`) so WebKitGTK doesn't skip it — see the Inter face note.
+
+   The family is placed FIRST in --app-font, but restricted to emoji codepoints
+   with `unicode-range` below. That combination is deliberate and load-bearing on
+   Linux/WebKitGTK: fontconfig auto-substitutes the system color-emoji font (Noto
+   Color Emoji) whenever an *earlier* family in the stack is asked for an emoji
+   glyph — so a 'Twemoji' listed LAST never gets reached (the emoji resolves via
+   Inter/system-ui → Noto before then). Leading with 'Twemoji' makes it win; the
+   `unicode-range` stops it from ever touching normal text (letters, digits, #, *)
+   — for out-of-range characters the browser skips this face entirely and falls
+   through to Inter, so it can't hijack plain "1" or "#". Keycap emoji (digit +
+   U+20E3) are the one graceful degradation: the base digit stays Inter (ASCII is
+   intentionally excluded) while the enclosing keycap comes from Twemoji.
+
+   The range covers the Unicode emoji blocks plus the joiners that hold multi-
+   codepoint sequences together (U+200D ZWJ, U+FE0F variation selector, U+20E3
+   keycap, U+E0020–E007F tags for subdivision flags) so ZWJ sequences shape in one
+   font instead of splitting. */
+@font-face {
+  font-family: 'Twemoji';
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/twemoji/twemoji.woff2') format('woff2');
+  unicode-range: U+203C, U+2049, U+2122, U+2139, U+2194-2199, U+21A9-21AA,
+    U+231A-231B, U+2328, U+23CF, U+23E9-23F3, U+23F8-23FA, U+24C2, U+25AA-25AB,
+    U+25B6, U+25C0, U+25FB-25FE, U+2600-26FF, U+2700-27BF, U+2934-2935,
+    U+2B00-2B59, U+3030, U+303D, U+3297, U+3299, U+1F000-1FAFF, U+1FB00-1FBFF,
+    U+200D, U+20E3, U+FE00-FE0F, U+E0020-E007F;
+}
+
+/* A SECOND face over the same file, enlarged via the `size-adjust` descriptor.
+   `size-adjust` scales only THIS font's glyphs relative to the font-size — the
+   surrounding text (Inter) is unaffected — which is exactly "make emoji bigger
+   without making text bigger". Used only in the editor body (see index.css), so
+   note icons and the picker keep rendering at their own box size via plain
+   'Twemoji'. Same src URL as above ⇒ one network download; same unicode-range so
+   it only ever applies to emoji. Tune the percentage to taste. (size-adjust needs
+   a recent WebKitGTK; if unsupported it's a harmless no-op — emoji just render at
+   1×.) */
+@font-face {
+  font-family: 'TwemojiText';
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 150%;
+  src: url('/fonts/twemoji/twemoji.woff2') format('woff2');
+  unicode-range: U+203C, U+2049, U+2122, U+2139, U+2194-2199, U+21A9-21AA,
+    U+231A-231B, U+2328, U+23CF, U+23E9-23F3, U+23F8-23FA, U+24C2, U+25AA-25AB,
+    U+25B6, U+25C0, U+25FB-25FE, U+2600-26FF, U+2700-27BF, U+2934-2935,
+    U+2B00-2B59, U+3030, U+303D, U+3297, U+3299, U+1F000-1FAFF, U+1FB00-1FBFF,
+    U+200D, U+20E3, U+FE00-FE0F, U+E0020-E007F;
+}

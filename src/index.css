@@ -7,6 +7,10 @@
    rather than importing `@fontsource-variable/inter` (wrong family name +
    `format('woff2-variations')` hint). See docs/ui-fonts.md. */
 @import "./styles/inter-variable.css";
+/* Twemoji color font — the single source for every emoji (icons, picker, typed
+   text). Placed after Inter so its face is registered; it slots in LAST in the
+   font stack so only emoji fall through to it. See styles/twemoji.css. */
+@import "./styles/twemoji.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -162,10 +166,15 @@
      Vietnamese subsets — so Russian/Ukrainian/Greek/Vietnamese/accented-Latin all
      render in Inter, matching the rest of the UI. Scripts Inter doesn't cover
      (CJK, Arabic, Hebrew, Thai, Indic…) fall back to the platform UI font via
-     `system-ui`, then generic sans-serif; emoji last. */
-  --app-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Noto Sans', 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Noto Color Emoji';
+     `system-ui`, then generic sans-serif; platform emoji faces last.
+     'Twemoji' leads the stack but is `unicode-range`-scoped to emoji only
+     (styles/twemoji.css), so it wins for every emoji (shell + editor + picker,
+     matching the note icons) yet never touches text — it MUST come before Inter/
+     system-ui or fontconfig substitutes Noto Color Emoji for those first. The
+     trailing platform emoji faces are a fallback if 'Twemoji' fails to load. */
+  --app-font: 'Twemoji', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Noto Sans', 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Noto Color Emoji';
 }
 body {
   font-weight: var(--ui-text-weight);
@@ -698,6 +707,18 @@ body,
   height: 320px;
 }
 
+/* frimousse forces `font-family: var(--frimousse-emoji-font)` INLINE on every
+   emoji button, and ALSO sets --frimousse-emoji-font inline on its root (default:
+   Apple Color Emoji / Twemoji Mozilla / …) — so neither --app-font inheritance nor
+   overriding that var in a stylesheet wins (inline beats the sheet). Override the
+   button's font-family directly with the same Twemoji-first stack as the note
+   icons; `!important` is what beats frimousse's inline style. The button carries a
+   bare `frimousse-emoji` attribute. */
+.icon-picker-emoji-root [frimousse-emoji] {
+  font-family: 'Twemoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji',
+    sans-serif !important;
+}
+
 .icon-picker-search {
   margin: 0.5rem;
   height: 2rem;
@@ -774,12 +795,41 @@ body,
   font-weight: var(--ui-text-weight);
 }
 
-/* Editor CONTENT font: intentionally NOT set here. BlockNote styles its content
-   with `.bn-default-styles { font-family: Inter, … }`, and because our self-hosted
-   face is named 'Inter' (src/styles/inter-variable.css) that request resolves to
-   our full-subset variable font — Cyrillic/Greek/Vietnamese included. We rely on
-   the font *name* rather than overriding BlockNote's internal class, so nothing
-   breaks if that class is renamed upstream. */
+/* Editor CONTENT font. BlockNote styles its content with
+   `.bn-default-styles { font-family: Inter, … }` — a stack that resolves text to
+   our self-hosted 'Inter' by name (src/styles/inter-variable.css, full-subset:
+   Cyrillic/Greek/Vietnamese), but does NOT contain 'Twemoji', so emoji typed into
+   a note would fall through to the platform emoji font and mismatch the note
+   icons. We override the content stack with our shared --app-font (which is
+   'Inter'-first, so text is unaffected, and 'Twemoji' before the platform emoji
+   faces) so emoji in note bodies render from the same Twemoji font as everything
+   else. If BlockNote renames this class upstream the worst case is emoji
+   regressing to the platform font — text still resolves to Inter by name. NOTE:
+   BlockNote puts both classes on the SAME element (`class="bn-editor
+   bn-default-styles"`), so this is a COMPOUND selector (no space) — a descendant
+   `.bn-editor .bn-default-styles` matches nothing and silently leaves emoji on
+   the platform font (that was the bug). */
+.editor-pane .bn-editor.bn-default-styles {
+  /* 'TwemojiText' leads: it's the enlarged (size-adjust) emoji face, unicode-range
+     limited to emoji, so it wins for emoji in note bodies and renders them a touch
+     bigger than the surrounding text WITHOUT enlarging the text. Everything else
+     falls through to --app-font ('Inter'-first), so text is unchanged. */
+  font-family: 'TwemojiText', var(--app-font);
+}
+
+/* A note icon rendered as a Twemoji font glyph (NoteIcon.tsx). Box size + glyph
+   size come from inline `font-size`/`width`/`height` (derived from the caller's
+   size class) so the glyph exactly fills its square, centred; only the emoji
+   faces are named here so nothing but the emoji itself can render. */
+.twemoji-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 1;
+  font-style: normal;
+  font-family: 'Twemoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+}
 
 /* Scroll-past-end: a band of empty space at the very bottom of the note pane —
    AFTER the backlinks panel — so the last line (or the backlinks) can be
