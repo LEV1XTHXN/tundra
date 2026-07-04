@@ -27,6 +27,13 @@ const GRAPH_VIEW_CONFIG = "graph-view.json";
  *  are deliberately uniform dots, so scale/importance is shown by size, not color. */
 const NODE_COLOR = "#5b8def";
 
+/** Node sizing. Sigma v3 hit-tests via pixel-perfect WebGL color-picking, so a
+ *  node's clickable area == its drawn size (there's no separate hit radius). A
+ *  generous base therefore does double duty: bigger dots AND an easier click
+ *  target. Hubs grow on top via sqrt(degree) so very linked notes don't balloon. */
+const NODE_BASE_SIZE = 8;
+const NODE_DEGREE_SCALE = 2.5;
+
 /** Persisted graph view state (CLAUDE.md §5.2: `.vault/config/graph-view.json`).
  *  Camera position/zoom for now; filters/pinned positions are future extensions
  *  of this same document. */
@@ -73,7 +80,7 @@ export function GraphView() {
             label: node.title || "Untitled",
             x: Math.random(),
             y: Math.random(),
-            size: 4,
+            size: NODE_BASE_SIZE,
             color: NODE_COLOR,
           });
         }
@@ -93,7 +100,7 @@ export function GraphView() {
         // linked notes from ballooning).
         graph.forEachNode((node) => {
           const degree = graph.degree(node);
-          graph.setNodeAttribute(node, "size", 4 + Math.sqrt(degree) * 2);
+          graph.setNodeAttribute(node, "size", NODE_BASE_SIZE + Math.sqrt(degree) * NODE_DEGREE_SCALE);
         });
 
         sigma = new Sigma(graph, container, {
