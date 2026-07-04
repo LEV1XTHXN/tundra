@@ -52,7 +52,10 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn(
-          "top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0",
+          // Sit in the upper third instead of dead-center (the dialog wrapper
+          // now flex-centers by default): align to the top of the viewport and
+          // nudge down. No transform, so text stays crisp on WebKitGTK.
+          "self-start mt-[20vh] overflow-hidden rounded-xl! p-0",
           className
         )}
         showCloseButton={showCloseButton}

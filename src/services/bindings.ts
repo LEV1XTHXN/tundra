@@ -103,6 +103,18 @@ export const commands = {
 	 *  the FS counterpart of `read_vault_config`.
 	 */
 	writeVaultConfig: (name: string, contents: string) => typedError<null, CoreError>(__TAURI_INVOKE("write_vault_config", { name, contents })),
+	/**
+	 *  Read an app-scoped settings blob (a global preference that persists across
+	 *  vaults), or `None` if it hasn't been written yet. Returns the raw JSON string;
+	 *  the caller parses it (mirrors `read_vault_config`, but app- not vault-scoped).
+	 */
+	readAppSettings: (name: string) => typedError<string | null, CoreError>(__TAURI_INVOKE("read_app_settings", { name })),
+	/**
+	 *  Write an app-scoped settings blob atomically (temp file + rename, so a crash
+	 *  mid-write never truncates an existing file) — the FS counterpart of
+	 *  `read_app_settings`.
+	 */
+	writeAppSettings: (name: string, contents: string) => typedError<null, CoreError>(__TAURI_INVOKE("write_app_settings", { name, contents })),
 };
 
 /** Events */

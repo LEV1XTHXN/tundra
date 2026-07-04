@@ -766,6 +766,7 @@ body,
   flex-direction: column;
   overflow-y: auto;
   height: 100%;
+  position: relative;
   transition: padding-right 0.2s ease;
 }
 
@@ -1018,4 +1019,182 @@ body,
   padding: 0.6rem 0.9rem;
   border-radius: var(--radius-md);
   max-width: 60ch;
+}
+
+/* --- Settings button (sidebar) ------------------------------------------- */
+.settings-button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+/* --- Find in note -------------------------------------------------------- */
+/* Sticky so it stays pinned to the top of the scrolling editor pane. Sits
+   top-right; pushes content down only by its own height while open. */
+.find-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.4rem;
+  margin-bottom: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 10px oklch(0 0 0 / 12%);
+}
+
+.find-bar-input {
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  padding: 0.2rem 0.3rem;
+  min-width: 12rem;
+  outline: none;
+}
+
+.find-bar-count {
+  font-size: 0.8rem;
+  min-width: 3.5rem;
+  text-align: right;
+  padding-right: 0.2rem;
+}
+
+.find-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.find-bar-btn:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.find-bar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Match highlights live inside the editor, which is forced to a light theme
+   (see .editor-pane .bn-root), so fixed amber tones read well regardless of the
+   shell's light/dark mode. */
+.find-match {
+  background-color: rgba(250, 204, 21, 0.45);
+  border-radius: 2px;
+}
+
+.find-match-active {
+  background-color: rgba(249, 115, 22, 0.7);
+}
+
+/* --- Settings dialog ----------------------------------------------------- */
+.settings-body {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 1rem;
+  min-height: 20rem;
+}
+
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-right: 1px solid var(--border);
+  padding-right: 0.5rem;
+}
+
+.settings-rail-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.settings-rail-item:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.settings-rail-item.active {
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.settings-pane {
+  min-width: 0;
+}
+
+.keybindings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.keybindings-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.keybinding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.keybinding-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.keybinding-label {
+  font-weight: 500;
+}
+
+.keybinding-desc {
+  font-size: 0.8rem;
+}
+
+.keybinding-conflict {
+  font-size: 0.78rem;
+  color: var(--destructive);
+}
+
+.keybinding-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.keybinding-key {
+  min-width: 6.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.keybindings-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.25rem;
 }

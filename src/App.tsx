@@ -5,7 +5,7 @@
  * of data flows through the `services` layer.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRight } from "lucide-react";
+import { PanelRight, Settings } from "lucide-react";
 import { folders, notes, pickVaultFolder, tree as fetchTree, vault, watcher } from "./services";
 import type { CoreError, Icon, NoteSummary, TreeNode, VaultInfo } from "./services";
 import { NoteEditor } from "./editor/NoteEditor";
@@ -16,6 +16,9 @@ import { NoteInspector } from "./inspector/NoteInspector";
 import { QuickNoteView } from "./quicknotes/QuickNoteView";
 import { Home } from "./home/Home";
 import { useViewState, type AppView } from "./store/viewState";
+import { useKeybindings } from "./store/keybindings";
+import { matchCommand, formatBinding } from "./keybindings/binding";
+import { SettingsDialog } from "./settings/SettingsDialog";
 
 // The graph pulls in sigma + graphology (WebGL); code-split it so those only
 // load when the user actually opens the graph view (Phase 2 step 4: "views
@@ -63,6 +66,10 @@ export default function App() {
   const [noteSummaries, setNoteSummaries] = useState<Map<string, NoteSummary>>(new Map());
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Merged keybindings (defaults + persisted overrides) drive both the global
+  // shortcut dispatcher and the sidebar hint, so a rebind takes effect live.
+  const bindings = useKeybindings((s) => s.bindings);
   // Bumped when the open note is renamed from the tree, forcing NoteEditor to
   // remount and reload — it caches title locally, so an external rename
   // wouldn't otherwise be reflected until the user edited the title again
@@ -138,16 +145,10 @@ export default function App() {
     useLinkTitles.getState().setTitles(titles);
   }, [noteSummaries]);
 
-  // Phase 1 step 9: Ctrl+K / Cmd+K opens the search palette, from anywhere.
+  // Load the persisted keybinding overrides once on boot (before any shortcut
+  // can fire). Independent of the vault — preferences are app-scoped.
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setSearchOpen((open) => !open);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    void useKeybindings.getState().load();
   }, []);
 
   const openVaultAt = useCallback(
@@ -292,6 +293,34 @@ export default function App() {
     }
   }, [pendingDelete, openNoteId, refreshTree, setOpenNoteId]);
 
+  // Global shortcut dispatcher (app-level commands). Editor-scoped commands
+  // (find-in-note, note links) are handled inside NoteEditor; both listeners
+  // share the same `matchCommand` matcher and act only on their own ids.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      switch (matchCommand(e, bindings)) {
+        case "search.global":
+          e.preventDefault();
+          setSearchOpen((open) => !open);
+          break;
+        case "note.new":
+          e.preventDefault();
+          void onNewNote();
+          break;
+        case "inspector.toggle":
+          // Only meaningful for an open note in the editor view — same guard as
+          // the inspector toggle button below.
+          if (view === "editor" && openNoteId) {
+            e.preventDefault();
+            toggleInspector();
+          }
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [bindings, onNewNote, view, openNoteId, toggleInspector]);
+
   if (booting) {
     return <div className="centered muted">Loading…</div>;
   }
@@ -333,13 +362,16 @@ export default function App() {
         </div>
         <div className="sidebar-actions">
           <button className="new-note" onClick={() => setSearchOpen(true)}>
-            Search… <span className="muted">Ctrl+K</span>
+            Search… <span className="muted">{formatBinding(bindings["search.global"])}</span>
           </button>
           <button className="new-note" onClick={onNewNote}>
             + New note
           </button>
           <button className="new-note" onClick={onNewFolder}>
             + New folder
+          </button>
+          <button className="new-note settings-button" onClick={() => setSettingsOpen(true)}>
+            <Settings className="h-4 w-4" /> Settings
           </button>
         </div>
         <NavTree
@@ -420,6 +452,8 @@ export default function App() {
       {error && <div className="error toast">{error}</div>}
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>

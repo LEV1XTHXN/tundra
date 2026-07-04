@@ -26,6 +26,9 @@ import { NOTE_LINK_TYPE } from "./NoteLink";
 import { filterLinkCandidates } from "./linkMenu";
 import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { NoteLinkPicker } from "./NoteLinkPicker";
+import { FindBar } from "./FindBar";
+import { useKeybindings } from "@/store/keybindings";
+import { matchCommand } from "@/keybindings/binding";
 
 const DEBOUNCE_MS = 600;
 const MAX_WAIT_MS = 2500;
@@ -136,22 +139,33 @@ function LoadedNoteEditor({
     // WebKitGTK webview, so we dropped it in favour of the built-in path.)
   });
 
-  // Word → note linking (Phase 2 step 3): select text, press Ctrl/Cmd+Shift+K,
-  // pick a note; the selected word becomes a link whose display text is kept.
+  // Word → note linking (Phase 2 step 3): select text, run the `link.create`
+  // shortcut (default Ctrl+Shift+K), pick a note; the selected word becomes a
+  // link whose display text is kept.
   const [linkPicker, setLinkPicker] = useState<{ open: boolean; display: string }>({
     open: false,
     display: "",
   });
+  // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
+  const [findOpen, setFindOpen] = useState(false);
+  // The two editor-scoped shortcuts read their combos from the shared keybinding
+  // store (rebindable in Settings); App owns the global ones. Both listeners use
+  // the same `matchCommand` matcher and act only on their own command ids.
+  const bindings = useKeybindings((s) => s.bindings);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key.toLowerCase() === "k" && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+      const cmd = matchCommand(e, bindings);
+      if (cmd === "link.create") {
         e.preventDefault();
         setLinkPicker({ open: true, display: editor.getSelectedText() });
+      } else if (cmd === "search.inNote") {
+        e.preventDefault();
+        setFindOpen(true);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor]);
+  }, [editor, bindings]);
 
   // Manually typed / pasted `[[Title]]` → link node (bug fix). A title→target
   // lookup over the current summaries (case-insensitive, self excluded), so the
@@ -352,6 +366,7 @@ function LoadedNoteEditor({
 
   return (
     <div className="editor-pane">
+      {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
       {reconcile.kind === "dirty-conflict" && (
         <div className="reconcile-banner">
           <span>This note changed on disk while you had unsaved edits.</span>

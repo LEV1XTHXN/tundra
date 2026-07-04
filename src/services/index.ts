@@ -134,6 +134,33 @@ export const config = {
   },
 };
 
+/**
+ * App-scoped settings — global preferences that persist across vaults (e.g.
+ * keybindings, and later appearance). Owned by Rust and stored under the OS
+ * app-config dir (`settings/<name>.json`), NOT in the vault and NOT in
+ * `localStorage` (CLAUDE.md §4 blacklist; §5.1 App Data holds app config). Same
+ * raw-JSON-string boundary as `config`, but app- rather than vault-scoped.
+ */
+export const appSettings = {
+  /** The parsed settings named `name`, or `null` if never written / unreadable. */
+  async read<T>(name: string): Promise<T | null> {
+    const raw = await unwrap(commands.readAppSettings(name));
+    if (raw == null) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      // A corrupt settings file is treated as absent — preferences are always
+      // recoverable from defaults, never a source of truth, so fall back
+      // instead of throwing.
+      return null;
+    }
+  },
+  /** Persist `value` (JSON-serialized) as the settings named `name`, atomically via Rust. */
+  write(name: string, value: unknown): Promise<null> {
+    return unwrap(commands.writeAppSettings(name, JSON.stringify(value)));
+  },
+};
+
 /** Local full-text search (Phase 1 step 9) — the index lives under `.vault/cache/search/`. */
 export const search = {
   /** Ranked hits (id, title, snippet) for `query`, most relevant first. */
