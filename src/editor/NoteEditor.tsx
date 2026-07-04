@@ -25,7 +25,6 @@ import { editorSchema } from "./schema";
 import { NOTE_LINK_TYPE } from "./NoteLink";
 import { filterLinkCandidates } from "./linkMenu";
 import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
-import { BacklinksPanel } from "./BacklinksPanel";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 
 const DEBOUNCE_MS = 600;
@@ -375,7 +374,6 @@ function LoadedNoteEditor({
           scheduleSave();
         }}
         theme="light"
-        className="min-h-0 flex-1"
       >
         {/* `[[` opens a keyboard-driven menu of notes; selecting one inserts an
             id-backed link node. Added as a child, which keeps BlockNote's
@@ -411,10 +409,13 @@ function LoadedNoteEditor({
           ]);
         }}
       />
-      <BacklinksPanel noteId={note.id} vaultPath={vaultPath} refreshKey={noteSummaries} />
       <div className="status muted">
         {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
       </div>
+      {/* Scroll-past-end room, BELOW the backlinks panel — lets the last line (or
+          the backlinks) rise toward the top without burying the panel (which the
+          old in-editor `padding-bottom: 60vh` did). */}
+      <div className="editor-tail-space" aria-hidden="true" />
     </div>
   );
 }

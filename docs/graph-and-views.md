@@ -67,6 +67,22 @@ the atomic-write temp file can't be created and the write errors before it can
 touch the existing file. Portable, and it still proves the guarantee (no `.tmp`
 left behind, prior version intact).
 
+## Note metadata inspector
+
+`src/inspector/NoteInspector.tsx` is a collapsible right-hand drawer for note
+*metadata* (as opposed to content): word/character counts, outgoing-link count,
+created/modified dates, and the **backlinks list** (moved here out of the editor
+body — it used to sit below the note, buried under the editor's `60vh`
+scroll-past-end padding). Toggled from a floating button in the editor view;
+open/closed state is UI-only (`useViewState.inspectorOpen`, defaults closed).
+
+The drawer is absolutely positioned inside `.main-pane` and slid off the right
+edge (`transform: translateX(100%)`) when closed, so it costs no layout space
+until opened; when open, `.main-pane.inspector-open` shifts the editor content
+left of the 300px drawer. Stats come from `noteStats()` (`src/editor/noteStats.ts`,
+a pure block-tree walk); it fetches only while open. Add new metadata fields as
+rows in the "Details" `<dl>` or as new `<section>`s — it's built to grow.
+
 ## Typed `[[Title]]` links
 
 The `[[` suggestion menu is the primary way to author links, but a user can also

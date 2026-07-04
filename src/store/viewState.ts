@@ -24,6 +24,12 @@ interface ViewState {
 
   expandedFolders: ReadonlySet<string>;
   toggleFolder: (path: string) => void;
+
+  /** Whether the right-hand note-metadata inspector (backlinks, stats…) is open.
+   *  UI-only preference; defaults closed so it never eats screen space unasked. */
+  inspectorOpen: boolean;
+  setInspectorOpen: (open: boolean) => void;
+  toggleInspector: () => void;
 }
 
 export const useViewState = create<ViewState>((set) => ({
@@ -46,4 +52,8 @@ export const useViewState = create<ViewState>((set) => ({
       }
       return { expandedFolders: next };
     }),
+
+  inspectorOpen: false,
+  setInspectorOpen: (open) => set({ inspectorOpen: open }),
+  toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
 }));

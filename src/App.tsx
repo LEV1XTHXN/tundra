@@ -5,12 +5,14 @@
  * of data flows through the `services` layer.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelRight } from "lucide-react";
 import { folders, notes, pickVaultFolder, tree as fetchTree, vault, watcher } from "./services";
 import type { CoreError, Icon, NoteSummary, TreeNode, VaultInfo } from "./services";
 import { NoteEditor } from "./editor/NoteEditor";
 import { NavTree } from "./nav/NavTree";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
+import { NoteInspector } from "./inspector/NoteInspector";
 import { useViewState, type AppView } from "./store/viewState";
 
 // The graph pulls in sigma + graphology (WebGL); code-split it so those only
@@ -76,6 +78,9 @@ export default function App() {
   // Opening a note always lands in the editor view, wherever it was triggered
   // from (nav click, search, new-note, graph click).
   const openNote = useViewState((s) => s.openNote);
+  const inspectorOpen = useViewState((s) => s.inspectorOpen);
+  const toggleInspector = useViewState((s) => s.toggleInspector);
+  const setInspectorOpen = useViewState((s) => s.setInspectorOpen);
 
   const refreshTree = useCallback(async () => {
     const [t, list] = await Promise.all([fetchTree(), notes.list()]);
@@ -352,7 +357,7 @@ export default function App() {
         />
       </aside>
 
-      <main className="main-pane">
+      <main className={`main-pane${view === "editor" && openNoteId && inspectorOpen ? " inspector-open" : ""}`}>
         {view === "editor" &&
           (openNoteId ? (
             <NoteEditor
@@ -379,6 +384,30 @@ export default function App() {
           <div className="centered muted">Quick notes — coming in the next step.</div>
         )}
         {view === "home" && <div className="centered muted">Home dashboard — coming soon.</div>}
+
+        {/* Note-metadata inspector — a collapsible right drawer, only meaningful
+            for an open note in the editor view. Slides off-screen when closed. */}
+        {view === "editor" && openNoteId && (
+          <>
+            {!inspectorOpen && (
+              <button
+                className="inspector-toggle"
+                onClick={toggleInspector}
+                title="Note info"
+                aria-label="Open note info panel"
+              >
+                <PanelRight className="h-4 w-4" />
+              </button>
+            )}
+            <NoteInspector
+              noteId={openNoteId}
+              vaultPath={vaultInfo.path}
+              refreshKey={noteSummaries}
+              open={inspectorOpen}
+              onClose={() => setInspectorOpen(false)}
+            />
+          </>
+        )}
       </main>
 
       {error && <div className="error toast">{error}</div>}
