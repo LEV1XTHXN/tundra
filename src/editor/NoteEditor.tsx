@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pin } from "lucide-react";
 import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
-import "@blocknote/core/fonts/inter.css";
 import "@blocknote/shadcn/style.css";
 
 import { attachments, notes, watcher } from "@/services";

@@ -2,15 +2,70 @@
 
 ## The font
 
-The whole app uses **Inter (variable)** — `@fontsource-variable/inter`, family
-`'Inter Variable'`, set as `--font-sans` in `src/index.css`. BlockNote's editor
-already defaults to an Inter stack, so using Inter in the shell too means the
-shell and the editing surface match instead of mixing two typefaces.
+The whole app uses **Inter (variable)**, self-hosted under the family name
+**`'Inter'`**, exposed as the `--app-font` stack and set as `--font-sans` in
+`src/index.css`. `--app-font` is `'Inter'` first, then
+`system-ui`/`Noto Sans`/`sans-serif` and emoji fallbacks. Inter covers Latin,
+Latin-ext, **Cyrillic(-ext)**, Greek(-ext) and Vietnamese — so Russian/Ukrainian/
+Greek/Vietnamese/accented-Latin all render in Inter. Scripts Inter lacks (CJK,
+Arabic, Hebrew, Thai, Indic…) fall back to the platform UI font.
 
-We point BlockNote at the *same* variable instance via
-`--bn-font-family: 'Inter Variable'` on `.editor-pane .bn-root`, because
-BlockNote bundles only a **static** Inter (weight 400) — without this override the
-editor couldn't take the weight nudge below.
+### ⚠️ The editor content is styled by BlockNote's `.bn-default-styles`, not `--bn-font-family`
+
+This one cost real debugging time. BlockNote applies **two** different font hooks:
+
+- `.bn-root { font-family: var(--bn-font-family) }` — the editor chrome/menus.
+- `.bn-default-styles { font-family: Inter, "SF Pro Display", …, Cantarell, …, sans-serif }`
+  — the actual **editor content**. This is a **hardcoded** stack that asks for the
+  literal family name **`Inter`** and does **not** read `--bn-font-family`.
+
+So overriding `--bn-font-family` alone leaves the *content* untouched. If our
+self-hosted face is named anything other than `Inter` (we first tried
+`'Inter Variable'`), the content's exact request for `Inter` doesn't match it and
+falls through to the system fallback — on Fedora, `fc-match Inter` → **Noto Sans**
+(and menus → Cantarell). Because Noto and Inter are nearly identical by eye, this
+looked like "Cyrillic uses the old font" while the shell (which uses `--app-font`)
+rendered Inter correctly — a very confusing split.
+
+**The fix is to give BlockNote the font it already asks for — by *name*, not by
+override.** In `src/styles/inter-variable.css` the self-hosted `@font-face` faces
+are named plain **`'Inter'`**. Then every consumer resolves to our full-subset
+variable font through its *own* defaults, with no reaching into BlockNote internals:
+
+- **Shell** — `--app-font` leads with `'Inter'`.
+- **Editor chrome** (menus/placeholders) — we set BlockNote's *public* theming
+  variable `--bn-font-family: var(--app-font)` on `.bn-root`, so its fallback chain
+  matches the shell.
+- **Editor content** — BlockNote's own `.bn-default-styles { font-family: Inter, … }`
+  now resolves to our `'Inter'` by name. We deliberately do **not** override that
+  internal class, so a BlockNote upgrade that renames it can't break us.
+
+This also replaces BlockNote's bundled latin-only static `"Inter"`, which we no
+longer import.
+
+### Loading the woff2 (self-hosted, offline-first)
+
+Being a local-first app, we vendor the font rather than depend on a CDN or a
+package's CSS. The 7 subset woff2 files live in `public/fonts/inter/` (committed to
+the repo) and are declared in `src/styles/inter-variable.css` with the standard
+**`format('woff2')`** hint and `font-weight: 100 900` (keeps the variable weight
+axis for the 450 nudge). `@fontsource-variable/inter` is kept only as a
+**devDependency** — the *source* we copied those files from; nothing imports it at
+runtime. Regenerate by re-copying `files/*.woff2` if the version bumps, keeping the
+family name `'Inter'`.
+
+Two reasons we don't just `import '@fontsource-variable/inter'`: (1) it registers the
+family as `'Inter Variable'`, the wrong name for BlockNote (see above); and (2) its
+CSS declares `format('woff2-variations')` — a hint some WebKitGTK builds don't
+recognize. Self-hosting with the plain `format('woff2')` hint and our own family
+name sidesteps both, and absolute `/fonts/...` paths are served verbatim by Vite in
+dev *and* build (a node_modules bare-specifier `url()` resolves at build but not in
+Vite's dev server).
+
+> Verifying without eyeballing: Inter vs Noto Sans are visually near-identical, so
+> screenshot comparison is unreliable. To check which font actually rendered, measure
+> real text width against forced `'Inter'` vs `'Noto Sans'` spans, or use the
+> weight-axis trick (only the variable font gets narrower at `font-weight: 100`).
 
 > History: the shell was originally Geist (variable). It was swapped to Inter
 > because Geist rendered noticeably thin on WebKitGTK and clashed with the

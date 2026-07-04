@@ -10,7 +10,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
-import "@blocknote/core/fonts/inter.css";
 import "@blocknote/shadcn/style.css";
 
 import { attachments, quickNote } from "@/services";
