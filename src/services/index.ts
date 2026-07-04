@@ -94,6 +94,33 @@ export const links = {
   rebuild: (): Promise<null> => unwrap(commands.rebuildGraph()),
 };
 
+/**
+ * Vault-scoped UI config (Phase 2 step 4+) — small JSON documents under
+ * `.vault/config/` owned by Rust, NOT `localStorage` (CLAUDE.md §4 blacklist;
+ * §5.2 `.vault/config` MAY sync). The graph view persists its settings here
+ * (`graph-view.json`); the home dashboard layout follows in step 6 (`home.json`).
+ * The boundary is a raw JSON string; `read`/`write` handle (de)serialization so
+ * callers work with typed values.
+ */
+export const config = {
+  /** The parsed config named `name`, or `null` if it was never written / is unreadable. */
+  async read<T>(name: string): Promise<T | null> {
+    const raw = await unwrap(commands.readVaultConfig(name));
+    if (raw == null) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      // A corrupt config file is treated as absent — it's rebuildable UI state,
+      // never a source of truth, so we fall back to defaults instead of throwing.
+      return null;
+    }
+  },
+  /** Persist `value` (JSON-serialized) as the config named `name`, atomically via Rust. */
+  write(name: string, value: unknown): Promise<null> {
+    return unwrap(commands.writeVaultConfig(name, JSON.stringify(value)));
+  },
+};
+
 /** Local full-text search (Phase 1 step 9) — the index lives under `.vault/cache/search/`. */
 export const search = {
   /** Ranked hits (id, title, snippet) for `query`, most relevant first. */

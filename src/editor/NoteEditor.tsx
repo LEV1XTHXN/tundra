@@ -7,7 +7,7 @@
  * goes through the `services` layer; this module never imports
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/core/fonts/inter.css";
@@ -24,6 +24,7 @@ import { decideReconciliation } from "./reconcile";
 import { editorSchema } from "./schema";
 import { NOTE_LINK_TYPE } from "./NoteLink";
 import { filterLinkCandidates } from "./linkMenu";
+import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 
@@ -152,6 +153,46 @@ function LoadedNoteEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor]);
+
+  // Manually typed / pasted `[[Title]]` → link node (bug fix). A title→target
+  // lookup over the current summaries (case-insensitive, self excluded), so the
+  // converter captures the target's id + real title once, exactly like the menu.
+  const titleToTarget = useMemo(() => {
+    const map = new Map<string, LinkTarget>();
+    noteSummaries.forEach((s) => {
+      if (s.id === note.id) return; // no self-links
+      const key = s.title.trim().toLowerCase();
+      if (key && !map.has(key)) map.set(key, { id: s.id, title: s.title });
+    });
+    return map;
+  }, [noteSummaries, note.id]);
+
+  // Guards against the re-entrant onChange that `updateBlock` itself fires while
+  // we're mid-conversion (which would otherwise recurse before converging).
+  const convertingRef = useRef(false);
+
+  function maybeConvertTypedLinks() {
+    if (convertingRef.current) return;
+    const block = editor.getTextCursorPosition().block;
+    const content = block.content;
+    // Only inline-content blocks (paragraph/heading/list item…); table content
+    // and the like isn't a flat inline array — skip it.
+    if (!Array.isArray(content)) return;
+    const { changed, content: next } = convertTypedLinks(
+      content as unknown as Inline[],
+      (t) => titleToTarget.get(t.toLowerCase()),
+      NOTE_LINK_TYPE,
+    );
+    if (!changed) return;
+    convertingRef.current = true;
+    try {
+      editor.updateBlock(block, { content: next as never });
+      // Keep typing flowing after the atomic link (and its trailing space).
+      editor.setTextCursorPosition(block, "end");
+    } finally {
+      convertingRef.current = false;
+    }
+  }
 
   const [title, setTitle] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
@@ -327,7 +368,12 @@ function LoadedNoteEditor({
       </div>
       <BlockNoteView
         editor={editor}
-        onChange={scheduleSave}
+        onChange={() => {
+          // Upgrade any just-completed `[[Title]]` to a link before saving, so
+          // the persisted block tree carries the id-backed node, not literal text.
+          maybeConvertTypedLinks();
+          scheduleSave();
+        }}
         theme="light"
         className="min-h-0 flex-1"
       >

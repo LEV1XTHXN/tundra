@@ -606,6 +606,58 @@ impl Vault {
         Ok(self.rel_to_root(&dest))
     }
 
+    /// Read a vault-scoped config file under `.vault/config/<name>`, returning
+    /// its raw contents (a JSON string the caller parses) or `None` if it
+    /// doesn't exist yet. Vault-scoped UI state — graph view settings
+    /// (`graph-view.json`, Phase 2 step 4), the home dashboard layout
+    /// (`home.json`, step 6) — lives here, NOT in `localStorage` (CLAUDE.md
+    /// §4 blacklist; §5.2 `.vault/config` MAY sync). `name` is validated to a
+    /// bare filename so an untrusted caller can't escape the config directory.
+    pub fn read_config(&self, name: &str) -> Result<Option<String>> {
+        let path = self.config_path(name)?;
+        match fs::read_to_string(&path) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Write a vault-scoped config file under `.vault/config/<name>` atomically
+    /// (temp file + rename), same durability discipline as note writes — config
+    /// is small but a torn write would still corrupt a user's layout/settings.
+    pub fn write_config(&self, name: &str, contents: &str) -> Result<()> {
+        let path = self.config_path(name)?;
+        let dir = path
+            .parent()
+            .ok_or_else(|| CoreError::Vault("config path has no parent directory".into()))?;
+        fs::create_dir_all(dir)?;
+
+        let mut tmp = tempfile::Builder::new()
+            .prefix(".cfg-tmp-")
+            .tempfile_in(dir)?;
+        tmp.write_all(contents.as_bytes())?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(&path).map_err(|e| CoreError::Io(e.to_string()))?;
+        sync_dir(dir);
+        Ok(())
+    }
+
+    /// Resolve `.vault/config/<name>`, rejecting anything that isn't a bare
+    /// filename (no separators, no `..`, no absolute paths) so a config `name`
+    /// crossing the IPC boundary can never traverse out of the config dir.
+    fn config_path(&self, name: &str) -> Result<PathBuf> {
+        let ok = !name.is_empty()
+            && name != "."
+            && name != ".."
+            && !name.contains('/')
+            && !name.contains('\\')
+            && !name.contains('\0');
+        if !ok {
+            return Err(CoreError::Vault(format!("invalid config name: {name:?}")));
+        }
+        Ok(self.root.join(".vault/config").join(name))
+    }
+
     /// Reconcile a single raw filesystem path inside `notes/` that changed —
     /// already confirmed not to be one of this vault's own writes (see
     /// `consume_self_write`) — against the in-memory index, updating it and
@@ -1011,24 +1063,28 @@ mod tests {
         let path = dir.join("notes").join(format!("{}.json", slugify("Fragile")));
         assert!(path.exists());
 
-        // Force the replace step of the next write to fail (simulating a
-        // crash partway through): the temp file is written and fsynced fine,
-        // but the atomic replace over a read-only target is not.
-        let mut perms = fs::metadata(&path).unwrap().permissions();
+        // Force the next write to fail (simulating a crash partway through) by
+        // making the note's PARENT DIRECTORY read-only: the atomic-write temp
+        // file can't be created in it, so the write errors before it can touch
+        // the existing file. Marking the target *file* read-only wouldn't do it
+        // — on POSIX a rename/replace only needs write permission on the parent
+        // directory, so the replace would succeed and the file would change.
+        let parent = path.parent().unwrap();
+        let mut perms = fs::metadata(parent).unwrap().permissions();
         perms.set_readonly(true);
-        fs::set_permissions(&path, perms).unwrap();
+        fs::set_permissions(parent, perms).unwrap();
 
         let mut edited = note.clone();
         edited.title = "Should not persist".to_string();
         let result = vault.save_note(edited);
 
-        let mut perms = fs::metadata(&path).unwrap().permissions();
+        let mut perms = fs::metadata(parent).unwrap().permissions();
         perms.set_readonly(false);
-        fs::set_permissions(&path, perms).unwrap();
+        fs::set_permissions(parent, perms).unwrap();
 
         assert!(
             result.is_err(),
-            "expected the replace step to fail against a read-only target"
+            "expected the write to fail when the notes directory is read-only"
         );
 
         for entry in std::fs::read_dir(dir.join("notes")).unwrap() {
@@ -1318,6 +1374,36 @@ mod tests {
             &serde_json::json!([{ "type": "text", "text": "hello\n# world", "styles": {} }]),
             "the legacy string text must be preserved as an inline text node"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn config_round_trips_and_rejects_traversal() {
+        let (vault, dir) = temp_vault();
+
+        // Missing config reads as None (not an error).
+        assert!(vault.read_config("graph-view.json").unwrap().is_none());
+
+        // Write then read back the exact contents, landing under .vault/config/.
+        vault
+            .write_config("graph-view.json", r#"{"ratio":1.5}"#)
+            .unwrap();
+        assert_eq!(
+            vault.read_config("graph-view.json").unwrap().as_deref(),
+            Some(r#"{"ratio":1.5}"#)
+        );
+        assert!(dir.join(".vault/config/graph-view.json").is_file());
+
+        // Overwrite is atomic and replaces cleanly.
+        vault.write_config("graph-view.json", "{}").unwrap();
+        assert_eq!(vault.read_config("graph-view.json").unwrap().as_deref(), Some("{}"));
+
+        // A name that tries to escape the config dir is rejected, on read AND write.
+        for bad in ["../secret", "a/b", "..", "", ".\\evil"] {
+            assert!(vault.read_config(bad).is_err(), "read must reject {bad:?}");
+            assert!(vault.write_config(bad, "x").is_err(), "write must reject {bad:?}");
+        }
+
         std::fs::remove_dir_all(&dir).ok();
     }
 

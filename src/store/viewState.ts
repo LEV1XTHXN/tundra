@@ -1,10 +1,24 @@
 import { create } from "zustand";
 
 /**
+ * The top-level view the shell is showing (Phase 2 step 4). The editor/nav are
+ * the note-editing view; graph, quick notes, and home are peers switched via the
+ * shell's view switcher. `quicknotes` and `home` are wired in steps 5–6.
+ */
+export type AppView = "editor" | "graph" | "quicknotes" | "home";
+
+/**
  * UI view state ONLY (CLAUDE.md §8.5 / Phase 1 preamble: zustand holds view
- * state — open note id, expanded folders, theme — never note content).
+ * state — open note id, expanded folders, current view — never note content).
  */
 interface ViewState {
+  /** Which top-level view is active in the shell. */
+  view: AppView;
+  setView: (view: AppView) => void;
+  /** Open a note AND switch to the editor view — used by the graph's
+   *  click-to-open and anything else that navigates to a note from another view. */
+  openNote: (id: string) => void;
+
   openNoteId: string | null;
   setOpenNoteId: (id: string | null) => void;
 
@@ -13,6 +27,11 @@ interface ViewState {
 }
 
 export const useViewState = create<ViewState>((set) => ({
+  // Step 4 lands on the editor; step 6 makes Home the default landing view.
+  view: "editor",
+  setView: (view) => set({ view }),
+  openNote: (id) => set({ openNoteId: id, view: "editor" }),
+
   openNoteId: null,
   setOpenNoteId: (id) => set({ openNoteId: id }),
 

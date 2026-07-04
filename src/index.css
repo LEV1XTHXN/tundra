@@ -238,6 +238,37 @@ body,
   text-overflow: ellipsis;
 }
 
+/* Top-level view switcher (Phase 2 step 4) — a compact segmented control at the
+   top of the sidebar; Home / Notes / Graph / Quick. */
+.view-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--secondary);
+  border-radius: var(--radius-md);
+}
+
+.view-switcher-tab {
+  flex: 1;
+  padding: 0.3rem 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.view-switcher-tab:hover {
+  color: var(--foreground);
+}
+
+.view-switcher-tab.active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
 .sidebar-actions {
   display: flex;
   flex-direction: column;
@@ -353,9 +384,30 @@ body,
   outline-offset: -1px;
 }
 
+/* The swappable main pane (Phase 2 step 4) — holds the active view (editor,
+   graph, quick notes, home). Positioned so a full-bleed view (the graph) can
+   fill it absolutely. */
+.main-pane {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .editor-pane-wrap {
   min-height: 0;
   overflow: hidden;
+}
+
+/* Graph view — sigma owns the canvas; give it the whole pane. */
+.graph-view {
+  position: absolute;
+  inset: 0;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  background: var(--background);
 }
 
 .editor-header {

@@ -79,6 +79,19 @@ export const commands = {
 	 *  cache is derived/rebuildable).
 	 */
 	rebuildGraph: () => typedError<null, CoreError>(__TAURI_INVOKE("rebuild_graph")),
+	/**
+	 *  Read a vault-scoped config file under `.vault/config/<name>` (Phase 2 step 4:
+	 *  graph view settings; step 6: home dashboard layout). Returns the raw JSON
+	 *  string, or `None` if it hasn't been written yet — the caller parses it. This
+	 *  keeps vault UI state out of `localStorage` and in the vault where it can sync
+	 *  (CLAUDE.md §4/§5.2).
+	 */
+	readVaultConfig: (name: string) => typedError<string | null, CoreError>(__TAURI_INVOKE("read_vault_config", { name })),
+	/**
+	 *  Write a vault-scoped config file under `.vault/config/<name>` atomically —
+	 *  the FS counterpart of `read_vault_config`.
+	 */
+	writeVaultConfig: (name: string, contents: string) => typedError<null, CoreError>(__TAURI_INVOKE("write_vault_config", { name, contents })),
 };
 
 /** Events */

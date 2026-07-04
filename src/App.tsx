@@ -4,14 +4,27 @@
  * window.confirm). React only renders and dispatches user actions; every bit
  * of data flows through the `services` layer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { folders, notes, pickVaultFolder, tree as fetchTree, vault, watcher } from "./services";
 import type { CoreError, Icon, NoteSummary, TreeNode, VaultInfo } from "./services";
 import { NoteEditor } from "./editor/NoteEditor";
 import { NavTree } from "./nav/NavTree";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
-import { useViewState } from "./store/viewState";
+import { useViewState, type AppView } from "./store/viewState";
+
+// The graph pulls in sigma + graphology (WebGL); code-split it so those only
+// load when the user actually opens the graph view (Phase 2 step 4: "views
+// mount lazily").
+const GraphView = lazy(() => import("./graph/GraphView").then((m) => ({ default: m.GraphView })));
+
+/** The top-level views reachable from the shell switcher, in display order. */
+const VIEWS: { id: AppView; label: string }[] = [
+  { id: "home", label: "Home" },
+  { id: "editor", label: "Notes" },
+  { id: "graph", label: "Graph" },
+  { id: "quicknotes", label: "Quick" },
+];
 import { useLinkTitles } from "./store/linkTitles";
 import {
   AlertDialog,
@@ -58,6 +71,11 @@ export default function App() {
   const setOpenNoteId = useViewState((s) => s.setOpenNoteId);
   const expandedFolders = useViewState((s) => s.expandedFolders);
   const toggleFolder = useViewState((s) => s.toggleFolder);
+  const view = useViewState((s) => s.view);
+  const setView = useViewState((s) => s.setView);
+  // Opening a note always lands in the editor view, wherever it was triggered
+  // from (nav click, search, new-note, graph click).
+  const openNote = useViewState((s) => s.openNote);
 
   const refreshTree = useCallback(async () => {
     const [t, list] = await Promise.all([fetchTree(), notes.list()]);
@@ -156,11 +174,11 @@ export default function App() {
     try {
       const note = await notes.createIn("Untitled", selectedFolder);
       await refreshTree();
-      setOpenNoteId(note.id);
+      openNote(note.id);
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [selectedFolder, refreshTree, setOpenNoteId]);
+  }, [selectedFolder, refreshTree, openNote]);
 
   const onNewFolder = useCallback(async () => {
     const name = window.prompt("New folder name")?.trim();
@@ -293,6 +311,19 @@ export default function App() {
         <div className="vault-name" title={vaultInfo.path}>
           {vaultInfo.name}
         </div>
+        <div className="view-switcher" role="tablist" aria-label="Views">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              role="tab"
+              aria-selected={view === v.id}
+              className={`view-switcher-tab${view === v.id ? " active" : ""}`}
+              onClick={() => setView(v.id)}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
         <div className="sidebar-actions">
           <button className="new-note" onClick={() => setSearchOpen(true)}>
             Search… <span className="muted">Ctrl+K</span>
@@ -310,7 +341,7 @@ export default function App() {
           openNoteId={openNoteId}
           expandedFolders={expandedFolders}
           onToggleFolder={toggleFolder}
-          onSelectNote={setOpenNoteId}
+          onSelectNote={openNote}
           onMoveNote={onMoveNote}
           onMoveFolder={onMoveFolder}
           onRenameNote={onRenameNote}
@@ -321,25 +352,38 @@ export default function App() {
         />
       </aside>
 
-      <main className="editor-pane-wrap">
-        {openNoteId ? (
-          <NoteEditor
-            key={`${openNoteId}:${editorRefreshToken}`}
-            noteId={openNoteId}
-            vaultPath={vaultInfo.path}
-            noteSummaries={noteSummaries}
-            onError={setError}
-            onSaved={refreshTree}
-            onNeedsReload={() => setEditorRefreshToken((t) => t + 1)}
-          />
-        ) : (
-          <div className="centered muted">Select or create a note.</div>
+      <main className="main-pane">
+        {view === "editor" &&
+          (openNoteId ? (
+            <NoteEditor
+              key={`${openNoteId}:${editorRefreshToken}`}
+              noteId={openNoteId}
+              vaultPath={vaultInfo.path}
+              noteSummaries={noteSummaries}
+              onError={setError}
+              onSaved={refreshTree}
+              onNeedsReload={() => setEditorRefreshToken((t) => t + 1)}
+            />
+          ) : (
+            <div className="centered muted">Select or create a note.</div>
+          ))}
+
+        {view === "graph" && (
+          <Suspense fallback={<div className="centered muted">Loading graph…</div>}>
+            <GraphView />
+          </Suspense>
         )}
+
+        {/* Quick notes (step 5) and Home (step 6) are placeholders for now. */}
+        {view === "quicknotes" && (
+          <div className="centered muted">Quick notes — coming in the next step.</div>
+        )}
+        {view === "home" && <div className="centered muted">Home dashboard — coming soon.</div>}
       </main>
 
       {error && <div className="error toast">{error}</div>}
 
-      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={setOpenNoteId} />
+      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>

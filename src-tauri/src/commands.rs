@@ -364,6 +364,29 @@ pub fn rebuild_graph(state: State<AppState>) -> Result<(), CoreError> {
     current_links(&state)?.rebuild(&current(&state)?)
 }
 
+/// Read a vault-scoped config file under `.vault/config/<name>` (Phase 2 step 4:
+/// graph view settings; step 6: home dashboard layout). Returns the raw JSON
+/// string, or `None` if it hasn't been written yet — the caller parses it. This
+/// keeps vault UI state out of `localStorage` and in the vault where it can sync
+/// (CLAUDE.md §4/§5.2).
+#[tauri::command]
+#[specta::specta]
+pub fn read_vault_config(state: State<AppState>, name: String) -> Result<Option<String>, CoreError> {
+    current(&state)?.read_config(&name)
+}
+
+/// Write a vault-scoped config file under `.vault/config/<name>` atomically —
+/// the FS counterpart of `read_vault_config`.
+#[tauri::command]
+#[specta::specta]
+pub fn write_vault_config(
+    state: State<AppState>,
+    name: String,
+    contents: String,
+) -> Result<(), CoreError> {
+    current(&state)?.write_config(&name, &contents)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

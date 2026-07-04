@@ -63,6 +63,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::graph_data,
             commands::resolve_titles,
             commands::rebuild_graph,
+            commands::read_vault_config,
+            commands::write_vault_config,
         ])
         .events(collect_events![events::TreeChanged, events::NoteChangedExternally])
 }
