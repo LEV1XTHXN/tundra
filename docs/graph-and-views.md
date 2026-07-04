@@ -67,6 +67,39 @@ the atomic-write temp file can't be created and the write errors before it can
 touch the existing file. Portable, and it still proves the guarantee (no `.tmp`
 left behind, prior version intact).
 
+## Quick notes — a single scratchpad
+
+Quick notes (Phase 2 step 5) are **one** always-there scratchpad for fast idea
+capture — **not** vault notes. The single document lives in its own file at the
+vault root (`quicknote.json`, outside `notes/`), so it never appears in nav,
+search, links, or the graph; the note index doesn't know about it. Rust:
+`Vault::read_quick_note` (returns a fresh empty note until first save) /
+`save_quick_note` (atomic write, no index update) → commands `read_quick_note` /
+`save_quick_note`. It reuses the `Note` block model but is deliberately kept out
+of the index.
+
+Frontend `QuickNoteView` (`src/quicknotes/`) is a **trimmed** editor
+(`quickNoteSchema`: basic text, all list kinds, attachments — but **no** custom
+`noteLink` inline content, so `[[` does nothing, and no `heading`/`table`),
+autosaved to `services.quickNote`. No title/icon/backlinks/inspector — write fast,
+organize into real notes later. The idea: dump thoughts here without spawning
+notes, then move the keepers into the vault.
+
+## Home dashboard (configurable widgets)
+
+Home (Phase 2 step 6) is the **default landing view** (`useViewState.view` starts
+`"home"`). `src/home/` is a dashboard of user-configurable widgets — **Pinned**
+(`meta.pinned`), **Recent** (by `modified`), **Quick capture** (appends to the
+quick-note scratchpad). Widgets can be added, removed, and reordered (up/down);
+the ordered layout is vault-scoped UI state persisted to `.vault/config/home.json`
+**through Rust** via the step-4 `services.config` (`read`/`write`), never
+localStorage. Each widget is self-contained and reads its data via `services`.
+
+Pinning is surfaced by mirroring `NoteMeta::pinned` onto `NoteSummary` (`pinned`,
+populated in every summary site) so the Pinned widget filters without re-reading
+files; pin/unpin is the pin button in the note editor header (a normal
+`save_note` with `meta.pinned` flipped).
+
 ## Note metadata inspector
 
 `src/inspector/NoteInspector.tsx` is a collapsible right-hand drawer for note

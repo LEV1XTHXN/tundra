@@ -78,6 +78,19 @@ export const folders = {
 export const tree = (): Promise<TreeNode[]> => unwrap(commands.listTree());
 
 /**
+ * The single quick-note scratchpad (Phase 2 step 5) — a fast-capture space kept
+ * OUTSIDE the notes tree (its own file at the vault root), so it never appears in
+ * nav, search, links, or the graph. One document, always there; jot ideas here
+ * and move them into real notes later.
+ */
+export const quickNote = {
+  /** Read the scratchpad (a fresh empty note if nothing's been captured yet). */
+  read: (): Promise<Note> => unwrap(commands.readQuickNote()),
+  /** Persist the scratchpad. */
+  save: (note: Note): Promise<null> => unwrap(commands.saveQuickNote(note)),
+};
+
+/**
  * Inter-note links & graph (Phase 2 step 2) — all derived by the Rust `links`
  * module from id-backed link nodes in the block tree. Links survive rename/move
  * because identity is the note's UUID; `resolveTitles` gives the CURRENT title

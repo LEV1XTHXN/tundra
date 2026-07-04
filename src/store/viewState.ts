@@ -33,8 +33,8 @@ interface ViewState {
 }
 
 export const useViewState = create<ViewState>((set) => ({
-  // Step 4 lands on the editor; step 6 makes Home the default landing view.
-  view: "editor",
+  // Home is the landing view (Phase 2 step 6).
+  view: "home",
   setView: (view) => set({ view }),
   openNote: (id) => set({ openNoteId: id, view: "editor" }),
 

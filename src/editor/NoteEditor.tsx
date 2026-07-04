@@ -8,6 +8,7 @@
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Pin } from "lucide-react";
 import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/core/fonts/inter.css";
@@ -195,6 +196,7 @@ function LoadedNoteEditor({
 
   const [title, setTitle] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
+  const [pinned, setPinned] = useState<boolean>(note.meta?.pinned ?? false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [reconcile, setReconcile] = useState<ReturnType<typeof decideReconciliation>>({ kind: "none" });
 
@@ -284,6 +286,29 @@ function LoadedNoteEditor({
     }
   }
 
+  // Pin/unpin (Phase 2 step 6): a discrete meta change, saved immediately like
+  // the icon. Drives the Home dashboard's Pinned widget.
+  async function togglePin() {
+    const next = !pinned;
+    setSaveState("saving");
+    try {
+      const current = noteRef.current;
+      const updated: Note = {
+        ...current,
+        title: titleRef.current,
+        blocks: editor.document as unknown as Note["blocks"],
+        meta: { ...(current.meta ?? { pinned: false, tags: [] }), pinned: next },
+      };
+      await notes.save(updated);
+      noteRef.current = updated;
+      setPinned(next);
+      setSaveState("saved");
+      onSaved?.();
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
   // Step 8: react to this specific note changing on disk for a reason other
   // than our own save (the self-write filter already excludes those).
   useEffect(() => {
@@ -364,6 +389,14 @@ function LoadedNoteEditor({
             scheduleSave();
           }}
         />
+        <button
+          className={`editor-icon-button${pinned ? " pinned" : ""}`}
+          onClick={() => void togglePin()}
+          title={pinned ? "Unpin from Home" : "Pin to Home"}
+          aria-pressed={pinned}
+        >
+          <Pin className="h-5 w-5" fill={pinned ? "currentColor" : "none"} />
+        </button>
       </div>
       <BlockNoteView
         editor={editor}

@@ -192,10 +192,16 @@ impl Vault {
         } else {
             title.trim()
         };
-        let note = Note::new(title);
+        self.persist_new(Note::new(title), folder_rel)
+    }
+
+    /// Write a freshly-built note into `folder_rel` and index it — the shared
+    /// tail of the create path, so the summary is populated the same way whether
+    /// the note is created at the root or inside a folder.
+    fn persist_new(&self, note: Note, folder_rel: &str) -> Result<Note> {
         let dir = self.abs_folder_path(folder_rel);
         fs::create_dir_all(&dir)?;
-        let path = first_available(&dir, &slugify(title));
+        let path = first_available(&dir, &slugify(&note.title));
         self.write_note_at(&path, &note)?;
 
         let summary = NoteSummary {
@@ -204,6 +210,7 @@ impl Vault {
             path: self.rel_to_root(&path),
             modified: note.modified,
             icon: note.icon.clone(),
+            pinned: note.meta.pinned,
         };
         self.index
             .write()
@@ -211,6 +218,38 @@ impl Vault {
             .notes
             .insert(note.id.clone(), IndexEntry { path, summary });
         Ok(note)
+    }
+
+    // --- quick note (Phase 2 step 5) ------------------------------------
+    //
+    // The quick note is a SINGLE always-there scratchpad for fast idea capture,
+    // NOT one of the vault's notes. It lives in its own file at the vault root
+    // (outside `notes/`), so it never shows up in the nav tree, search, links, or
+    // the graph — content lands here first and gets organized into real notes
+    // later. It reuses the `Note` block model (so the same editor + atomic-write
+    // machinery apply) but is deliberately kept out of the note index.
+
+    fn quick_note_path(&self) -> PathBuf {
+        self.root.join("quicknote.json")
+    }
+
+    /// Read the quick note, or a fresh empty one if it's never been written yet
+    /// (not persisted until the user actually saves something).
+    pub fn read_quick_note(&self) -> Result<Note> {
+        let path = self.quick_note_path();
+        if path.is_file() {
+            read_note_at(&path)
+        } else {
+            Ok(Note::new("Quick notes"))
+        }
+    }
+
+    /// Persist the quick note (atomic, same temp+rename discipline as any note).
+    /// Not added to the note index — it isn't part of the notes tree.
+    pub fn save_quick_note(&self, mut note: Note) -> Result<()> {
+        note.validate()?;
+        note.modified = chrono::Utc::now();
+        self.write_note_at(&self.quick_note_path(), &note)
     }
 
     /// List all notes in the vault (shallow metadata only) — served entirely
@@ -287,6 +326,7 @@ impl Vault {
             path: self.rel_to_root(&path),
             modified: note.modified,
             icon: note.icon.clone(),
+            pinned: note.meta.pinned,
         };
         self.index
             .write()
@@ -684,6 +724,7 @@ impl Vault {
                         path: self.rel_to_root(path),
                         modified: note.modified,
                         icon: note.icon.clone(),
+                        pinned: note.meta.pinned,
                     };
                     self.index.write().unwrap().notes.insert(
                         note.id.clone(),
@@ -853,6 +894,7 @@ fn build_index(root: &Path) -> Result<VaultIndex> {
                     path: rel_to_root,
                     modified: note.modified,
                     icon: note.icon,
+                    pinned: note.meta.pinned,
                 },
             },
         );
@@ -1205,6 +1247,24 @@ mod tests {
     }
 
     #[test]
+    fn summary_reflects_pinned_meta_after_save() {
+        let (vault, dir) = temp_vault();
+        let mut note = vault.create_note("Pinnable").unwrap();
+        // Fresh notes aren't pinned.
+        assert!(!vault.note_summary(&note.id).unwrap().pinned);
+
+        note.meta.pinned = true;
+        vault.save_note(note.clone()).unwrap();
+        assert!(vault.note_summary(&note.id).unwrap().pinned, "pin must surface in the summary");
+
+        // Survives a reopen (rebuilt from the file's meta).
+        let reopened = Vault::open(&dir).unwrap();
+        assert!(reopened.note_summary(&note.id).unwrap().pinned);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn create_note_in_writes_directly_to_the_target_folder() {
         let (vault, dir) = temp_vault();
         vault.create_folder("Biology").unwrap();
@@ -1374,6 +1434,37 @@ mod tests {
             &serde_json::json!([{ "type": "text", "text": "hello\n# world", "styles": {} }]),
             "the legacy string text must be preserved as an inline text node"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn quick_note_is_a_singleton_scratchpad_outside_the_notes_tree() {
+        let (vault, dir) = temp_vault();
+
+        // Before anything is written, reading yields a fresh empty scratchpad
+        // (not persisted yet — no file on disk).
+        let fresh = vault.read_quick_note().unwrap();
+        assert!(!dir.join("quicknote.json").exists());
+
+        // Save some content; it round-trips from its own file at the vault root.
+        let mut edited = fresh.clone();
+        edited.blocks = vec![Block {
+            id: "b1".into(),
+            block_type: "paragraph".into(),
+            props: None,
+            content: Some(serde_json::json!([{ "type": "text", "text": "an idea", "styles": {} }])),
+            children: vec![],
+        }];
+        vault.save_quick_note(edited.clone()).unwrap();
+        assert!(dir.join("quicknote.json").is_file());
+        let reread = vault.read_quick_note().unwrap();
+        assert_eq!(reread.blocks[0].content, edited.blocks[0].content);
+
+        // Crucially it is NOT a vault note: absent from list_notes and the tree,
+        // so it never clutters nav / search / the graph.
+        assert!(vault.list_notes().unwrap().is_empty());
+        assert!(vault.list_tree().is_empty());
+
         std::fs::remove_dir_all(&dir).ok();
     }
 

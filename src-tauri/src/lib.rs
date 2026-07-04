@@ -46,6 +46,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::list_notes,
             commands::create_note,
             commands::create_note_in,
+            commands::read_quick_note,
+            commands::save_quick_note,
             commands::read_note,
             commands::save_note,
             commands::delete_note,

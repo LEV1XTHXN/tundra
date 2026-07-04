@@ -28,6 +28,17 @@ export const commands = {
 	 *  for the root) — the "new note in the selected folder" nav action.
 	 */
 	createNoteIn: (title: string, folder: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("create_note_in", { title, folder })),
+	/**
+	 *  Read the single quick-note scratchpad (Phase 2 step 5), or a fresh empty one
+	 *  if nothing's been captured yet. It's not one of the vault's notes — it lives
+	 *  in its own file and never appears in the tree/search/graph.
+	 */
+	readQuickNote: () => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("read_quick_note")),
+	/**
+	 *  Persist the quick-note scratchpad. Deliberately does NOT touch the search or
+	 *  link indexes — the quick note is outside the notes tree.
+	 */
+	saveQuickNote: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_quick_note", { note })),
 	readNote: (id: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("read_note", { id })),
 	saveNote: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_note", { note })),
 	deleteNote: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_note", { id })),
@@ -248,6 +259,12 @@ export type NoteSummary_Deserialize = {
 	path: string,
 	modified: string,
 	icon?: Icon | null,
+	/**
+	 *  Mirror of `NoteMeta::pinned`, carried in the summary so listings (the
+	 *  Home dashboard's Pinned widget, Phase 2 step 6) can filter without
+	 *  re-reading files.
+	 */
+	pinned?: boolean,
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -258,6 +275,12 @@ export type NoteSummary_Serialize = {
 	path: string,
 	modified: string,
 	icon?: Icon | null,
+	/**
+	 *  Mirror of `NoteMeta::pinned`, carried in the summary so listings (the
+	 *  Home dashboard's Pinned widget, Phase 2 step 6) can filter without
+	 *  re-reading files.
+	 */
+	pinned: boolean,
 };
 
 /**  A full note document — one JSON file per note. */

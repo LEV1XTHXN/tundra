@@ -13,6 +13,8 @@ import { NavTree } from "./nav/NavTree";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
 import { NoteInspector } from "./inspector/NoteInspector";
+import { QuickNoteView } from "./quicknotes/QuickNoteView";
+import { Home } from "./home/Home";
 import { useViewState, type AppView } from "./store/viewState";
 
 // The graph pulls in sigma + graphology (WebGL); code-split it so those only
@@ -379,11 +381,16 @@ export default function App() {
           </Suspense>
         )}
 
-        {/* Quick notes (step 5) and Home (step 6) are placeholders for now. */}
-        {view === "quicknotes" && (
-          <div className="centered muted">Quick notes — coming in the next step.</div>
+        {view === "quicknotes" && <QuickNoteView vaultPath={vaultInfo.path} onError={setError} />}
+
+        {view === "home" && (
+          <Home
+            vaultPath={vaultInfo.path}
+            refreshKey={noteSummaries}
+            onOpenNote={openNote}
+            onError={setError}
+          />
         )}
-        {view === "home" && <div className="centered muted">Home dashboard — coming soon.</div>}
 
         {/* Note-metadata inspector — a collapsible right drawer, only meaningful
             for an open note in the editor view. Slides off-screen when closed. */}

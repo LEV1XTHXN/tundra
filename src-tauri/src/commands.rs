@@ -300,6 +300,23 @@ pub fn import_attachment(
     current(&state)?.import_attachment(kind, &file_name, &bytes)
 }
 
+/// Read the single quick-note scratchpad (Phase 2 step 5), or a fresh empty one
+/// if nothing's been captured yet. It's not one of the vault's notes — it lives
+/// in its own file and never appears in the tree/search/graph.
+#[tauri::command]
+#[specta::specta]
+pub fn read_quick_note(state: State<AppState>) -> Result<Note, CoreError> {
+    current(&state)?.read_quick_note()
+}
+
+/// Persist the quick-note scratchpad. Deliberately does NOT touch the search or
+/// link indexes — the quick note is outside the notes tree.
+#[tauri::command]
+#[specta::specta]
+pub fn save_quick_note(state: State<AppState>, note: Note) -> Result<(), CoreError> {
+    current(&state)?.save_quick_note(note)
+}
+
 /// Create a note directly inside `folder` (relative to the notes root, `""`
 /// for the root) — the "new note in the selected folder" nav action.
 #[tauri::command]
@@ -496,6 +513,34 @@ mod tests {
         assert_eq!(reread.blocks[0].props.as_ref().unwrap()["url"], serde_json::json!(rel));
         assert_eq!(reread.blocks[1].block_type, "table");
         assert!(reread.blocks[1].content.is_some());
+    }
+
+    /// Phase 2 step 5 acceptance at the command boundary: the quick note is a
+    /// standalone scratchpad — it round-trips through save/read but never enters
+    /// the notes listing.
+    #[test]
+    fn quick_note_scratchpad_through_commands_is_not_a_vault_note() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        let mut quick = read_quick_note(state.clone()).expect("read_quick_note");
+        quick.blocks = vec![Block {
+            id: "b1".into(),
+            block_type: "paragraph".into(),
+            props: None,
+            content: Some(serde_json::json!([{ "type": "text", "text": "capture", "styles": {} }])),
+            children: vec![],
+        }];
+        save_quick_note(state.clone(), quick.clone()).expect("save_quick_note");
+
+        let reread = read_quick_note(state.clone()).expect("re-read");
+        assert_eq!(reread.blocks[0].content, quick.blocks[0].content);
+
+        // It must not appear among the vault's notes.
+        assert!(list_notes(state).expect("list_notes").is_empty());
     }
 
     /// Phase 2 step 2 acceptance at the command boundary: an id-backed link
