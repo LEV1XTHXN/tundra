@@ -365,6 +365,7 @@ function LoadedNoteEditor({
   }
 
   return (
+    <>
     <div className="editor-pane">
       {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
       {reconcile.kind === "dirty-conflict" && (
@@ -456,13 +457,17 @@ function LoadedNoteEditor({
           ]);
         }}
       />
-      <div className="status muted">
-        {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
-      </div>
       {/* Scroll-past-end room, BELOW the backlinks panel — lets the last line (or
           the backlinks) rise toward the top without burying the panel (which the
           old in-editor `padding-bottom: 60vh` did). */}
       <div className="editor-tail-space" aria-hidden="true" />
     </div>
+    {/* Save-state indicator: a sibling of .editor-pane (not a child), so it
+        anchors to the non-scrolling .main-pane and stays pinned to its
+        bottom-left corner regardless of note length or scroll (see .status). */}
+    <div className="status" aria-live="polite">
+      {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
+    </div>
+    </>
   );
 }

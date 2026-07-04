@@ -843,10 +843,22 @@ body,
   flex-shrink: 0;
 }
 
+/* Save-state indicator (NoteEditor / QuickNoteView). Rendered as a SIBLING of
+   .editor-pane so it anchors to the non-scrolling, position:relative .main-pane
+   (not the scrolling editor) and stays pinned to its bottom-left corner
+   regardless of note length or scroll position. Plain muted text — no pill.
+   Hidden entirely (`:empty`) while idle so nothing shows between saves. */
 .status {
-  height: 1.25rem;
+  position: absolute;
+  left: 1rem;
+  bottom: 0.75rem;
+  z-index: 5;
   font-size: 0.85rem;
   color: var(--muted-foreground);
+  pointer-events: none;
+}
+.status:empty {
+  display: none;
 }
 
 /* Note links (Phase 2 step 3) — an id-backed inline node rendered with the

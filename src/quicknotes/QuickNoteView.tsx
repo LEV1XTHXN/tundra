@@ -120,6 +120,7 @@ function LoadedQuickNote({
   }, []);
 
   return (
+    <>
     <div className="editor-pane quicknote">
       <div className="quicknote-header">
         <h1 className="quicknote-title">Quick notes</h1>
@@ -135,10 +136,13 @@ function LoadedQuickNote({
         }}
         theme="light"
       />
-      <div className="status muted">
-        {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
-      </div>
       <div className="editor-tail-space" aria-hidden="true" />
     </div>
+    {/* Anchored to the non-scrolling .main-pane — pinned to its bottom-left
+        corner, matching NoteEditor (see .status). */}
+    <div className="status" aria-live="polite">
+      {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
+    </div>
+    </>
   );
 }
