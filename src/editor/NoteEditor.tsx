@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pin } from "lucide-react";
-import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react";
+import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 
@@ -23,7 +23,6 @@ import { createDebouncedFlush, type DebouncedFlush } from "./debouncedFlush";
 import { decideReconciliation } from "./reconcile";
 import { editorSchema } from "./schema";
 import { NOTE_LINK_TYPE } from "./NoteLink";
-import { filterLinkCandidates } from "./linkMenu";
 import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 import { FindBar } from "./FindBar";
@@ -142,9 +141,18 @@ function LoadedNoteEditor({
   // Word → note linking (Phase 2 step 3): select text, run the `link.create`
   // shortcut (default Ctrl+Shift+K), pick a note; the selected word becomes a
   // link whose display text is kept.
-  const [linkPicker, setLinkPicker] = useState<{ open: boolean; display: string }>({
+  // `display` = text the link renders as (the selected word for Ctrl+Shift+K, ""
+  // for the `[[` trigger which renders the target's live title). `trailingSpace`
+  // is set for the `[[` path so a space is inserted after the atomic link node,
+  // giving the caret editable text to land in — the old inline menu did this.
+  const [linkPicker, setLinkPicker] = useState<{
+    open: boolean;
+    display: string;
+    trailingSpace: boolean;
+  }>({
     open: false,
     display: "",
+    trailingSpace: false,
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
@@ -157,7 +165,7 @@ function LoadedNoteEditor({
       const cmd = matchCommand(e, bindings);
       if (cmd === "link.create") {
         e.preventDefault();
-        setLinkPicker({ open: true, display: editor.getSelectedText() });
+        setLinkPicker({ open: true, display: editor.getSelectedText(), trailingSpace: false });
       } else if (cmd === "search.inNote") {
         e.preventDefault();
         setFindOpen(true);
@@ -205,6 +213,24 @@ function LoadedNoteEditor({
     } finally {
       convertingRef.current = false;
     }
+  }
+
+  // Typing `[[` opens the note picker — the SAME cmdk palette as Ctrl+Shift+K and
+  // global search, so arrow-key navigation + Enter work reliably. It replaces
+  // BlockNote's inline suggestion menu, whose two-character trigger and keyboard
+  // handling are unreliable on WebKitGTK (see typedLinks.ts). We spot the two
+  // brackets at a collapsed cursor, delete them, and open the picker; on pick the
+  // link is inserted at that spot (ProseMirror keeps the collapsed selection over
+  // the modal, exactly like the Ctrl+Shift+K path).
+  function maybeOpenLinkPicker() {
+    if (linkPicker.open) return;
+    const view = editor.prosemirrorView;
+    if (!view) return;
+    const { from, empty } = view.state.selection;
+    if (!empty || from < 2) return;
+    if (view.state.doc.textBetween(from - 2, from) !== "[[") return;
+    view.dispatch(view.state.tr.delete(from - 2, from));
+    setLinkPicker({ open: true, display: "", trailingSpace: true });
   }
 
   const [title, setTitle] = useState(note.title);
@@ -416,44 +442,29 @@ function LoadedNoteEditor({
       <BlockNoteView
         editor={editor}
         onChange={() => {
+          // Typing `[[` opens the keyboard-navigable note picker (checked first so
+          // the brackets are stripped before anything else looks at the text).
+          maybeOpenLinkPicker();
           // Upgrade any just-completed `[[Title]]` to a link before saving, so
           // the persisted block tree carries the id-backed node, not literal text.
           maybeConvertTypedLinks();
           scheduleSave();
         }}
         theme="light"
-      >
-        {/* `[[` opens a keyboard-driven menu of notes; selecting one inserts an
-            id-backed link node. Added as a child, which keeps BlockNote's
-            default UI (slash menu, toolbars) intact. */}
-        <SuggestionMenuController
-          triggerCharacter="[["
-          getItems={async (query) => {
-            const list = await notes.list();
-            return filterLinkCandidates(list, note.id, query).map((n) => ({
-              title: n.title || "Untitled",
-              onItemClick: () => {
-                editor.insertInlineContent([
-                  // display: "" → renders the target's live title.
-                  { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: "" } },
-                  " ",
-                ]);
-              },
-            }));
-          }}
-        />
-      </BlockNoteView>
+      />
       <NoteLinkPicker
         open={linkPicker.open}
         onOpenChange={(o) => setLinkPicker((p) => ({ ...p, open: o }))}
         currentNoteId={note.id}
         display={linkPicker.display}
         onPick={(n) => {
-          // The editor kept its selection over the word while the picker had
-          // focus (ProseMirror preserves it), so inserting replaces that word
-          // with the link — its display text stays the selected word.
+          // The editor kept its selection while the picker had focus (ProseMirror
+          // preserves it): Ctrl+Shift+K had a word selected, so inserting replaces
+          // it (display text stays that word); the `[[` path had a collapsed cursor,
+          // so it inserts there and appends a space so the caret can leave the link.
           editor.insertInlineContent([
             { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: linkPicker.display } },
+            ...(linkPicker.trailingSpace ? [" "] : []),
           ]);
         }}
       />

@@ -43,6 +43,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 function errorMessage(err: unknown): string {
   const e = err as Partial<CoreError>;
@@ -65,6 +74,8 @@ export default function App() {
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [noteSummaries, setNoteSummaries] = useState<Map<string, NoteSummary>>(new Map());
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Merged keybindings (defaults + persisted overrides) drive both the global
@@ -189,17 +200,23 @@ export default function App() {
     }
   }, [selectedFolder, refreshTree, openNote]);
 
-  const onNewFolder = useCallback(async () => {
-    const name = window.prompt("New folder name")?.trim();
+  const onNewFolder = useCallback(() => {
+    setNewFolderName("");
+    setNewFolderOpen(true);
+  }, []);
+
+  const createFolder = useCallback(async () => {
+    const name = newFolderName.trim();
     if (!name) return;
     try {
       const path = selectedFolder ? `${selectedFolder}/${name}` : name;
       await folders.create(path);
       await refreshTree();
+      setNewFolderOpen(false);
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [selectedFolder, refreshTree]);
+  }, [newFolderName, selectedFolder, refreshTree]);
 
   // --- move / rename / delete (Phase 1 step 6) ---------------------------
 
@@ -481,6 +498,35 @@ export default function App() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createFolder();
+            }}
+          >
+            <Input
+              autoFocus
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="Folder name"
+            />
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setNewFolderOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!newFolderName.trim()}>
+                Create
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

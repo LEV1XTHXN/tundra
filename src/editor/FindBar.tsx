@@ -48,6 +48,12 @@ export function FindBar({ view, onClose }: FindBarProps) {
     if (e.key === "Enter") {
       e.preventDefault();
       go(e.shiftKey ? -1 : 1);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      go(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      go(-1);
     } else if (e.key === "Escape") {
       e.preventDefault();
       onClose();
@@ -72,7 +78,7 @@ export function FindBar({ view, onClose }: FindBarProps) {
         className="find-bar-btn"
         onClick={() => go(-1)}
         disabled={total === 0}
-        title="Previous match (Shift+Enter)"
+        title="Previous match (Shift+Enter / ↑)"
         aria-label="Previous match"
       >
         <ChevronUp className="h-4 w-4" />
@@ -81,7 +87,7 @@ export function FindBar({ view, onClose }: FindBarProps) {
         className="find-bar-btn"
         onClick={() => go(1)}
         disabled={total === 0}
-        title="Next match (Enter)"
+        title="Next match (Enter / ↓)"
         aria-label="Next match"
       >
         <ChevronDown className="h-4 w-4" />

@@ -144,9 +144,34 @@ export function getFindState(view: EditorView): { matches: Match[]; activeIndex:
   return { matches: s?.matches ?? [], activeIndex: s?.activeIndex ?? 0 };
 }
 
+/** Nearest scrollable ancestor of `el` (the pane that actually scrolls), or
+ *  null if none. Used to center the active match ourselves rather than relying
+ *  on ProseMirror's minimal-nudge scrollIntoView (unreliable under WebKitGTK). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/** Scroll the pane so the match at `from` sits centered vertically. Runs after
+ *  the dispatch below, when ProseMirror has synchronously updated the DOM. */
+function centerMatch(view: EditorView, from: number): void {
+  const scroller = scrollParent(view.dom);
+  if (!scroller) return;
+  const coords = view.coordsAtPos(from);
+  const rect = scroller.getBoundingClientRect();
+  const matchTopInScroller = coords.top - rect.top + scroller.scrollTop;
+  scroller.scrollTo({ top: matchTopInScroller - scroller.clientHeight / 2, behavior: "smooth" });
+}
+
 /**
  * Make match `index` the active one: update the highlight, move the editor
- * selection onto it, and scroll it into view. No-op when there are no matches.
+ * selection onto it, and scroll it into view (centered). No-op when there are
+ * no matches.
  */
 export function focusMatch(view: EditorView, index: number): void {
   const { matches } = getFindState(view);
@@ -155,9 +180,10 @@ export function focusMatch(view: EditorView, index: number): void {
   const m = matches[active];
   const tr = view.state.tr
     .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
-    .setMeta(findPluginKey, { query: findPluginKey.getState(view.state)?.query ?? "", activeIndex: active })
-    .scrollIntoView();
+    .setMeta(findPluginKey, { query: findPluginKey.getState(view.state)?.query ?? "", activeIndex: active });
   view.dispatch(tr);
+  // Dispatch updates the view synchronously, so DOM coords are now current.
+  centerMatch(view, m.from);
 }
 
 /** Clear the search (remove all highlights) without detaching the plugin. */
