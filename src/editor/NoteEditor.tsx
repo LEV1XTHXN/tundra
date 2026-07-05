@@ -156,6 +156,41 @@ function LoadedNoteEditor({
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
+
+  // Windows Explorer's "copy" on a file puts BOTH a file entry and a
+  // text/plain path onto the clipboard. BlockNote's own paste handler picks
+  // among clipboard types by a fixed priority list that ranks text/plain
+  // ahead of "Files" (see @blocknote/core's fromClipboard), so it silently
+  // pastes the path as text instead of the actual image. Intercept in the
+  // capture phase — which runs before ProseMirror's own paste listener,
+  // bound directly to the editor's DOM node — and prefer the real file
+  // whenever the clipboard actually carries one.
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = editorPaneRef.current;
+    if (!container) return;
+    function onPasteCapture(event: ClipboardEvent) {
+      const files = event.clipboardData?.files;
+      if (!files || files.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void (async () => {
+        let ref = editor.getTextCursorPosition().block;
+        for (const file of Array.from(files)) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const url = await attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
+          const [inserted] = editor.insertBlocks(
+            [{ type: attachmentKindFromMime(file.type), props: { url } } as never],
+            ref,
+            "after",
+          );
+          ref = inserted;
+        }
+      })();
+    }
+    container.addEventListener("paste", onPasteCapture, true);
+    return () => container.removeEventListener("paste", onPasteCapture, true);
+  }, [editor]);
   // The two editor-scoped shortcuts read their combos from the shared keybinding
   // store (rebindable in Settings); App owns the global ones. Both listeners use
   // the same `matchCommand` matcher and act only on their own command ids.
@@ -392,7 +427,7 @@ function LoadedNoteEditor({
 
   return (
     <>
-    <div className="editor-pane">
+    <div className="editor-pane" ref={editorPaneRef}>
       {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
       {reconcile.kind === "dirty-conflict" && (
         <div className="reconcile-banner">

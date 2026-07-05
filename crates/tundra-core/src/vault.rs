@@ -166,11 +166,16 @@ impl Vault {
         self.root.join("notes")
     }
 
+    /// Vault-relative path as a portable, forward-slash-separated string —
+    /// crosses the IPC boundary, so it must never carry Windows' native `\`
+    /// separator (the frontend and stored block props compare/prefix-match
+    /// these as plain `/`-separated strings, e.g. `resolveFileUrl`'s
+    /// `startsWith("attachments/")`).
     fn rel_to_root(&self, path: &Path) -> String {
         path.strip_prefix(&self.root)
             .unwrap_or(path)
             .to_string_lossy()
-            .into_owned()
+            .replace('\\', "/")
     }
 
     fn rel_to_notes(&self, path: &Path) -> PathBuf {
@@ -544,11 +549,7 @@ impl Vault {
         for entry in index.notes.values_mut() {
             if let Ok(suffix) = entry.path.strip_prefix(old_abs) {
                 let new_path = new_abs.join(suffix);
-                entry.summary.path = new_path
-                    .strip_prefix(&self.root)
-                    .unwrap_or(&new_path)
-                    .to_string_lossy()
-                    .into_owned();
+                entry.summary.path = self.rel_to_root(&new_path);
                 entry.path = new_path;
             }
         }
@@ -1050,7 +1051,7 @@ mod tests {
             .into_iter()
             .find(|s| s.id == b.id)
             .unwrap();
-        assert!(summary.path.replace('\\', "/").contains("Folder/"));
+        assert!(summary.path.contains("Folder/"));
 
         vault.delete_note(&a.id).unwrap();
         assert!(vault.read_note(&a.id).is_err());
@@ -1093,7 +1094,7 @@ mod tests {
             .into_iter()
             .find(|s| s.id == note.id)
             .unwrap();
-        assert!(summary.path.replace('\\', "/").contains("Destination/"));
+        assert!(summary.path.contains("Destination/"));
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1178,7 +1179,7 @@ mod tests {
             .find(|s| s.id == note.id)
             .unwrap()
             .path;
-        assert!(summary_path.replace('\\', "/").contains("Life Sciences/"));
+        assert!(summary_path.contains("Life Sciences/"));
 
         vault.create_folder("Science").unwrap();
         vault.move_folder("Life Sciences", "Science").unwrap();
@@ -1276,7 +1277,7 @@ mod tests {
             .into_iter()
             .find(|s| s.id == note.id)
             .unwrap();
-        assert!(summary.path.replace('\\', "/").contains("Biology/"));
+        assert!(summary.path.contains("Biology/"));
         assert!(dir.join("notes/Biology/cell.json").exists());
 
         std::fs::remove_dir_all(&dir).ok();
@@ -1292,13 +1293,13 @@ mod tests {
         fs::write(&src, b"not a real png, just bytes").unwrap();
 
         let rel = vault.import_icon(&src).unwrap();
-        assert_eq!(rel.replace('\\', "/"), "attachments/icons/sprout.png");
+        assert_eq!(rel, "attachments/icons/sprout.png");
         assert!(dir.join(&rel).exists());
         assert_eq!(fs::read(dir.join(&rel)).unwrap(), b"not a real png, just bytes");
 
         // Importing the same file name again doesn't clobber the first copy.
         let rel2 = vault.import_icon(&src).unwrap();
-        assert_eq!(rel2.replace('\\', "/"), "attachments/icons/sprout-2.png");
+        assert_eq!(rel2, "attachments/icons/sprout-2.png");
         assert!(dir.join(&rel).exists());
         assert!(dir.join(&rel2).exists());
 
@@ -1316,7 +1317,7 @@ mod tests {
         // Sharded under attachments/images/<first 2 hex of hash>/<hash>.png.
         let hex = blake3::hash(png).to_hex();
         let expected = format!("attachments/images/{}/{}.png", &hex[..2], hex);
-        assert_eq!(rel.replace('\\', "/"), expected);
+        assert_eq!(rel, expected);
 
         // The returned path round-trips to a real file holding exactly the bytes.
         assert_eq!(fs::read(dir.join(&rel)).unwrap(), png);
@@ -1345,8 +1346,8 @@ mod tests {
         // Kind selects the library subdirectory.
         let vid = vault.import_attachment(AttachmentKind::Video, "clip.mp4", b"movie").unwrap();
         let file = vault.import_attachment(AttachmentKind::File, "doc.pdf", b"%PDF").unwrap();
-        assert!(vid.replace('\\', "/").starts_with("attachments/videos/"));
-        assert!(file.replace('\\', "/").starts_with("attachments/files/"));
+        assert!(vid.starts_with("attachments/videos/"));
+        assert!(file.starts_with("attachments/files/"));
         assert!(dir.join(&vid).exists());
         assert!(dir.join(&file).exists());
 
@@ -1358,10 +1359,7 @@ mod tests {
         let (vault, dir) = temp_vault();
         let rel = vault.import_attachment(AttachmentKind::File, "READ ME", b"data").unwrap();
         let hex = blake3::hash(b"data").to_hex();
-        assert_eq!(
-            rel.replace('\\', "/"),
-            format!("attachments/files/{}/{}", &hex[..2], hex)
-        );
+        assert_eq!(rel, format!("attachments/files/{}/{}", &hex[..2], hex));
         assert!(dir.join(&rel).exists());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1379,7 +1377,7 @@ mod tests {
         for (id, title) in [(&a.id, "Alpha"), (&b.id, "Beta"), (&c.id, "Gamma")] {
             let summary = notes.iter().find(|s| &s.id == id).unwrap_or_else(|| panic!("{title} missing after folder create"));
             assert_eq!(
-                summary.path.replace('\\', "/"),
+                summary.path,
                 format!("notes/{}.json", title.to_lowercase()),
                 "{title} should still be at the root, not moved into the new folder"
             );
