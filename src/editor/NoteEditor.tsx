@@ -9,9 +9,16 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pin } from "lucide-react";
-import { useCreateBlockNote } from "@blocknote/react";
+import {
+  useCreateBlockNote,
+  FormattingToolbar,
+  FormattingToolbarController,
+  getFormattingToolbarItems,
+  type FormattingToolbarProps,
+} from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
+import { FileOpenButton } from "./FileOpenButton";
 
 import { attachments, notes, watcher } from "@/services";
 import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
@@ -179,8 +186,11 @@ function LoadedNoteEditor({
         for (const file of Array.from(files)) {
           const bytes = new Uint8Array(await file.arrayBuffer());
           const url = await attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
+          // BlockNote's own upload flow (drag-and-drop) sets props.name from the
+          // File object up front; this paste path bypasses that flow entirely; so
+          // without this, pasted files show a blank name next to the icon.
           const [inserted] = editor.insertBlocks(
-            [{ type: attachmentKindFromMime(file.type), props: { url } } as never],
+            [{ type: attachmentKindFromMime(file.type), props: { url, name: "_" } } as never],
             ref,
             "after",
           );
@@ -191,6 +201,29 @@ function LoadedNoteEditor({
     container.addEventListener("paste", onPasteCapture, true);
     return () => container.removeEventListener("paste", onPasteCapture, true);
   }, [editor]);
+
+  // Clicking a "file" block opens it directly (image/video blocks already
+  // render inline, so an unexpected external-open on click there would be
+  // surprising — this is scoped to plain file attachments only, which
+  // otherwise show just an icon + name with no built-in interaction).
+  useEffect(() => {
+    const container = editorPaneRef.current;
+    if (!container) return;
+    function onClick(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      const wrapper = target.closest(".bn-file-block-content-wrapper");
+      if (!wrapper) return;
+      const blockEl = wrapper.closest("[data-id]");
+      const blockId = blockEl?.getAttribute("data-id");
+      if (!blockId) return;
+      const block = editor.getBlock(blockId);
+      if (block?.type !== "file" || !block.props.url) return;
+      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(String(e)));
+    }
+    container.addEventListener("click", onClick);
+    return () => container.removeEventListener("click", onClick);
+  }, [editor, vaultPath, onError]);
+
   // The two editor-scoped shortcuts read their combos from the shared keybinding
   // store (rebindable in Settings); App owns the global ones. Both listeners use
   // the same `matchCommand` matcher and act only on their own command ids.
@@ -222,6 +255,25 @@ function LoadedNoteEditor({
     });
     return map;
   }, [noteSummaries, note.id]);
+
+  // Swap out BlockNote's built-in file-download button (see FileOpenButton.tsx
+  // for why) while keeping every other default toolbar item as-is. Memoized so
+  // the toolbar component identity stays stable across re-renders (typing).
+  const CustomFormattingToolbar = useMemo(() => {
+    return function CustomFormattingToolbar(toolbarProps: FormattingToolbarProps) {
+      return (
+        <FormattingToolbar>
+          {getFormattingToolbarItems(toolbarProps.blockTypeSelectItems).map((item) =>
+            item.key === "fileDownloadButton" ? (
+              <FileOpenButton key="fileDownloadButton" vaultPath={vaultPath} onError={onError} />
+            ) : (
+              item
+            ),
+          )}
+        </FormattingToolbar>
+      );
+    };
+  }, [vaultPath, onError]);
 
   // Guards against the re-entrant onChange that `updateBlock` itself fires while
   // we're mid-conversion (which would otherwise recurse before converging).
@@ -486,7 +538,10 @@ function LoadedNoteEditor({
           scheduleSave();
         }}
         theme="light"
-      />
+        formattingToolbar={false}
+      >
+        <FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />
+      </BlockNoteView>
       <NoteLinkPicker
         open={linkPicker.open}
         onOpenChange={(o) => setLinkPicker((p) => ({ ...p, open: o }))}

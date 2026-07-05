@@ -20,6 +20,11 @@ tundra-core = { path = "../crates/tundra-core" }
 # vault's attachments/icons/, not the app bundle.
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
+# Opens attachments (Phase 2 "file" blocks) with the OS's default app —
+# `window.open` on a resolved `asset://` URL is a webview-internal scheme the
+# OS/external browser can't handle, so BlockNote's default file-download
+# button silently does nothing for local attachments in a Tauri app.
+tauri-plugin-opener = "2"
 serde.workspace = true
 serde_json.workspace = true
 specta = { version = "=2.0.0-rc.25", features = ["derive", "function"] }

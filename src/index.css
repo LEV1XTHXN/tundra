@@ -649,6 +649,12 @@ body,
   border-color: var(--primary);
 }
 
+/* Uploaded file blocks only render this element (the pre-upload "add file"
+   button is a separate element) — clicking it opens the file (NoteEditor.tsx). */
+.bn-file-name-with-icon {
+  cursor: pointer;
+}
+
 .search-hit {
   display: flex;
   flex-direction: column;

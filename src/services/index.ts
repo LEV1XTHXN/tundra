@@ -5,6 +5,7 @@
 //! plain value or a thrown typed `CoreError`, so React never sees IPC plumbing.
 
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { commands, events } from "./bindings";
 import type { CoreError } from "./bindings";
@@ -221,6 +222,15 @@ export const attachments = {
   /** A displayable asset URL for a stored vault-relative attachment path. */
   assetUrl: (vaultPath: string, relPath: string): string =>
     convertFileSrc(`${vaultPath}/${relPath}`),
+  /**
+   * Open a stored attachment with the OS's default app (Explorer/Preview/etc).
+   * `window.open` on a resolved `asset://` URL — what BlockNote's built-in file
+   * download button does — is a webview-internal scheme; the OS has nothing to
+   * hand it to, so it silently does nothing for local attachments. Opening the
+   * real filesystem path through Tauri's opener plugin is what a desktop app
+   * actually needs here.
+   */
+  openFile: (vaultPath: string, relPath: string): Promise<void> => openPath(`${vaultPath}/${relPath}`),
 };
 
 /** Native folder picker for onboarding — OS access via the Tauri dialog plugin. */
