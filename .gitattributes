@@ -1,0 +1,14 @@
+# Normalize all text files to LF in the repo (checked out as LF on every OS).
+# Stops Windows CRLF rewrites (e.g. tauri-specta's generated bindings.ts) from
+# showing up as phantom diffs. See docs/dev-setup.md.
+* text=auto eol=lf
+
+# Binary assets — never touch line endings.
+*.woff2 binary
+*.png   binary
+*.ico   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.zip   binary
