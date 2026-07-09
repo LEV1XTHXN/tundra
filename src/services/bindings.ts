@@ -138,6 +138,13 @@ export const commands = {
 	addNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_date", { id, date })),
 	/**  Remove a note→date link (matched exactly). */
 	removeNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_date", { id, date })),
+	/**
+	 *  One-click backup: zip the whole vault (excluding the rebuildable
+	 *  `.vault/cache/`) into `dest_dir` — which must be OUTSIDE the vault — verify
+	 *  the archive is readable, and return its path. The frontend remembers
+	 *  `dest_dir` in app-settings (global, cross-vault).
+	 */
+	backupVault: (destDir: string) => typedError<string, CoreError>(__TAURI_INVOKE("backup_vault", { destDir })),
 };
 
 /** Events */

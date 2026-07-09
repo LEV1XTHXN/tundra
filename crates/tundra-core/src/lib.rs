@@ -5,6 +5,7 @@
 //! server or mobile app, are thin front doors over this same crate
 //! (CLAUDE.md §2, "One Rust core, thin front doors").
 
+pub mod backup;
 pub mod calendar;
 pub mod document;
 pub mod error;

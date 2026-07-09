@@ -79,6 +79,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::calendar_range,
             commands::add_note_date,
             commands::remove_note_date,
+            commands::backup_vault,
         ])
         .events(collect_events![events::TreeChanged, events::NoteChangedExternally])
 }

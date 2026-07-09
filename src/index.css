@@ -1624,3 +1624,49 @@ body,
 .calendar-notepicker-empty {
   padding: 0.5rem;
 }
+
+/* --- Settings: Backup section (Phase 3 step 3) ----------------------- */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.settings-section-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.settings-section-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.settings-field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.settings-field-value {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.settings-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.settings-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.settings-backup-last {
+  margin: 0;
+  font-size: 0.8rem;
+  word-break: break-all;
+}

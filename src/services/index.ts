@@ -310,6 +310,23 @@ export const attachments = {
   openFile: (vaultPath: string, relPath: string): Promise<void> => openPath(`${vaultPath}/${relPath}`),
 };
 
+/** Native directory picker (e.g. the backup destination), via the dialog plugin. */
+export async function pickDirectory(title: string): Promise<string | null> {
+  const selected = await openFolderDialog({ directory: true, multiple: false, title });
+  return typeof selected === "string" ? selected : null;
+}
+
+/**
+ * Vault backup (Phase 3 step 3) — a one-click `.zip` of the whole vault (excluding
+ * the rebuildable `.vault/cache/`), written to a directory OUTSIDE the vault and
+ * verified readable by Rust. The chosen destination is remembered in app-settings
+ * by the Settings UI (global, cross-vault).
+ */
+export const backup = {
+  /** Zip the vault into `destDir` (outside the vault); returns the archive path. */
+  run: (destDir: string): Promise<string> => unwrap(commands.backupVault(destDir)),
+};
+
 /** Native folder picker for onboarding — OS access via the Tauri dialog plugin. */
 export async function pickVaultFolder(): Promise<string | null> {
   const selected = await openFolderDialog({

@@ -168,6 +168,13 @@ impl Vault {
         self.root.join("notes")
     }
 
+    /// The vault's root directory on disk — used by whole-vault features like
+    /// `backup` that need to walk every file. Read-only; all writes still go
+    /// through the vault's atomic helpers.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Vault-relative path as a portable, forward-slash-separated string —
     /// crosses the IPC boundary, so it must never carry Windows' native `\`
     /// separator (the frontend and stored block props compare/prefix-match
