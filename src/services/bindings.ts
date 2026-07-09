@@ -115,6 +115,29 @@ export const commands = {
 	 *  `read_app_settings`.
 	 */
 	writeAppSettings: (name: string, contents: string) => typedError<null, CoreError>(__TAURI_INVOKE("write_app_settings", { name, contents })),
+	/**  All calendar events in the open vault. */
+	listEvents: () => typedError<Event_Serialize[], CoreError>(__TAURI_INVOKE("list_events")),
+	/**
+	 *  Create an event (a fresh UUID is assigned if `event.id` is empty) and return
+	 *  the stored form.
+	 */
+	createEvent: (event: Event_Deserialize) => typedError<Event_Serialize, CoreError>(__TAURI_INVOKE("create_event", { event })),
+	/**  Update an existing event (matched by id). */
+	updateEvent: (event: Event_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("update_event", { event })),
+	/**  Delete an event by id. */
+	deleteEvent: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_event", { id })),
+	/**
+	 *  Everything on the calendar in the inclusive `[start, end]` day range: both
+	 *  standalone events and note→date links (served from the in-memory index).
+	 */
+	calendarRange: (start: string, end: string) => typedError<CalendarRange_Serialize, CoreError>(__TAURI_INVOKE("calendar_range", { start, end })),
+	/**
+	 *  Link a note to a date (optionally a specific event), stored on the note's meta
+	 *  and mirrored into the index.
+	 */
+	addNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_date", { id, date })),
+	/**  Remove a note→date link (matched exactly). */
+	removeNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_date", { id, date })),
 };
 
 /** Events */
@@ -170,6 +193,30 @@ export type Block_Serialize = {
 	children?: Block_Serialize[],
 };
 
+/**
+ *  The combined answer to "what's on the calendar in this range": standalone
+ *  events and note→date links, both falling within `[start, end]`.
+ */
+export type CalendarRange = CalendarRange_Serialize | CalendarRange_Deserialize;
+
+/**
+ *  The combined answer to "what's on the calendar in this range": standalone
+ *  events and note→date links, both falling within `[start, end]`.
+ */
+export type CalendarRange_Deserialize = {
+	events: Event_Deserialize[],
+	note_dates: NoteDateEntry_Deserialize[],
+};
+
+/**
+ *  The combined answer to "what's on the calendar in this range": standalone
+ *  events and note→date links, both falling within `[start, end]`.
+ */
+export type CalendarRange_Serialize = {
+	events: Event_Serialize[],
+	note_dates: NoteDateEntry_Serialize[],
+};
+
 export type CoreError = 
 /**  No vault is currently open, or the path is not a usable vault. */
 { kind: "Vault"; message: string } | 
@@ -188,6 +235,57 @@ export type CoreError =
 { kind: "EmptyBlockId" } | 
 /**  The same block `id` appeared more than once in the tree. */
 { kind: "DuplicateBlockId"; message: string };
+
+/**
+ *  A first-class calendar event. A single day/instant when `end` is `None`; a
+ *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
+ *  tells the UI to render the day span and ignore the clock time. (Range overlap
+ *  is computed on the UTC calendar date — a local-timezone refinement can come
+ *  later without changing the on-disk shape.)
+ */
+export type Event = Event_Serialize | Event_Deserialize;
+
+/**
+ *  A first-class calendar event. A single day/instant when `end` is `None`; a
+ *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
+ *  tells the UI to render the day span and ignore the clock time. (Range overlap
+ *  is computed on the UTC calendar date — a local-timezone refinement can come
+ *  later without changing the on-disk shape.)
+ */
+export type Event_Deserialize = {
+	id: string,
+	title: string,
+	start: string,
+	end?: string | null,
+	all_day?: boolean,
+	/**
+	 *  Notes linked to this event (optional; the reciprocal of a `NoteDate` whose
+	 *  `event_id` points here).
+	 */
+	note_ids?: string[],
+	color?: string | null,
+};
+
+/**
+ *  A first-class calendar event. A single day/instant when `end` is `None`; a
+ *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
+ *  tells the UI to render the day span and ignore the clock time. (Range overlap
+ *  is computed on the UTC calendar date — a local-timezone refinement can come
+ *  later without changing the on-disk shape.)
+ */
+export type Event_Serialize = {
+	id: string,
+	title: string,
+	start: string,
+	end?: string | null,
+	all_day: boolean,
+	/**
+	 *  Notes linked to this event (optional; the reciprocal of a `NoteDate` whose
+	 *  `event_id` points here).
+	 */
+	note_ids?: string[],
+	color?: string | null,
+};
 
 export type FolderNode = FolderNode_Serialize | FolderNode_Deserialize;
 
@@ -254,10 +352,87 @@ export type NoteChangedExternally = {
 	id: string,
 };
 
+/**
+ *  A note→date link stored on the note (`NoteMeta::dates`). A bare date, plus an
+ *  optional `event_id` when the link is to a specific event rather than just a day.
+ */
+export type NoteDate = NoteDate_Serialize | NoteDate_Deserialize;
+
+/**
+ *  A note→date link surfaced by a range query, carrying just enough of the note's
+ *  summary (title/icon) to render and open it without a file read.
+ */
+export type NoteDateEntry = NoteDateEntry_Serialize | NoteDateEntry_Deserialize;
+
+/**
+ *  A note→date link surfaced by a range query, carrying just enough of the note's
+ *  summary (title/icon) to render and open it without a file read.
+ */
+export type NoteDateEntry_Deserialize = {
+	note_id: string,
+	title: string,
+	icon?: Icon | null,
+	date: string,
+	event_id?: string | null,
+};
+
+/**
+ *  A note→date link surfaced by a range query, carrying just enough of the note's
+ *  summary (title/icon) to render and open it without a file read.
+ */
+export type NoteDateEntry_Serialize = {
+	note_id: string,
+	title: string,
+	icon?: Icon | null,
+	date: string,
+	event_id?: string | null,
+};
+
+/**
+ *  A note→date link stored on the note (`NoteMeta::dates`). A bare date, plus an
+ *  optional `event_id` when the link is to a specific event rather than just a day.
+ */
+export type NoteDate_Deserialize = {
+	date: string,
+	event_id?: string | null,
+};
+
+/**
+ *  A note→date link stored on the note (`NoteMeta::dates`). A bare date, plus an
+ *  optional `event_id` when the link is to a specific event rather than just a day.
+ */
+export type NoteDate_Serialize = {
+	date: string,
+	event_id?: string | null,
+};
+
 /**  Note-level metadata that is cheap to read and useful for listings. */
-export type NoteMeta = {
+export type NoteMeta = NoteMeta_Serialize | NoteMeta_Deserialize;
+
+/**  Note-level metadata that is cheap to read and useful for listings. */
+export type NoteMeta_Deserialize = {
 	pinned?: boolean,
 	tags?: string[],
+	/**
+	 *  Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
+	 *  note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
+	 *  into `NoteSummary` + the in-memory index (like `pinned`) so calendar range
+	 *  queries never re-read note files.
+	 */
+	dates?: NoteDate_Deserialize[],
+};
+
+/**  Note-level metadata that is cheap to read and useful for listings. */
+export type NoteMeta_Serialize = {
+	pinned: boolean,
+	tags: string[],
+	/**
+	 *  Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
+	 *  note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
+	 *  into `NoteSummary` + the in-memory index (like `pinned`) so calendar range
+	 *  queries never re-read note files.
+	 */
+	dates: NoteDate_Serialize[],
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -277,6 +452,12 @@ export type NoteSummary_Deserialize = {
 	 *  re-reading files.
 	 */
 	pinned?: boolean,
+	/**
+	 *  Mirror of `NoteMeta::dates` (Phase 3 step 1), carried in the summary +
+	 *  in-memory index so calendar range queries are served without re-reading
+	 *  note files — the same pattern as `pinned`.
+	 */
+	dates?: NoteDate_Deserialize[],
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -293,6 +474,12 @@ export type NoteSummary_Serialize = {
 	 *  re-reading files.
 	 */
 	pinned: boolean,
+	/**
+	 *  Mirror of `NoteMeta::dates` (Phase 3 step 1), carried in the summary +
+	 *  in-memory index so calendar range queries are served without re-reading
+	 *  note files — the same pattern as `pinned`.
+	 */
+	dates: NoteDate_Serialize[],
 };
 
 /**  A full note document — one JSON file per note. */
@@ -303,7 +490,7 @@ export type Note_Deserialize = {
 	icon?: Icon | null,
 	created: string,
 	modified: string,
-	meta?: NoteMeta,
+	meta?: NoteMeta_Deserialize,
 	blocks?: Block_Deserialize[],
 };
 
@@ -315,7 +502,7 @@ export type Note_Serialize = {
 	icon?: Icon | null,
 	created: string,
 	modified: string,
-	meta: NoteMeta,
+	meta: NoteMeta_Serialize,
 	blocks: Block_Serialize[],
 };
 

@@ -25,10 +25,15 @@ export type {
   GraphData,
   GraphNode,
   GraphEdge,
+  Event,
+  NoteDate,
+  NoteDateEntry,
+  CalendarRange,
 } from "./bindings";
 import type { AttachmentKind } from "./bindings";
 import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
+import type { Event, NoteDate, CalendarRange } from "./bindings";
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
 
@@ -106,6 +111,34 @@ export const links = {
   resolveTitles: (ids: string[]): Promise<NoteSummary[]> => unwrap(commands.resolveTitles(ids)),
   /** Rebuild the graph cache from disk (recovery — it's derived/rebuildable). */
   rebuild: (): Promise<null> => unwrap(commands.rebuildGraph()),
+};
+
+/**
+ * Calendar (Phase 3 step 1) — first-class events plus note→date links, combined
+ * by the Rust `calendar` module. Events persist to `.vault/config/calendar.json`
+ * (content — backed up and MAY sync, NOT a rebuildable cache); note→date links
+ * live on the note's meta and are mirrored into the index for fast range queries.
+ * Dates cross the boundary as ISO `YYYY-MM-DD` strings; event start/end as ISO-8601
+ * datetime strings.
+ */
+export const calendar = {
+  /** All events in the vault. */
+  listEvents: (): Promise<Event[]> => unwrap(commands.listEvents()),
+  /** Create an event (a fresh id is assigned if empty); returns the stored form. */
+  createEvent: (event: Event): Promise<Event> => unwrap(commands.createEvent(event)),
+  /** Update an existing event (matched by id). */
+  updateEvent: (event: Event): Promise<null> => unwrap(commands.updateEvent(event)),
+  /** Delete an event by id. */
+  deleteEvent: (id: string): Promise<null> => unwrap(commands.deleteEvent(id)),
+  /** Everything in the inclusive `[start, end]` day range (ISO `YYYY-MM-DD`): events + note→date links. */
+  range: (start: string, end: string): Promise<CalendarRange> =>
+    unwrap(commands.calendarRange(start, end)),
+  /** Link a note to a date (optionally a specific event id). */
+  addNoteDate: (id: string, date: NoteDate): Promise<null> =>
+    unwrap(commands.addNoteDate(id, date)),
+  /** Remove a note→date link (matched exactly). */
+  removeNoteDate: (id: string, date: NoteDate): Promise<null> =>
+    unwrap(commands.removeNoteDate(id, date)),
 };
 
 /**

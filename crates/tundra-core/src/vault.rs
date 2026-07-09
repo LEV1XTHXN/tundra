@@ -17,10 +17,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use walkdir::WalkDir;
 
+use crate::calendar::{NoteDate, NoteDateEntry};
 use crate::document::{Note, NoteSummary, SCHEMA_VERSION};
 use crate::error::{CoreError, Result};
 
@@ -216,6 +218,7 @@ impl Vault {
             modified: note.modified,
             icon: note.icon.clone(),
             pinned: note.meta.pinned,
+            dates: note.meta.dates.clone(),
         };
         self.index
             .write()
@@ -332,12 +335,60 @@ impl Vault {
             modified: note.modified,
             icon: note.icon.clone(),
             pinned: note.meta.pinned,
+            dates: note.meta.dates.clone(),
         };
         self.index
             .write()
             .unwrap()
             .notes
             .insert(note.id.clone(), IndexEntry { path, summary });
+        Ok(())
+    }
+
+    // --- note→date links (Phase 3 step 1) --------------------------------
+
+    /// Note→date links whose date falls in the inclusive `[start, end]` range,
+    /// served entirely from the in-memory index (the mirrored
+    /// `NoteSummary::dates`) — no note files are re-read. One entry per matching
+    /// (note, date) pair.
+    pub fn notes_in_date_range(&self, start: NaiveDate, end: NaiveDate) -> Vec<NoteDateEntry> {
+        let index = self.index.read().unwrap();
+        let mut out = Vec::new();
+        for entry in index.notes.values() {
+            for nd in &entry.summary.dates {
+                if nd.date >= start && nd.date <= end {
+                    out.push(NoteDateEntry {
+                        note_id: entry.summary.id.clone(),
+                        title: entry.summary.title.clone(),
+                        icon: entry.summary.icon.clone(),
+                        date: nd.date,
+                        event_id: nd.event_id.clone(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// Add a note→date link and persist the note (which mirrors the new date into
+    /// the index via `save_note`). Deduped: an identical link is a no-op.
+    pub fn add_note_date(&self, id: &str, note_date: NoteDate) -> Result<()> {
+        let mut note = self.read_note(id)?;
+        if !note.meta.dates.contains(&note_date) {
+            note.meta.dates.push(note_date);
+            self.save_note(note)?;
+        }
+        Ok(())
+    }
+
+    /// Remove a note→date link (matched exactly) and persist.
+    pub fn remove_note_date(&self, id: &str, note_date: &NoteDate) -> Result<()> {
+        let mut note = self.read_note(id)?;
+        let before = note.meta.dates.len();
+        note.meta.dates.retain(|d| d != note_date);
+        if note.meta.dates.len() != before {
+            self.save_note(note)?;
+        }
         Ok(())
     }
 
@@ -726,6 +777,7 @@ impl Vault {
                         modified: note.modified,
                         icon: note.icon.clone(),
                         pinned: note.meta.pinned,
+                        dates: note.meta.dates.clone(),
                     };
                     self.index.write().unwrap().notes.insert(
                         note.id.clone(),
@@ -896,6 +948,7 @@ fn build_index(root: &Path) -> Result<VaultIndex> {
                     modified: note.modified,
                     icon: note.icon,
                     pinned: note.meta.pinned,
+                    dates: note.meta.dates,
                 },
             },
         );
@@ -1261,6 +1314,66 @@ mod tests {
         // Survives a reopen (rebuilt from the file's meta).
         let reopened = Vault::open(&dir).unwrap();
         assert!(reopened.note_summary(&note.id).unwrap().pinned);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn note_date_surfaces_in_summary_and_range_query_without_disk_read() {
+        let (vault, dir) = temp_vault();
+        let note = vault.create_note("Meeting notes").unwrap();
+        let d = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
+
+        vault
+            .add_note_date(&note.id, NoteDate { date: d, event_id: None })
+            .unwrap();
+
+        // Mirrored into the in-memory summary, exactly like `pinned`.
+        assert_eq!(vault.note_summary(&note.id).unwrap().dates, vec![NoteDate { date: d, event_id: None }]);
+
+        // A range query is served from the index (this vault's notes/ dir could be
+        // deleted from under us and the in-memory answer would still stand).
+        let hits = vault.notes_in_date_range(
+            NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 7, 31).unwrap(),
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].note_id, note.id);
+        assert_eq!(hits[0].date, d);
+
+        // A date outside the range doesn't match.
+        assert!(vault
+            .notes_in_date_range(
+                NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 8, 31).unwrap(),
+            )
+            .is_empty());
+
+        // Survives a reopen (rebuilt from the file's meta — round-trips on disk).
+        let reopened = Vault::open(&dir).unwrap();
+        assert_eq!(reopened.note_summary(&note.id).unwrap().dates, vec![NoteDate { date: d, event_id: None }]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn old_dateless_note_file_still_loads() {
+        // A pre-Phase-3 note file has no `meta.dates` key at all. serde's default
+        // must load it with an empty `dates` (no SCHEMA_VERSION bump needed).
+        let (vault, dir) = temp_vault();
+        let note = vault.create_note("Legacy").unwrap();
+        let path = dir.join(vault.note_summary(&note.id).unwrap().path);
+
+        // Rewrite the file's meta WITHOUT a `dates` field, as an old build would.
+        let mut raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        raw["meta"] = serde_json::json!({ "pinned": false, "tags": [] });
+        fs::write(&path, serde_json::to_string(&raw).unwrap()).unwrap();
+
+        let reopened = Vault::open(&dir).unwrap();
+        let loaded = reopened.read_note(&note.id).unwrap();
+        assert!(loaded.meta.dates.is_empty());
+        assert!(reopened.note_summary(&note.id).unwrap().dates.is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
     }
