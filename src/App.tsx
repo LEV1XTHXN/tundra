@@ -24,12 +24,18 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 // load when the user actually opens the graph view (Phase 2 step 4: "views
 // mount lazily").
 const GraphView = lazy(() => import("./graph/GraphView").then((m) => ({ default: m.GraphView })));
+// Calendar pulls in date-fns + its own view; code-split it like the graph so it
+// only loads when the user opens the calendar (Phase 3 step 2: "mount lazily").
+const CalendarView = lazy(() =>
+  import("./calendar/CalendarView").then((m) => ({ default: m.CalendarView })),
+);
 
 /** The top-level views reachable from the shell switcher, in display order. */
 const VIEWS: { id: AppView; label: string }[] = [
   { id: "home", label: "Home" },
   { id: "editor", label: "Notes" },
   { id: "graph", label: "Graph" },
+  { id: "calendar", label: "Calendar" },
   { id: "quicknotes", label: "Quick" },
 ];
 import { useLinkTitles } from "./store/linkTitles";
@@ -431,6 +437,12 @@ export default function App() {
         {view === "graph" && (
           <Suspense fallback={<div className="centered muted">Loading graph…</div>}>
             <GraphView />
+          </Suspense>
+        )}
+
+        {view === "calendar" && (
+          <Suspense fallback={<div className="centered muted">Loading calendar…</div>}>
+            <CalendarView onOpenNote={openNote} onError={setError} />
           </Suspense>
         )}
 

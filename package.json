@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "date-fns": "^4.4.0",
     "frimousse": "^0.3.0",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
