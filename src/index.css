@@ -1721,3 +1721,73 @@ body,
   padding: 0.35rem 0.5rem;
   font-size: 0.85rem;
 }
+
+/* --- Settings: Appearance + Dictionaries (Phase 3 step 6) ------------ */
+.settings-theme-options {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.settings-theme-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-start;
+  text-align: left;
+  min-width: 8rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.settings-theme-option.active {
+  border-color: var(--ring);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.settings-theme-option-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.settings-theme-option-desc {
+  font-size: 0.75rem;
+}
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.settings-wordlist {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.settings-wordlist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+.settings-wordlist li:hover {
+  background: var(--accent);
+}
+.settings-wordlist li button {
+  display: inline-flex;
+  padding: 0.1rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.settings-wordlist li button:hover {
+  color: var(--destructive);
+}

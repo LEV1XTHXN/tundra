@@ -35,6 +35,7 @@ import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 import { FindBar } from "./FindBar";
 import { useKeybindings } from "@/store/keybindings";
+import { useTheme } from "@/store/theme";
 import { matchCommand } from "@/keybindings/binding";
 
 const DEBOUNCE_MS = 600;
@@ -164,6 +165,9 @@ function LoadedNoteEditor({
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
+  // Editor theme follows the app-wide Appearance setting (Phase 3 step 6) — no
+  // longer hardcoded to light; BlockNote re-styles when the resolved theme flips.
+  const resolvedTheme = useTheme((s) => s.resolved);
 
   // In-editor spellcheck (Phase 3 step 5): attach the ProseMirror decoration
   // plugin to BlockNote's live view once it exists. Squiggles come from the Rust
@@ -578,7 +582,7 @@ function LoadedNoteEditor({
           maybeConvertTypedLinks();
           scheduleSave();
         }}
-        theme="light"
+        theme={resolvedTheme}
         formattingToolbar={false}
       >
         <FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />

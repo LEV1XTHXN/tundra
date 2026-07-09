@@ -17,6 +17,7 @@ import { QuickNoteView } from "./quicknotes/QuickNoteView";
 import { Home } from "./home/Home";
 import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
+import { useTheme } from "./store/theme";
 import { matchCommand, formatBinding } from "./keybindings/binding";
 import { SettingsDialog } from "./settings/SettingsDialog";
 
@@ -167,6 +168,12 @@ export default function App() {
   // can fire). Independent of the vault — preferences are app-scoped.
   useEffect(() => {
     void useKeybindings.getState().load();
+  }, []);
+
+  // Load + apply the persisted theme (Phase 3 step 6) once on boot. App-scoped
+  // (not vault-scoped); toggles the `.dark` class on <html>.
+  useEffect(() => {
+    void useTheme.getState().load();
   }, []);
 
   const openVaultAt = useCallback(

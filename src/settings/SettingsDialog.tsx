@@ -4,8 +4,8 @@
  * Preferences are owned by the keybindings store (persisted via Rust); React
  * only renders and captures the user's chosen combos.
  */
-import { useEffect, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { RotateCcw, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,9 @@ import { Button } from "@/components/ui/button";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
-import { appSettings, backup, pickDirectory } from "@/services";
+import { useTheme, type ThemePref } from "@/store/theme";
+import { appSettings, backup, pickDirectory, spellcheck } from "@/services";
+import type { SpellLanguages } from "@/services";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -25,7 +27,9 @@ interface SettingsDialogProps {
 }
 
 const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
   { id: "keybindings", label: "Keybindings" },
+  { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -53,12 +57,126 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             ))}
           </nav>
           <div className="settings-pane">
+            {section === "appearance" && <AppearanceSection />}
             {section === "keybindings" && <KeybindingsSection />}
+            {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Appearance section (Phase 3 step 6): theme preference (system/light/dark),
+ *  applied app-wide via the theme store and persisted through Rust app-settings. */
+function AppearanceSection() {
+  const theme = useTheme((s) => s.theme);
+  const setTheme = useTheme((s) => s.setTheme);
+  const options: { id: ThemePref; label: string; desc: string }[] = [
+    { id: "system", label: "System", desc: "Follow the operating system" },
+    { id: "light", label: "Light", desc: "Always light" },
+    { id: "dark", label: "Dark", desc: "Always dark" },
+  ];
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Appearance</h3>
+      <p className="muted settings-section-desc">Choose the app theme. “System” follows your OS and updates live.</p>
+      <div className="settings-theme-options" role="radiogroup" aria-label="Theme">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            role="radio"
+            aria-checked={theme === o.id}
+            className={`settings-theme-option${theme === o.id ? " active" : ""}`}
+            onClick={() => setTheme(o.id)}
+          >
+            <span className="settings-theme-option-label">{o.label}</span>
+            <span className="muted settings-theme-option-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Dictionaries section (Phase 3 step 6): enable/disable bundled language
+ *  dictionaries (global app-setting) and manage the per-vault custom words. */
+function DictionariesSection() {
+  const [langs, setLangs] = useState<SpellLanguages | null>(null);
+  const [words, setWords] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    spellcheck.languages().then(setLangs).catch((e) => setError(String(e)));
+    spellcheck.personalWords().then(setWords).catch(() => setWords([]));
+  }, []);
+  useEffect(() => reload(), [reload]);
+
+  const toggleLang = async (code: string, on: boolean) => {
+    if (!langs) return;
+    const enabled = on ? [...langs.enabled, code] : langs.enabled.filter((c) => c !== code);
+    try {
+      await spellcheck.setLanguages(enabled);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const removeWord = async (w: string) => {
+    try {
+      await spellcheck.removeWord(w);
+      setWords((ws) => ws.filter((x) => x !== w));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  if (!langs) return <div className="muted">Loading…</div>;
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Dictionaries</h3>
+      <p className="muted settings-section-desc">Enable spellcheck languages and manage words you’ve added.</p>
+
+      <div className="settings-field">
+        <span className="settings-field-label">Languages</span>
+        {langs.available.length === 0 ? (
+          <p className="muted">No dictionaries are bundled yet.</p>
+        ) : (
+          langs.available.map((code) => (
+            <label key={code} className="settings-check">
+              <input
+                type="checkbox"
+                checked={langs.enabled.includes(code)}
+                onChange={(e) => toggleLang(code, e.target.checked)}
+              />
+              {code}
+            </label>
+          ))
+        )}
+      </div>
+
+      <div className="settings-field">
+        <span className="settings-field-label">Custom words</span>
+        {words.length === 0 ? (
+          <p className="muted">No custom words yet — add them from the editor’s right-click menu.</p>
+        ) : (
+          <ul className="settings-wordlist">
+            {words.map((w) => (
+              <li key={w}>
+                <span>{w}</span>
+                <button onClick={() => removeWord(w)} title={`Remove “${w}”`} aria-label={`Remove ${w}`}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error && <p className="error">{error}</p>}
+    </div>
   );
 }
 
