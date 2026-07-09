@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{BooleanQuery, BoostQuery, Occur, Query, QueryParser, RegexQuery};
 use tantivy::schema::{Field, Schema, Value as _, STORED, STRING, TEXT};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{Index, IndexWriter, ReloadPolicy, TantivyDocument, Term};
@@ -241,8 +241,21 @@ impl SearchIndex {
     }
 
     /// Ranked search hits: id, title, and a highlighted-context snippet.
+    ///
+    /// Matches by PREFIX, not whole token: Tantivy's `QueryParser` only finds
+    /// exact tokens, so a search for "test" would never find a note containing
+    /// only "test2". Each query word becomes a `RegexQuery` (`"word.*"`)
+    /// against every searchable field instead, matching any indexed term that
+    /// starts with it. Words are lowercased and stripped to alphanumerics
+    /// before building the pattern (matching the tokenizer's own output), so
+    /// there's nothing that needs regex-escaping.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        if query.trim().is_empty() {
+        let words: Vec<String> = query
+            .split_whitespace()
+            .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect();
+        if words.is_empty() {
             return Ok(Vec::new());
         }
 
@@ -254,28 +267,55 @@ impl SearchIndex {
             .map_err(io_err)?;
         let searcher = reader.searcher();
 
+        let mut word_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(words.len());
+        for word in &words {
+            let pattern = format!("{word}.*");
+            let mut field_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(3);
+            for (field, boost) in [
+                (self.field_title, 3.0_f32),
+                (self.field_body, 1.0),
+                (self.field_tags, 1.0),
+            ] {
+                let regex_query: Box<dyn Query> =
+                    Box::new(RegexQuery::from_pattern(&pattern, field).map_err(io_err)?);
+                field_clauses.push((Occur::Should, Box::new(BoostQuery::new(regex_query, boost))));
+            }
+            word_clauses.push((Occur::Should, Box::new(BooleanQuery::from(field_clauses))));
+        }
+        let matching_query = BooleanQuery::from(word_clauses);
+
+        let top_docs = searcher
+            .search(&matching_query, &TopDocs::with_limit(limit).order_by_score())
+            .map_err(io_err)?;
+
+        // A separate exact-term query, used only to pick/highlight the snippet
+        // fragment — `RegexQuery` is pattern-based (it doesn't match one fixed
+        // term), so it can't report terms for `SnippetGenerator` to highlight.
+        // Falls back to an unhighlighted (but still present) snippet only for a
+        // hit that matched purely via a longer word — e.g. "test" finding
+        // "test2" with no literal "test" anywhere in that note; the search
+        // result itself is unaffected either way.
         let mut query_parser = QueryParser::for_index(
             &self.index,
             vec![self.field_title, self.field_body, self.field_tags],
         );
         query_parser.set_field_boost(self.field_title, 3.0);
-        let parsed = query_parser
-            .parse_query(query)
-            .map_err(|e| CoreError::Vault(format!("invalid search query: {e}")))?;
+        let snippet_query = query_parser.parse_query(query).ok();
 
-        let top_docs = searcher
-            .search(&parsed, &TopDocs::with_limit(limit).order_by_score())
-            .map_err(io_err)?;
-
-        let snippet_generator =
-            SnippetGenerator::create(&searcher, &parsed, self.field_body).map_err(io_err)?;
+        let snippet_generator = match &snippet_query {
+            Some(q) => SnippetGenerator::create(&searcher, q.as_ref(), self.field_body).ok(),
+            None => None,
+        };
 
         let mut hits = Vec::with_capacity(top_docs.len());
         for (_score, addr) in top_docs {
             let doc: TantivyDocument = searcher.doc(addr).map_err(io_err)?;
             let id = field_str(&doc, self.field_id);
             let title = field_str(&doc, self.field_title);
-            let snippet = snippet_generator.snippet_from_doc(&doc).fragment().to_string();
+            let snippet = snippet_generator
+                .as_ref()
+                .map(|g| g.snippet_from_doc(&doc).fragment().to_string())
+                .unwrap_or_default();
             hits.push(SearchHit { id, title, snippet });
         }
         Ok(hits)
@@ -415,6 +455,33 @@ mod tests {
         assert_eq!(by_body.len(), 1);
         assert_eq!(by_body[0].id, cell.id);
         assert!(by_body[0].snippet.to_lowercase().contains("mitochondria"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn search_matches_partial_words_as_a_prefix() {
+        let (vault, dir) = temp_vault();
+        let search = SearchIndex::open(&dir).unwrap();
+
+        let mut exact = vault.create_note("Test").unwrap();
+        exact.blocks = vec![text_block("b1", "paragraph", "An exact title match", vec![])];
+        vault.save_note(exact.clone()).unwrap();
+        search.index_note(&exact, "notes/test.json").unwrap();
+
+        let mut longer = vault.create_note("Test2").unwrap();
+        longer.blocks = vec![text_block("b1", "paragraph", "A longer title match", vec![])];
+        vault.save_note(longer.clone()).unwrap();
+        search.index_note(&longer, "notes/test2.json").unwrap();
+
+        let unrelated = vault.create_note("Unrelated").unwrap();
+        search.index_note(&unrelated, "notes/unrelated.json").unwrap();
+
+        let hits = search.search("test", 10).unwrap();
+        let ids: std::collections::HashSet<_> = hits.iter().map(|h| h.id.as_str()).collect();
+        assert!(ids.contains(exact.id.as_str()), "exact word match should be found");
+        assert!(ids.contains(longer.id.as_str()), "a longer word starting with the query should be found");
+        assert!(!ids.contains(unrelated.id.as_str()));
 
         std::fs::remove_dir_all(&dir).ok();
     }

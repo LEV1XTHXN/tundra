@@ -12,7 +12,6 @@ import { Pin } from "lucide-react";
 import {
   useCreateBlockNote,
   FormattingToolbar,
-  FormattingToolbarController,
   getFormattingToolbarItems,
   type FormattingToolbarProps,
 } from "@blocknote/react";
@@ -178,6 +177,8 @@ function LoadedNoteEditor({
   useEffect(() => {
     const view = editor.prosemirrorView;
     if (!view) return;
+    // Wrap onContext so a right-clicked misspelling's menu takes priority over
+    // the block/formatting context menu below (which checks defaultPrevented).
     const ctl = attachSpellcheckPlugin(view, (text) => spellcheck.check(text), setSpellMenu);
     spellCtl.current = ctl;
     return () => {
@@ -245,6 +246,30 @@ function LoadedNoteEditor({
     container.addEventListener("click", onClick);
     return () => container.removeEventListener("click", onClick);
   }, [editor, vaultPath, onError]);
+
+  // App-specific in-app context menu, replacing the system one: right-clicking
+  // anywhere in the note body opens the formatting/block menu (the same one
+  // BlockNote used to auto-pop on text selection — that auto-popup is now off,
+  // see `formattingToolbar={false}` below) at the click point instead. Scoped
+  // to `.bn-editor` so right-clicking the title input or other chrome keeps its
+  // normal native menu. Registered on the BUBBLE phase on an ANCESTOR of
+  // ProseMirror's view.dom, so it always runs after spellcheckPlugin's own
+  // `handleDOMEvents.contextmenu` (attached directly to view.dom, a nearer
+  // ancestor of the click target) — checking `defaultPrevented` lets a
+  // right-clicked misspelling's suggestion menu take priority over this one.
+  const [formatMenu, setFormatMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const container = editorPaneRef.current;
+    if (!container) return;
+    function onContextMenu(event: MouseEvent) {
+      if (event.defaultPrevented) return;
+      if (!(event.target as HTMLElement).closest(".bn-editor")) return;
+      event.preventDefault();
+      setFormatMenu({ x: event.clientX, y: event.clientY });
+    }
+    container.addEventListener("contextmenu", onContextMenu);
+    return () => container.removeEventListener("contextmenu", onContextMenu);
+  }, []);
 
   // The two editor-scoped shortcuts read their combos from the shared keybinding
   // store (rebindable in Settings); App owns the global ones. Both listeners use
@@ -585,7 +610,11 @@ function LoadedNoteEditor({
         theme={resolvedTheme}
         formattingToolbar={false}
       >
-        <FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />
+        {formatMenu && (
+          <EditorContextMenu x={formatMenu.x} y={formatMenu.y} onClose={() => setFormatMenu(null)}>
+            <CustomFormattingToolbar />
+          </EditorContextMenu>
+        )}
       </BlockNoteView>
       <NoteLinkPicker
         open={linkPicker.open}
@@ -673,6 +702,45 @@ function SpellcheckMenu({
       <button role="menuitem" className="spell-menu-item spell-menu-add" onClick={onAddToDictionary}>
         Add “{ctx.word}” to dictionary
       </button>
+    </div>
+  );
+}
+
+/**
+ * The app-specific in-app context menu (replaces the system right-click
+ * menu): positioned at the click, closes on Escape or an outside click —
+ * same pattern as SpellcheckMenu above. Content is the formatting/block menu.
+ */
+function EditorContextMenu({
+  x,
+  y,
+  onClose,
+  children,
+}: {
+  x: number;
+  y: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="editor-context-menu" style={{ left: x, top: y }}>
+      {children}
     </div>
   );
 }

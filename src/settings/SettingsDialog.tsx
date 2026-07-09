@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
-import { useTheme, type ThemePref } from "@/store/theme";
+import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
 import { appSettings, backup, pickDirectory, spellcheck } from "@/services";
 import type { SpellLanguages } from "@/services";
 
@@ -68,15 +68,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   );
 }
 
-/** Appearance section (Phase 3 step 6): theme preference (system/light/dark),
- *  applied app-wide via the theme store and persisted through Rust app-settings. */
+/** Appearance section (Phase 3 step 6): theme preference (system/light/dark)
+ *  and clock format (24h/12h), applied app-wide via the theme store and
+ *  persisted through Rust app-settings. */
 function AppearanceSection() {
   const theme = useTheme((s) => s.theme);
   const setTheme = useTheme((s) => s.setTheme);
+  const timeFormat = useTheme((s) => s.timeFormat);
+  const setTimeFormat = useTheme((s) => s.setTimeFormat);
   const options: { id: ThemePref; label: string; desc: string }[] = [
     { id: "system", label: "System", desc: "Follow the operating system" },
     { id: "light", label: "Light", desc: "Always light" },
     { id: "dark", label: "Dark", desc: "Always dark" },
+  ];
+  const timeOptions: { id: TimeFormatPref; label: string; desc: string }[] = [
+    { id: "24h", label: "24-hour", desc: "13:00" },
+    { id: "12h", label: "12-hour", desc: "1:00 PM" },
   ];
   return (
     <div className="settings-section">
@@ -90,6 +97,23 @@ function AppearanceSection() {
             aria-checked={theme === o.id}
             className={`settings-theme-option${theme === o.id ? " active" : ""}`}
             onClick={() => setTheme(o.id)}
+          >
+            <span className="settings-theme-option-label">{o.label}</span>
+            <span className="muted settings-theme-option-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <h3 className="settings-section-title settings-section-title-spaced">Clock format</h3>
+      <p className="muted settings-section-desc">Used by the calendar's hourly view.</p>
+      <div className="settings-theme-options" role="radiogroup" aria-label="Clock format">
+        {timeOptions.map((o) => (
+          <button
+            key={o.id}
+            role="radio"
+            aria-checked={timeFormat === o.id}
+            className={`settings-theme-option${timeFormat === o.id ? " active" : ""}`}
+            onClick={() => setTimeFormat(o.id)}
           >
             <span className="settings-theme-option-label">{o.label}</span>
             <span className="muted settings-theme-option-desc">{o.desc}</span>

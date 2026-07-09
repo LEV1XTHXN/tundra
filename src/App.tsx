@@ -117,8 +117,9 @@ export default function App() {
     return list;
   }, []);
 
-  // The folder the currently open note lives in — "new note" targets this
-  // folder, falling back to the vault root when nothing is open.
+  // The folder the currently open note lives in — "new folder" nests here,
+  // falling back to the vault root when nothing is open. (New notes always
+  // go to the vault root regardless — see onNewNote.)
   const selectedFolder = useMemo(() => {
     if (!openNoteId) return "";
     const summary = noteSummaries.get(openNoteId);
@@ -205,13 +206,15 @@ export default function App() {
 
   const onNewNote = useCallback(async () => {
     try {
-      const note = await notes.createIn("Untitled", selectedFolder);
+      // Always the vault root — no default folder, regardless of what's
+      // currently open (the user can move it into a folder afterward).
+      const note = await notes.createIn("Untitled", "");
       await refreshTree();
       openNote(note.id);
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [selectedFolder, refreshTree, openNote]);
+  }, [refreshTree, openNote]);
 
   const onNewFolder = useCallback(() => {
     setNewFolderName("");

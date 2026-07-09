@@ -36,6 +36,16 @@ interface ViewState {
   graphInspectorOpen: boolean;
   setGraphInspectorOpen: (open: boolean) => void;
   toggleGraphInspector: () => void;
+
+  /** A day to jump the full Calendar view to on its next mount (e.g. the
+   *  Home dashboard's calendar widget navigating to a clicked day) — consumed
+   *  once (CalendarView clears it right after reading it), so switching to
+   *  Calendar any other way (the shell's view switcher) isn't affected by a
+   *  stale target from an earlier click. */
+  calendarTarget: Date | null;
+  setCalendarTarget: (date: Date | null) => void;
+  /** Set the target day and switch to the Calendar view in one step. */
+  openCalendarOn: (date: Date) => void;
 }
 
 export const useViewState = create<ViewState>((set) => ({
@@ -66,4 +76,8 @@ export const useViewState = create<ViewState>((set) => ({
   graphInspectorOpen: false,
   setGraphInspectorOpen: (open) => set({ graphInspectorOpen: open }),
   toggleGraphInspector: () => set((state) => ({ graphInspectorOpen: !state.graphInspectorOpen })),
+
+  calendarTarget: null,
+  setCalendarTarget: (date) => set({ calendarTarget: date }),
+  openCalendarOn: (date) => set({ calendarTarget: date, view: "calendar" }),
 }));
