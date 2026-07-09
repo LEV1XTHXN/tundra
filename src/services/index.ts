@@ -29,11 +29,14 @@ export type {
   NoteDate,
   NoteDateEntry,
   CalendarRange,
+  Misspelling,
+  SpellLanguages,
 } from "./bindings";
 import type { AttachmentKind } from "./bindings";
 import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 import type { Event, NoteDate, CalendarRange } from "./bindings";
+import type { Misspelling, SpellLanguages } from "./bindings";
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
 
@@ -308,6 +311,29 @@ export const attachments = {
    * actually needs here.
    */
   openFile: (vaultPath: string, relPath: string): Promise<void> => openPath(`${vaultPath}/${relPath}`),
+};
+
+/**
+ * Spellcheck (Phase 3 step 4) — the Rust `spellcheck` engine (zspell + Hunspell
+ * dictionaries). All dictionary logic lives in the core; the frontend only sends
+ * text and renders the returned misspelled spans. Offsets/lengths are UTF-16 code
+ * units (JS string indexing). The personal dictionary is per-vault; enabled
+ * languages are a global app-setting.
+ */
+export const spellcheck = {
+  /** Misspelled spans in `text`; empty when no language dictionary is loaded. */
+  check: (text: string): Promise<Misspelling[]> => unwrap(commands.spellcheckCheck(text)),
+  /** Add a word to the per-vault personal dictionary (effective immediately). */
+  addWord: (word: string): Promise<null> => unwrap(commands.spellcheckAddWord(word)),
+  /** Remove a word from the personal dictionary. */
+  removeWord: (word: string): Promise<null> => unwrap(commands.spellcheckRemoveWord(word)),
+  /** The personal dictionary's words. */
+  personalWords: (): Promise<string[]> => unwrap(commands.spellcheckPersonalWords()),
+  /** Available (bundled) and currently-enabled languages. */
+  languages: (): Promise<SpellLanguages> => unwrap(commands.spellcheckLanguages()),
+  /** Enable exactly `languages` (persisted globally, applied immediately). */
+  setLanguages: (languages: string[]): Promise<null> =>
+    unwrap(commands.spellcheckSetLanguages(languages)),
 };
 
 /** Native directory picker (e.g. the backup destination), via the dialog plugin. */

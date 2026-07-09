@@ -30,3 +30,6 @@ tantivy.workspace = true
 # One-click vault backup (Phase 3 step 3): a single .zip of the whole vault
 # (excluding the rebuildable .vault/cache/), written outside the vault.
 zip = "2"
+# Multilingual spellcheck (Phase 3 step 4): pure-Rust, Hunspell-compatible.
+# `unstable-suggestions` enables `WordEntry::suggest` (replacement suggestions).
+zspell = { version = "0.5", features = ["unstable-suggestions"] }

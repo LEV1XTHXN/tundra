@@ -145,6 +145,24 @@ export const commands = {
 	 *  `dest_dir` in app-settings (global, cross-vault).
 	 */
 	backupVault: (destDir: string) => typedError<string, CoreError>(__TAURI_INVOKE("backup_vault", { destDir })),
+	/**
+	 *  Misspelled spans in `text` (offsets/lengths in UTF-16 units). Empty when no
+	 *  language dictionary is loaded.
+	 */
+	spellcheckCheck: (text: string) => typedError<Misspelling[], CoreError>(__TAURI_INVOKE("spellcheck_check", { text })),
+	/**  Add a word to the per-vault personal dictionary (effective immediately). */
+	spellcheckAddWord: (word: string) => typedError<null, CoreError>(__TAURI_INVOKE("spellcheck_add_word", { word })),
+	/**  Remove a word from the personal dictionary (Settings; step 6). */
+	spellcheckRemoveWord: (word: string) => typedError<null, CoreError>(__TAURI_INVOKE("spellcheck_remove_word", { word })),
+	/**  The personal dictionary's words (for the Settings dictionary manager). */
+	spellcheckPersonalWords: () => typedError<string[], CoreError>(__TAURI_INVOKE("spellcheck_personal_words")),
+	/**  Available (bundled) and enabled spellcheck languages. */
+	spellcheckLanguages: () => typedError<SpellLanguages, CoreError>(__TAURI_INVOKE("spellcheck_languages")),
+	/**
+	 *  Enable exactly `languages` (persisted globally) and apply to the open vault's
+	 *  spellchecker immediately.
+	 */
+	spellcheckSetLanguages: (languages: string[]) => typedError<null, CoreError>(__TAURI_INVOKE("spellcheck_set_languages", { languages })),
 };
 
 /** Events */
@@ -347,6 +365,19 @@ export type Icon =
 /**  Path (relative to the vault) of a custom icon under `attachments/icons/`. */
 { type: "custom"; value: string };
 
+/**
+ *  A misspelled span within checked text. `offset`/`length` are in **UTF-16 code
+ *  units**, so they line up directly with JavaScript string indexing — the editor
+ *  (step 5) decorates ProseMirror text nodes, which address text in JS string
+ *  units, not Rust bytes or Unicode scalars.
+ */
+export type Misspelling = {
+	offset: number,
+	length: number,
+	word: string,
+	suggestions: string[],
+};
+
 /**  A full note document — one JSON file per note. */
 export type Note = Note_Serialize | Note_Deserialize;
 
@@ -518,6 +549,14 @@ export type SearchHit = {
 	id: string,
 	title: string,
 	snippet: string,
+};
+
+/**  The available (bundled) vs. currently-enabled spellcheck languages. */
+export type SpellLanguages = {
+	/**  Language codes with a bundled `<lang>.aff`+`<lang>.dic` resource. */
+	available: string[],
+	/**  Language codes currently enabled (app-setting; defaults to all available). */
+	enabled: string[],
 };
 
 /**

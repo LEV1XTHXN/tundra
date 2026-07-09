@@ -9,7 +9,7 @@ mod events;
 use std::sync::{Arc, Mutex};
 
 use tauri_specta::{collect_commands, collect_events, Builder};
-use tundra_core::{CalendarStore, LinkIndex, SearchIndex, Vault, Watcher};
+use tundra_core::{CalendarStore, LinkIndex, SearchIndex, SpellChecker, Vault, Watcher};
 
 /// Managed application state: the single currently-open vault, its file
 /// watcher (Phase 1 step 8), its search index (Phase 1 step 9), and its link
@@ -24,6 +24,9 @@ pub struct AppState {
     /// The calendar event store for the open vault (Phase 3 step 1) — opened and
     /// held alongside `search`/`links`, replaced whenever a different vault opens.
     pub calendar: Mutex<Option<Arc<CalendarStore>>>,
+    /// The spellchecker for the open vault (Phase 3 step 4) — per-vault personal
+    /// dictionary + enabled language dictionaries; same lifecycle as the rest.
+    pub spellcheck: Mutex<Option<Arc<SpellChecker>>>,
     /// Held for the whole `open_vault` operation (not just the state swap at
     /// the end) so two overlapping calls — e.g. a duplicate IPC call — can
     /// never both construct a `SearchIndex` for the same directory at once,
@@ -80,6 +83,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::add_note_date,
             commands::remove_note_date,
             commands::backup_vault,
+            commands::spellcheck_check,
+            commands::spellcheck_add_word,
+            commands::spellcheck_remove_word,
+            commands::spellcheck_personal_words,
+            commands::spellcheck_languages,
+            commands::spellcheck_set_languages,
         ])
         .events(collect_events![events::TreeChanged, events::NoteChangedExternally])
 }
