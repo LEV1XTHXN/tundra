@@ -20,8 +20,9 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 import { FileOpenButton } from "./FileOpenButton";
 
-import { attachments, notes, watcher } from "@/services";
+import { attachments, notes, spellcheck, watcher } from "@/services";
 import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
+import { attachSpellcheckPlugin, type SpellContext, type SpellcheckController } from "./spellcheckPlugin";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { IconPicker } from "@/nav/IconPicker";
@@ -163,6 +164,23 @@ function LoadedNoteEditor({
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
+
+  // In-editor spellcheck (Phase 3 step 5): attach the ProseMirror decoration
+  // plugin to BlockNote's live view once it exists. Squiggles come from the Rust
+  // service (inert until a dictionary is bundled). The context menu is React,
+  // opened from the plugin with the misspelling + screen coords.
+  const [spellMenu, setSpellMenu] = useState<SpellContext | null>(null);
+  const spellCtl = useRef<SpellcheckController | null>(null);
+  useEffect(() => {
+    const view = editor.prosemirrorView;
+    if (!view) return;
+    const ctl = attachSpellcheckPlugin(view, (text) => spellcheck.check(text), setSpellMenu);
+    spellCtl.current = ctl;
+    return () => {
+      ctl.detach();
+      spellCtl.current = null;
+    };
+  }, [editor]);
 
   // Windows Explorer's "copy" on a file puts BOTH a file entry and a
   // text/plain path onto the clipboard. BlockNote's own paste handler picks
@@ -477,10 +495,33 @@ function LoadedNoteEditor({
     void flush(); // save_note falls back to a fresh path when the id isn't in the index.
   }
 
+  // --- spellcheck context-menu actions (Phase 3 step 5) ------------------
+  function replaceMisspelling(ctx: SpellContext, replacement: string) {
+    const view = editor.prosemirrorView;
+    if (view) view.dispatch(view.state.tr.insertText(replacement, ctx.from, ctx.to));
+    setSpellMenu(null);
+    spellCtl.current?.recheckAll();
+  }
+  function addMisspellingToDictionary(ctx: SpellContext) {
+    setSpellMenu(null);
+    spellcheck
+      .addWord(ctx.word)
+      .then(() => spellCtl.current?.recheckAll())
+      .catch((e) => onError(String(e)));
+  }
+
   return (
     <>
     <div className="editor-pane" ref={editorPaneRef}>
       {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
+      {spellMenu && (
+        <SpellcheckMenu
+          ctx={spellMenu}
+          onReplace={(word) => replaceMisspelling(spellMenu, word)}
+          onAddToDictionary={() => addMisspellingToDictionary(spellMenu)}
+          onClose={() => setSpellMenu(null)}
+        />
+      )}
       {reconcile.kind === "dirty-conflict" && (
         <div className="reconcile-banner">
           <span>This note changed on disk while you had unsaved edits.</span>
@@ -570,5 +611,64 @@ function LoadedNoteEditor({
       {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
     </div>
     </>
+  );
+}
+
+/**
+ * Context menu for a right-clicked misspelling (Phase 3 step 5): suggestions to
+ * replace the word, and "Add to dictionary". Positioned at the click; closes on
+ * Escape or an outside click. Keyboard-accessible (arrow/Tab through buttons).
+ */
+function SpellcheckMenu({
+  ctx,
+  onReplace,
+  onAddToDictionary,
+  onClose,
+}: {
+  ctx: SpellContext;
+  onReplace: (word: string) => void;
+  onAddToDictionary: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Focus the first item so the menu is immediately keyboard-drivable.
+    ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="spell-menu"
+      role="menu"
+      aria-label={`Spelling suggestions for ${ctx.word}`}
+      style={{ left: ctx.x, top: ctx.y }}
+    >
+      {ctx.suggestions.length === 0 ? (
+        <div className="spell-menu-empty muted">No suggestions</div>
+      ) : (
+        ctx.suggestions.map((s) => (
+          <button key={s} role="menuitem" className="spell-menu-item" onClick={() => onReplace(s)}>
+            {s}
+          </button>
+        ))
+      )}
+      <div className="spell-menu-sep" />
+      <button role="menuitem" className="spell-menu-item spell-menu-add" onClick={onAddToDictionary}>
+        Add “{ctx.word}” to dictionary
+      </button>
+    </div>
   );
 }
