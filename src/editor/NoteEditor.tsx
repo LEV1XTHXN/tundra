@@ -137,7 +137,7 @@ function LoadedNoteEditor({
     // time (like note icons). Anything else (e.g. a pasted external URL) is left
     // untouched.
     resolveFileUrl: async (url: string) =>
-      url.startsWith("attachments/") ? attachments.assetUrl(vaultPath, url) : url,
+      url.startsWith("attachments/") ? attachments.resolveUrl(vaultPath, url) : url,
     // Web links: use BlockNote's built-in behaviour — select text and paste a
     // URL over it (or Ctrl+K) to create a link. BlockNote's default paste
     // already parses Markdown, so no custom pasteHandler is needed. (We tried a

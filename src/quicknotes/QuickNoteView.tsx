@@ -75,7 +75,7 @@ function LoadedQuickNote({
       return attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
     },
     resolveFileUrl: async (url: string) =>
-      url.startsWith("attachments/") ? attachments.assetUrl(vaultPath, url) : url,
+      url.startsWith("attachments/") ? attachments.resolveUrl(vaultPath, url) : url,
   });
 
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");

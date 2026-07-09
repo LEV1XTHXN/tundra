@@ -208,12 +208,32 @@ export const watcher = {
 };
 
 /**
+ * Linux uses WebKitGTK, which delegates `<video>`/`<audio>` playback to
+ * GStreamer — and GStreamer doesn't understand Tauri's custom `asset://` scheme,
+ * so media embedded via `convertFileSrc` silently fails to load (a long-standing
+ * upstream limitation; see docs/attachments-linux-media.md). Windows (WebView2)
+ * and macOS (WebKit) decode media themselves and play `asset://` fine. `<img>`
+ * never touches GStreamer, so images work everywhere. We scope the blob-URL
+ * workaround below to Linux only so other platforms keep streaming `asset://`.
+ */
+const isLinuxWebview = typeof navigator !== "undefined" && navigator.userAgent.includes("Linux");
+
+/**
+ * Blob URLs, keyed by vault-relative attachment path. Attachments are
+ * content-addressed (the path contains the content hash), so identical content
+ * maps to one entry that's reused across notes — and `resolveFileUrl` can be
+ * called on every render without refetching or leaking a fresh object URL each
+ * time. Session-lifetime by design: the bytes stay in memory while the app runs.
+ */
+const blobUrlCache = new Map<string, Promise<string>>();
+
+/**
  * Attachments (Phase 2 step 1) — content-addressed image/video/file embeds.
  * The editor reads a dropped/pasted/picked `File`'s bytes and forwards them
  * here; the core (Rust) hashes + stores them and returns a stable vault-relative
  * path. That relative path is what gets stored in the note (portable across
  * machines/vault moves); it is turned into a displayable URL only at render time
- * via `assetUrl`, exactly like custom note icons.
+ * via `resolveUrl`, exactly like custom note icons.
  */
 export const attachments = {
   /** Import a file by content, returning its vault-relative hashed path. */
@@ -222,6 +242,30 @@ export const attachments = {
   /** A displayable asset URL for a stored vault-relative attachment path. */
   assetUrl: (vaultPath: string, relPath: string): string =>
     convertFileSrc(`${vaultPath}/${relPath}`),
+  /**
+   * A *playable* URL for a stored attachment, for BlockNote's `resolveFileUrl`.
+   * Images render via `<img>`, which reads `asset://` on every platform — so
+   * they (and everything on Windows/macOS) get the streaming `asset://` URL
+   * directly. On Linux, `<video>`/`<audio>`/file previews can't reach `asset://`
+   * (see `isLinuxWebview`), so we `fetch` the bytes over `asset://` — which
+   * `fetch`/XHR *can* reach — and return a `blob:` URL WebKit plays from memory.
+   * The blob's Content-Type comes from the asset protocol (correct, ext-based),
+   * so the media element gets the right MIME with no guessing here.
+   */
+  resolveUrl(vaultPath: string, relPath: string): string | Promise<string> {
+    const assetUrl = convertFileSrc(`${vaultPath}/${relPath}`);
+    if (!isLinuxWebview || relPath.startsWith("attachments/images/")) return assetUrl;
+    let pending = blobUrlCache.get(relPath);
+    if (!pending) {
+      pending = fetch(assetUrl)
+        .then((resp) => resp.blob())
+        .then((blob) => URL.createObjectURL(blob));
+      // Don't cache a rejected fetch — let the next render retry.
+      pending.catch(() => blobUrlCache.delete(relPath));
+      blobUrlCache.set(relPath, pending);
+    }
+    return pending;
+  },
   /**
    * Open a stored attachment with the OS's default app (Explorer/Preview/etc).
    * `window.open` on a resolved `asset://` URL — what BlockNote's built-in file
