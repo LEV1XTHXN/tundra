@@ -494,6 +494,27 @@ impl Vault {
         Ok(())
     }
 
+    /// Ids of every note whose **body is empty** (see `Note::is_empty`) — the
+    /// candidates for the settings "vault cleanup" action. Reads each note body
+    /// (summaries don't carry blocks); a note that fails to read is skipped rather
+    /// than reported, so cleanup never trips over a single unreadable file. The
+    /// index lock is released before any file is read.
+    pub fn empty_note_ids(&self) -> Result<Vec<String>> {
+        let ids: Vec<String> = {
+            let index = self.index.read().unwrap();
+            index.notes.keys().cloned().collect()
+        };
+        let mut empty = Vec::new();
+        for id in ids {
+            if let Ok(note) = self.read_note(&id) {
+                if note.is_empty() {
+                    empty.push(id);
+                }
+            }
+        }
+        Ok(empty)
+    }
+
     /// Move a note to a different folder (relative to `notes/`, e.g.
     /// `"Biology/Plants"` or `""` for the root). Preserves the file's base
     /// name and, above all, its in-file id — identity survives the move.

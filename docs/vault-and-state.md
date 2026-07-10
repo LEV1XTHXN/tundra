@@ -41,6 +41,27 @@ filename is a slug of the title (convenience only), so notes can move/rename wit
 breaking links later. Lookups by id currently scan `notes/` (fine at Phase 0 scale;
 the `links` module builds a real id→path map in Phase 2).
 
+## Vault cleanup (delete empty notes)
+
+Settings → **Maintenance** → "Clean up vault" deletes every note whose **body is
+empty**, regardless of title, to clear out notes started but never written in.
+
+- **Emptiness is a body-only check** (`Note::is_empty`, `document.rs`): a note is
+  empty only when every block is a plain-text block (`TEXT_BLOCK_TYPES`) with no
+  non-whitespace text. Any non-text block (image/video/file/table/code, or any
+  unrecognized/custom type) counts as content, so a note holding an embed is
+  **kept** even with no words. The title is deliberately ignored — a
+  titled-but-bodyless note is still deleted (product decision).
+- **Flow:** `Vault::empty_note_ids` reads each note body (summaries don't carry
+  blocks) and returns the empties; the `cleanup_empty_notes` command deletes each
+  via the same path as `delete_note` (file + `.bak` removed, dropped from the
+  in-memory, search, and link indexes) and returns the deleted ids. The frontend
+  (`notes.cleanupEmpty`) reports the count and, via `App.onVaultCleaned`, refreshes
+  the tree and closes the open note if it was deleted.
+- The settings button reveals an inline **confirm** before running (destructive,
+  irreversible). Reading every body on demand is acceptable for a rare, explicit
+  action.
+
 ## Repointing / fixing the vault (no in-app switch yet)
 
 The Phase 0 skeleton always reopens `lastVault` and has **no UI to switch or move a

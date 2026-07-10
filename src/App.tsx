@@ -347,6 +347,19 @@ export default function App() {
     setPendingDelete({ kind: "note", id, title });
   }, []);
 
+  // After a settings "vault cleanup", refresh the tree and close the open note
+  // if it was one of the deleted empties.
+  const onVaultCleaned = useCallback(
+    async (deletedIds: string[]) => {
+      if (deletedIds.length === 0) return;
+      await refreshTree();
+      if (openNoteId && deletedIds.includes(openNoteId)) {
+        setOpenNoteId(null);
+      }
+    },
+    [refreshTree, openNoteId, setOpenNoteId],
+  );
+
   const onRequestDeleteFolder = useCallback((path: string, name: string, hasChildren: boolean) => {
     setPendingDelete({ kind: "folder", path, name, hasChildren });
   }, []);
@@ -567,7 +580,7 @@ export default function App() {
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onCleaned={onVaultCleaned} />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>

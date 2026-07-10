@@ -124,6 +124,17 @@ impl Note {
         }
     }
 
+    /// Whether the note's **body** has no meaningful content — used by the
+    /// settings "vault cleanup" action, which deletes empty notes regardless of
+    /// title. Conservative by design (it errs toward *keeping* a note): a note is
+    /// empty only when every block in the tree is a plain-text block with no
+    /// non-whitespace text. Any non-text block (image, video, file, table, code,
+    /// or any block type not in `TEXT_BLOCK_TYPES`) counts as content, so a note
+    /// holding an embed is never treated as empty even with no words.
+    pub fn is_empty(&self) -> bool {
+        !self.blocks.iter().any(block_has_content)
+    }
+
     /// Enforce the CRDT-ready invariants across the full block tree (blocks +
     /// nested children, recursively): every block's `id` is non-empty, and no
     /// `id` repeats anywhere in the tree. A block can never lose its `id`
@@ -176,6 +187,57 @@ fn migrate_string_content_to_inline(block: &mut Block) {
     }
     for child in &mut block.children {
         migrate_string_content_to_inline(child);
+    }
+}
+
+/// BlockNote block types whose emptiness is decided purely by their text. Any
+/// block type *not* listed here (image/video/file/table/code/etc., and any custom
+/// block) is treated as content-bearing so `Note::is_empty` never deletes a note
+/// that carries a non-text payload.
+const TEXT_BLOCK_TYPES: &[&str] = &[
+    "paragraph",
+    "heading",
+    "quote",
+    "bulletListItem",
+    "numberedListItem",
+    "checkListItem",
+    "toggleListItem",
+];
+
+/// Whether a block (or any of its descendants) carries content. A non-text block
+/// type always does; a text block does only if it holds non-whitespace text.
+fn block_has_content(block: &Block) -> bool {
+    if !TEXT_BLOCK_TYPES.contains(&block.block_type.as_str()) {
+        return true;
+    }
+    if block.content.as_ref().is_some_and(inline_has_content) {
+        return true;
+    }
+    block.children.iter().any(block_has_content)
+}
+
+/// Whether a block's `content` (BlockNote's array of inline nodes) holds anything
+/// meaningful: non-whitespace text, or any non-text inline node (a mention, a
+/// custom inline, etc.). Links are recursed into.
+fn inline_has_content(value: &Value) -> bool {
+    match value {
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Array(items) => items.iter().any(inline_has_content),
+        Value::Object(map) => match map.get("type").and_then(Value::as_str) {
+            Some("text") => map
+                .get("text")
+                .and_then(Value::as_str)
+                .is_some_and(|t| !t.trim().is_empty()),
+            Some("link") => map.get("content").is_some_and(inline_has_content),
+            // Any other inline node (mention, custom inline embed) is content.
+            Some(_) => true,
+            None => map
+                .get("text")
+                .and_then(Value::as_str)
+                .is_some_and(|t| !t.trim().is_empty())
+                || map.get("content").is_some_and(inline_has_content),
+        },
+        _ => false,
     }
 }
 
@@ -358,6 +420,64 @@ mod tests {
 
         assert_eq!(note.schema_version, SCHEMA_VERSION);
         assert_eq!(note.blocks[0].content.as_ref().unwrap(), &array);
+    }
+
+    /// Build a text node inline-content array with the given text.
+    fn text_content(text: &str) -> Value {
+        serde_json::json!([{ "type": "text", "text": text, "styles": {} }])
+    }
+
+    #[test]
+    fn is_empty_true_for_fresh_note() {
+        // A brand-new note is a single empty paragraph — the cleanup target.
+        assert!(Note::new("Untitled").is_empty());
+    }
+
+    #[test]
+    fn is_empty_true_for_whitespace_only_and_multiple_blank_blocks() {
+        let mut note = Note::new("Titled but blank");
+        note.blocks = vec![
+            block("a", vec![]),
+            {
+                let mut b = block("b", vec![]);
+                b.content = Some(text_content("   \n\t "));
+                b
+            },
+        ];
+        // A meaningful title does NOT save it — cleanup keys off the body only.
+        assert!(note.is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_when_any_block_has_text() {
+        let mut note = Note::new("Note");
+        note.blocks[0].content = Some(text_content("hello"));
+        assert!(!note.is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_for_non_text_block_without_words() {
+        // An image block with no caption text still counts as content.
+        let mut note = Note::new("Photo");
+        note.blocks = vec![Block {
+            id: "img".into(),
+            block_type: "image".into(),
+            props: Some(serde_json::json!({ "url": "attachments/images/x.png" })),
+            content: None,
+            children: Vec::new(),
+        }];
+        assert!(!note.is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_when_text_is_nested_in_a_child() {
+        let mut note = Note::new("Nested");
+        let mut parent = block("p", vec![]);
+        let mut child = block("c", vec![]);
+        child.content = Some(text_content("deep"));
+        parent.children = vec![child];
+        note.blocks = vec![parent];
+        assert!(!note.is_empty());
     }
 
     #[test]

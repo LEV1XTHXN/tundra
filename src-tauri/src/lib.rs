@@ -60,6 +60,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::read_note,
             commands::save_note,
             commands::delete_note,
+            commands::cleanup_empty_notes,
             commands::move_note,
             commands::list_tree,
             commands::create_folder,

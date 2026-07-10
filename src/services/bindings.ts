@@ -42,6 +42,14 @@ export const commands = {
 	readNote: (id: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("read_note", { id })),
 	saveNote: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_note", { note })),
 	deleteNote: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_note", { id })),
+	/**
+	 *  Vault cleanup (settings): delete every note whose body is empty, regardless of
+	 *  title (see `Note::is_empty`). Mirrors `delete_note`'s index upkeep for each
+	 *  removed note and returns the ids that were deleted (the frontend shows the
+	 *  count and refreshes the tree). Notes carrying an image/table/other embed are
+	 *  kept.
+	 */
+	cleanupEmptyNotes: () => typedError<string[], CoreError>(__TAURI_INVOKE("cleanup_empty_notes")),
 	moveNote: (id: string, newFolder: string) => typedError<null, CoreError>(__TAURI_INVOKE("move_note", { id, newFolder })),
 	/**  The folder/note tree for the open vault. */
 	listTree: () => typedError<TreeNode_Serialize[], CoreError>(__TAURI_INVOKE("list_tree")),

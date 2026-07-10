@@ -98,6 +98,12 @@ export const notes = {
   read: (id: string): Promise<Note> => unwrap(commands.readNote(id)),
   save: (note: Note): Promise<null> => unwrap(commands.saveNote(note)),
   delete: (id: string): Promise<null> => unwrap(commands.deleteNote(id)),
+  /**
+   * Vault cleanup: delete every note whose body is empty (any title), keeping
+   * notes that hold images/tables/other non-text content. Returns the deleted
+   * note ids so the caller can report the count and refresh the tree.
+   */
+  cleanupEmpty: (): Promise<string[]> => unwrap(commands.cleanupEmptyNotes()),
   /** Move a note to a different folder (relative to the notes root, e.g. `"Biology/Plants"` or `""` for the root). */
   move: (id: string, folder: string): Promise<null> => unwrap(commands.moveNote(id, folder)),
   /**

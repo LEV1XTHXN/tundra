@@ -18,12 +18,15 @@ import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
-import { appSettings, backup, pickDirectory, spellcheck } from "@/services";
+import { appSettings, backup, notes, pickDirectory, spellcheck } from "@/services";
 import type { SpellLanguages } from "@/services";
 
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called after a vault cleanup with the ids that were deleted, so the app can
+   *  refresh the note tree and close the open note if it was one of them. */
+  onCleaned?: (deletedIds: string[]) => void;
 }
 
 const SECTIONS = [
@@ -31,10 +34,11 @@ const SECTIONS = [
   { id: "keybindings", label: "Keybindings" },
   { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
+  { id: "maintenance", label: "Maintenance" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onCleaned }: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("keybindings");
 
   return (
@@ -61,6 +65,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {section === "keybindings" && <KeybindingsSection />}
             {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
+            {section === "maintenance" && <MaintenanceSection onCleaned={onCleaned} />}
           </div>
         </div>
       </DialogContent>
@@ -280,6 +285,68 @@ function BackupSection() {
       {settings.lastArchive && settings.lastAt && (
         <p className="muted settings-backup-last">
           Last backup {new Date(settings.lastAt).toLocaleString()} → <code>{settings.lastArchive}</code>
+        </p>
+      )}
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Maintenance section: vault cleanup. Deletes every note whose **body** is empty
+ * (regardless of title), keeping notes that hold images/tables/other non-text
+ * content. Destructive and irreversible, so the button reveals an inline confirm
+ * before running.
+ */
+function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const runCleanup = async () => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const deleted = await notes.cleanupEmpty();
+      setResult(deleted.length);
+      onCleaned?.(deleted);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Vault cleanup</h3>
+      <p className="muted settings-section-desc">
+        Delete every note with an empty body to tidy up notes you started but never
+        wrote in. Notes containing images, tables, or other non-text blocks are kept,
+        even if they have no text. This cannot be undone.
+      </p>
+      <div className="settings-actions">
+        {confirming ? (
+          <>
+            <Button variant="destructive" size="sm" disabled={busy} onClick={runCleanup}>
+              {busy ? "Cleaning up…" : "Delete empty notes"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => { setResult(null); setError(null); setConfirming(true); }}>
+            Clean up vault
+          </Button>
+        )}
+      </div>
+      {result !== null && (
+        <p className="muted settings-backup-last">
+          {result === 0 ? "No empty notes found." : `Deleted ${result} empty note${result === 1 ? "" : "s"}.`}
         </p>
       )}
       {error && <p className="error">{error}</p>}

@@ -282,6 +282,26 @@ pub fn delete_note(state: State<AppState>, id: String) -> Result<(), CoreError> 
     Ok(())
 }
 
+/// Vault cleanup (settings): delete every note whose body is empty, regardless of
+/// title (see `Note::is_empty`). Mirrors `delete_note`'s index upkeep for each
+/// removed note and returns the ids that were deleted (the frontend shows the
+/// count and refreshes the tree). Notes carrying an image/table/other embed are
+/// kept.
+#[tauri::command]
+#[specta::specta]
+pub fn cleanup_empty_notes(state: State<AppState>) -> Result<Vec<String>, CoreError> {
+    let vault = current(&state)?;
+    let ids = vault.empty_note_ids()?;
+    let search = current_search(&state)?;
+    let links = current_links(&state)?;
+    for id in &ids {
+        vault.delete_note(id)?;
+        let _ = search.remove_note(id);
+        let _ = links.remove_note(id);
+    }
+    Ok(ids)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn move_note(state: State<AppState>, id: String, new_folder: String) -> Result<(), CoreError> {
@@ -983,6 +1003,34 @@ mod tests {
         delete_note(state.clone(), note.id.clone()).expect("delete_note");
         let tree = list_tree(state).expect("list_tree after delete");
         assert!(!tree_contains_note(&tree, &note.id));
+    }
+
+    /// Vault cleanup deletes empty-bodied notes (any title) but keeps notes with
+    /// real content, and drops the deleted notes from the tree + search index.
+    #[test]
+    fn cleanup_empty_notes_removes_only_empty_notes() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        // Two fresh (empty) notes and one with real content.
+        let empty_a = create_note(state.clone(), "Untitled".into()).expect("create empty a");
+        let empty_b = create_note(state.clone(), "Titled but blank".into()).expect("create empty b");
+        let mut kept = create_note(state.clone(), "Real".into()).expect("create kept");
+        kept.blocks[0].content =
+            Some(serde_json::json!([{ "type": "text", "text": "content", "styles": {} }]));
+        save_note(state.clone(), kept.clone()).expect("save kept");
+
+        let deleted = cleanup_empty_notes(state.clone()).expect("cleanup");
+        assert_eq!(deleted.len(), 2);
+        assert!(deleted.contains(&empty_a.id) && deleted.contains(&empty_b.id));
+
+        let tree = list_tree(state.clone()).expect("list_tree after cleanup");
+        assert!(!tree_contains_note(&tree, &empty_a.id));
+        assert!(!tree_contains_note(&tree, &empty_b.id));
+        assert!(tree_contains_note(&tree, &kept.id), "note with content survives");
     }
 
     /// Regression: a tag added (or removed) through the tag commands must show
