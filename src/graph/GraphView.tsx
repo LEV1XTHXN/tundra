@@ -23,6 +23,7 @@ import { inferSettings } from "graphology-layout-forceatlas2";
 
 import { config, links } from "../services";
 import { useViewState } from "../store/viewState";
+import { useTheme } from "../store/theme";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
 import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
 
@@ -32,6 +33,13 @@ const GRAPH_VIEW_CONFIG = "graph-view.json";
 /** Node fill — a single accent that reads on the (light) shell background; nodes
  *  are deliberately uniform dots, so scale/importance is shown by size, not color. */
 const NODE_COLOR = "#5b8def";
+
+/** Node label text colour, per theme. Sigma resolves labels from the
+ *  `labelColor` setting; the default `#000` is unreadable on the dark shell, so
+ *  we switch to near-white there. (Hover labels sit on a white pill and stay
+ *  dark in both themes — only the toggled-on labels need this.) */
+const LABEL_COLOR_LIGHT = "#000";
+const LABEL_COLOR_DARK = "#e4e4e7";
 
 /** Node sizing. Sigma v3 hit-tests via pixel-perfect WebGL color-picking, so a
  *  node's clickable area == its drawn size (there's no separate hit radius). A
@@ -61,6 +69,7 @@ type Status = "loading" | "ready" | "empty" | "error";
 export function GraphView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const openNote = useViewState((s) => s.openNote);
+  const resolvedTheme = useTheme((s) => s.resolved);
   const panelOpen = useViewState((s) => s.graphInspectorOpen);
   const togglePanel = useViewState((s) => s.toggleGraphInspector);
   const setPanelOpen = useViewState((s) => s.setGraphInspectorOpen);
@@ -75,6 +84,9 @@ export function GraphView() {
   // Live instances, reachable by the panel's handlers without rebuilding them.
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  // Current label colour, kept in a ref so the (theme-independent) build effect
+  // can read the live value at construction without re-running on theme change.
+  const labelColorRef = useRef(resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT);
   const layoutRef = useRef<FA2Layout | null>(null);
   // Full persisted settings (camera + display) — the single object we write, so
   // saving one field never clobbers another.
@@ -255,6 +267,7 @@ export function GraphView() {
           labelDensity: 0.6,
           labelRenderedSizeThreshold: 8,
           defaultNodeColor: NODE_COLOR,
+          labelColor: { color: labelColorRef.current },
           renderLabels: initShowLabels,
           // Draw the note title centered directly under the node.
           defaultDrawNodeLabel: drawNodeLabelBelow,
@@ -456,6 +469,19 @@ export function GraphView() {
       graphRef.current = null;
     };
   }, [openNote, runLayout, scheduleSave]);
+
+  // Keep label colour in step with the theme without rebuilding sigma. Updates
+  // the ref (read by the build effect on first mount) and, if sigma is already
+  // live, pushes the new colour and repaints.
+  useEffect(() => {
+    const color = resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT;
+    labelColorRef.current = color;
+    const s = sigmaRef.current;
+    if (s) {
+      s.setSetting("labelColor", { color });
+      s.refresh();
+    }
+  }, [resolvedTheme]);
 
   return (
     <div className="graph-view">
