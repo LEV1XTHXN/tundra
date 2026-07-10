@@ -308,6 +308,13 @@ export const search = {
   /** Ranked hits (id, title, snippet) for `query`, most relevant first. */
   query: (query: string, limit: number): Promise<SearchHit[]> =>
     unwrap(commands.searchQuery(query, limit)),
+  /**
+   * Tag-filtered hits for the global search's `#tag` mode: notes whose tag set
+   * matches `tagQuery` (prefix per word), most relevant first. The snippet is
+   * the note's full tag set (`#a #b`). Unlike `query`, matches only tags.
+   */
+  byTag: (tagQuery: string, limit: number): Promise<SearchHit[]> =>
+    unwrap(commands.searchByTag(tagQuery, limit)),
   /** Rebuild the index from scratch — a recovery action; the index is derived/rebuildable. */
   rebuild: (): Promise<null> => unwrap(commands.rebuildIndex()),
 };

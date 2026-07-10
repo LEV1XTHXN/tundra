@@ -69,6 +69,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::import_icon,
             commands::import_attachment,
             commands::search_query,
+            commands::search_by_tag,
             commands::rebuild_index,
             commands::backlinks,
             commands::graph_data,

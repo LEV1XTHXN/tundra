@@ -51,6 +51,34 @@ so a crash can't leave a tag change without its placement. Changing a column's t
 does **not** retro-tag cards already in it (deliberately simple; a bulk re-tag can
 come later). Deleting a column/board leaves notes' tags untouched.
 
+## Tag search (`#tag` in global search)
+
+The global search palette (F2, `src/search/SearchPalette.tsx`) has a **tag mode**:
+a query starting with `#` searches **only** the note's tag set instead of full
+text. So `#bio` surfaces notes *tagged* `biology`, whereas a plain `biology`
+search also returns any note that merely mentions the word.
+
+- **Matching lives in the core**, reusing the search index — no new field or
+  reindex. The `tags` field was already indexed (`TEXT | STORED`) for full-text.
+  `SearchIndex::search_by_tag` (`index.rs`) prefix-matches each query word
+  against `tags` with a `"word.*"` `RegexQuery`, and requires **every** word to
+  match (`Occur::Must`) — so `#machine learning` won't match a note tagged only
+  `machine`. Prefix + per-word behavior mirrors plain `search`.
+- The result **snippet is the note's full tag set** (`#a #b`, read back from the
+  STORED `tags` values) so the palette shows why a note matched.
+- **Frontend only routes**: a leading `#` sends the rest to `search.byTag`
+  (`src/services/index.ts`) instead of `search.query`; a bare `#` shows nothing
+  until a tag is typed. Command: `search_by_tag` in `commands.rs`, registered in
+  `lib.rs`, bindings regenerated.
+- **Reindex on tag change (gotcha):** `vault.save_note` refreshes only the
+  *in-memory summary* index, not the Tantivy search index — that's the command
+  layer's job via `reindex_after_write`. So every tag mutation reindexes the
+  note (`reindex_tags` helper): the three `*_note_tag(s)` commands **and** the
+  Kanban `add`/`move`/`remove_card` commands (which change tags via column tag
+  deltas). Without this, a newly added tag isn't findable by `#tag` until the
+  next vault-open `catch_up`. Kanban reindex is best-effort (a board may hold a
+  dangling note id).
+
 ## Layering (unchanged rules)
 
 All logic is in `tundra-core`; the Tauri layer (`commands.rs`) only resolves the
@@ -83,5 +111,11 @@ client-side reconciliation. Commands: `set_note_tags`/`add_note_tag`/
 drop-tags-a-note, move-swaps-the-tag + remove-strips-it, at-most-once-per-board,
 and reorder-leaves-tags-alone.
 `vault.rs::note_tags_surface_in_summary_and_survive_reopen` covers the mirroring.
+`index.rs` covers tag search: tag-field-only + prefix matching (`#bio` →
+`biology`, and a note that only *mentions* the word is not a tag hit),
+every-word-must-match, and empty-query-returns-nothing.
+`commands.rs::tag_mutations_are_searchable_without_a_reopen` drives the tag
+commands through the mock runtime and asserts `#tag` search reflects add/set/
+remove immediately (the reindex-on-tag-change fix).
 GUI itself not launched here (WebKitGTK/headless), consistent with prior phases —
 data logic is verified by unit tests + a clean `tsc`/`vite build`.

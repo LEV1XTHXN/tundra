@@ -46,10 +46,21 @@ export function SearchPalette({ open, onOpenChange, onSelectNote }: SearchPalett
       setHits([]);
       return;
     }
+    // `#tag` mode: a leading `#` searches by tag (matching only the note's tag
+    // set) instead of full text. The bare `#` with no tag typed yet shows
+    // nothing rather than every note.
+    const isTagSearch = trimmed.startsWith("#");
+    const tagQuery = trimmed.slice(1).trim();
+    if (isTagSearch && !tagQuery) {
+      setHits([]);
+      return;
+    }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      void search
-        .query(trimmed, RESULT_LIMIT)
+      const request = isTagSearch
+        ? search.byTag(tagQuery, RESULT_LIMIT)
+        : search.query(trimmed, RESULT_LIMIT);
+      void request
         .then((results) => {
           if (!cancelled) setHits(results);
         })
@@ -74,12 +85,18 @@ export function SearchPalette({ open, onOpenChange, onSelectNote }: SearchPalett
           (title-boosted); cmdk's own client-side fuzzy filter would re-sort
           or hide correctly-ranked hits that don't literally substring-match. */}
       <Command shouldFilter={false}>
-        <CommandInput placeholder="Search notes…" value={query} onValueChange={setQuery} />
+        <CommandInput
+          placeholder="Search notes…  (#tag to search by tag)"
+          value={query}
+          onValueChange={setQuery}
+        />
         <CommandList>
           {hits.length === 0 ? (
-            <CommandEmpty>{query.trim() ? "No notes found." : "Type to search…"}</CommandEmpty>
+            <CommandEmpty>
+              {query.trim() ? "No notes found." : "Type to search…  Start with # to search by tag."}
+            </CommandEmpty>
           ) : (
-            <CommandGroup heading="Notes">
+            <CommandGroup heading={query.trim().startsWith("#") ? "Tagged notes" : "Notes"}>
               {hits.map((hit) => (
                 <CommandItem
                   key={hit.id}

@@ -320,6 +320,64 @@ impl SearchIndex {
         }
         Ok(hits)
     }
+
+    /// Tag search: notes whose tag set matches `tag_query`, for the global
+    /// search's `#tag` mode. Unlike [`search`], this matches ONLY the `tags`
+    /// field — so `#bio` surfaces notes tagged `biology` regardless of their
+    /// title/body — and every word in the query must match (a note tagged only
+    /// `machine` is not a hit for `#machine learning`).
+    ///
+    /// Matching is by prefix on each tag token, consistent with [`search`]:
+    /// words are lowercased and stripped to alphanumerics (mirroring the
+    /// tokenizer), then each becomes a `"word.*"` `RegexQuery` against `tags`.
+    /// The snippet carries the note's full tag set (`#a #b`) so the UI can show
+    /// why a note matched. An empty query returns no hits (not every note).
+    pub fn search_by_tag(&self, tag_query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+        let words: Vec<String> = tag_query
+            .split_whitespace()
+            .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect();
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let reader: tantivy::IndexReader = self
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
+            .try_into()
+            .map_err(io_err)?;
+        let searcher = reader.searcher();
+
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(words.len());
+        for word in &words {
+            let pattern = format!("{word}.*");
+            let regex_query: Box<dyn Query> =
+                Box::new(RegexQuery::from_pattern(&pattern, self.field_tags).map_err(io_err)?);
+            clauses.push((Occur::Must, regex_query));
+        }
+        let query = BooleanQuery::from(clauses);
+
+        let top_docs = searcher
+            .search(&query, &TopDocs::with_limit(limit).order_by_score())
+            .map_err(io_err)?;
+
+        let mut hits = Vec::with_capacity(top_docs.len());
+        for (_score, addr) in top_docs {
+            let doc: TantivyDocument = searcher.doc(addr).map_err(io_err)?;
+            let id = field_str(&doc, self.field_id);
+            let title = field_str(&doc, self.field_title);
+            let snippet = doc
+                .get_all(self.field_tags)
+                .filter_map(|v| v.as_str())
+                .map(|t| format!("#{t}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            hits.push(SearchHit { id, title, snippet });
+        }
+        Ok(hits)
+    }
 }
 
 fn field_str(doc: &TantivyDocument, field: Field) -> String {
@@ -591,6 +649,67 @@ mod tests {
         search.rebuild(&vault).unwrap();
         assert_eq!(search.search("Glacier", 10).unwrap().len(), 1);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn note_with_tags(vault: &Vault, search: &SearchIndex, title: &str, tags: &[&str]) -> Note {
+        let mut note = vault.create_note(title).unwrap();
+        note.meta.tags = tags.iter().map(|t| t.to_string()).collect();
+        vault.save_note(note.clone()).unwrap();
+        search.index_note(&note, "notes/x.json").unwrap();
+        note
+    }
+
+    #[test]
+    fn search_by_tag_matches_only_the_tag_field_by_prefix() {
+        let (vault, dir) = temp_vault();
+        let search = SearchIndex::open(&dir).unwrap();
+
+        let tagged = note_with_tags(&vault, &search, "Cell", &["biology", "science"]);
+
+        // A note that merely MENTIONS "biology" in its title/body but isn't
+        // tagged must not be a tag hit — that's the point of the `#` mode.
+        let mut mentioned = vault.create_note("Biology reading list").unwrap();
+        mentioned.blocks = vec![text_block("b1", "paragraph", "all about biology", vec![])];
+        vault.save_note(mentioned.clone()).unwrap();
+        search.index_note(&mentioned, "notes/m.json").unwrap();
+
+        // Prefix match: `#bio` finds the note tagged `biology`.
+        let hits = search.search_by_tag("bio", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, tagged.id);
+        // Snippet carries the note's full tag set for display.
+        assert!(hits[0].snippet.contains("#biology"));
+        assert!(hits[0].snippet.contains("#science"));
+
+        // The plain full-text search still finds the mentioning note (unchanged).
+        assert_eq!(search.search("biology", 10).unwrap().len(), 2);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn search_by_tag_requires_every_word_to_match() {
+        let (vault, dir) = temp_vault();
+        let search = SearchIndex::open(&dir).unwrap();
+
+        let ml = note_with_tags(&vault, &search, "ML", &["machine learning"]);
+        let _machine_only = note_with_tags(&vault, &search, "Machines", &["machine"]);
+
+        let hits = search.search_by_tag("machine learning", 10).unwrap();
+        assert_eq!(hits.len(), 1, "only the note tagged with both words matches");
+        assert_eq!(hits[0].id, ml.id);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn search_by_tag_with_an_empty_query_returns_no_hits() {
+        let (vault, dir) = temp_vault();
+        let search = SearchIndex::open(&dir).unwrap();
+        note_with_tags(&vault, &search, "Tagged", &["anything"]);
+        assert_eq!(search.search_by_tag("", 10).unwrap(), Vec::new());
+        assert_eq!(search.search_by_tag("   ", 10).unwrap(), Vec::new());
         std::fs::remove_dir_all(&dir).ok();
     }
 

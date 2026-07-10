@@ -391,6 +391,14 @@ pub fn search_query(state: State<AppState>, query: String, limit: u32) -> Result
     current_search(&state)?.search(&query, limit as usize)
 }
 
+/// Tag-filtered search hits (id, title, and the note's tag set as snippet) for
+/// `tag_query` — the global search's `#tag` mode. Matches only the `tags` field.
+#[tauri::command]
+#[specta::specta]
+pub fn search_by_tag(state: State<AppState>, tag_query: String, limit: u32) -> Result<Vec<SearchHit>, CoreError> {
+    current_search(&state)?.search_by_tag(&tag_query, limit as usize)
+}
+
 /// Rebuild the search index from scratch (a user-triggered recovery action —
 /// the index is derived/rebuildable, never a source of truth).
 #[tauri::command]
@@ -593,25 +601,40 @@ pub fn set_note_property(
 
 // --- note tags (Phase 3+ / Kanban) --------------------------------------
 
+/// Reindex a note into the search index after a tag change, so the `#tag`
+/// search mode sees new/removed tags immediately instead of waiting for the
+/// next vault-open catch-up. `save_note` only refreshes the vault's in-memory
+/// summary index — the Tantivy index is the command layer's job (as with every
+/// other note-persisting command; see `reindex_after_write`).
+fn reindex_tags(state: &State<AppState>, id: &str) -> Result<(), CoreError> {
+    let vault = current(state)?;
+    let note = vault.read_note(id)?;
+    reindex_after_write(&vault, current_search(state)?.as_ref(), &note);
+    Ok(())
+}
+
 /// Replace a note's tag set wholesale (trimmed + deduped by the core).
 #[tauri::command]
 #[specta::specta]
 pub fn set_note_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Result<(), CoreError> {
-    current(&state)?.set_note_tags(&id, tags)
+    current(&state)?.set_note_tags(&id, tags)?;
+    reindex_tags(&state, &id)
 }
 
 /// Add one tag to a note (no-op if blank or already present).
 #[tauri::command]
 #[specta::specta]
 pub fn add_note_tag(state: State<AppState>, id: String, tag: String) -> Result<(), CoreError> {
-    current(&state)?.add_note_tag(&id, &tag)
+    current(&state)?.add_note_tag(&id, &tag)?;
+    reindex_tags(&state, &id)
 }
 
 /// Remove one tag from a note (exact match).
 #[tauri::command]
 #[specta::specta]
 pub fn remove_note_tag(state: State<AppState>, id: String, tag: String) -> Result<(), CoreError> {
-    current(&state)?.remove_note_tag(&id, &tag)
+    current(&state)?.remove_note_tag(&id, &tag)?;
+    reindex_tags(&state, &id)
 }
 
 // --- kanban (Phase 3+) --------------------------------------------------
@@ -710,7 +733,12 @@ pub fn kanban_add_card(
     column_id: String,
     note_id: String,
 ) -> Result<Vec<KanbanBoard>, CoreError> {
-    current_kanban(&state)?.add_card(&current(&state)?, &board_id, &column_id, &note_id)
+    let boards = current_kanban(&state)?.add_card(&current(&state)?, &board_id, &column_id, &note_id)?;
+    // The card's note may have gained the column's tag — refresh the search
+    // index so `#tag` sees it. Best-effort: a dangling note id shouldn't fail
+    // the board mutation the user asked for.
+    let _ = reindex_tags(&state, &note_id);
+    Ok(boards)
 }
 
 /// Move a note to `to_column_id` at `to_index` (swaps the source/destination tags).
@@ -723,7 +751,10 @@ pub fn kanban_move_card(
     to_column_id: String,
     to_index: u32,
 ) -> Result<Vec<KanbanBoard>, CoreError> {
-    current_kanban(&state)?.move_card(&current(&state)?, &board_id, &note_id, &to_column_id, to_index as usize)
+    let boards = current_kanban(&state)?.move_card(&current(&state)?, &board_id, &note_id, &to_column_id, to_index as usize)?;
+    // The move swapped the source/destination column tags on the note.
+    let _ = reindex_tags(&state, &note_id);
+    Ok(boards)
 }
 
 /// Remove a note from a board (strips the tag of the column it was in).
@@ -734,7 +765,10 @@ pub fn kanban_remove_card(
     board_id: String,
     note_id: String,
 ) -> Result<Vec<KanbanBoard>, CoreError> {
-    current_kanban(&state)?.remove_card(&current(&state)?, &board_id, &note_id)
+    let boards = current_kanban(&state)?.remove_card(&current(&state)?, &board_id, &note_id)?;
+    // The note lost the column's tag (if any).
+    let _ = reindex_tags(&state, &note_id);
+    Ok(boards)
 }
 
 // --- backup (Phase 3 step 3) --------------------------------------------
@@ -949,6 +983,37 @@ mod tests {
         delete_note(state.clone(), note.id.clone()).expect("delete_note");
         let tree = list_tree(state).expect("list_tree after delete");
         assert!(!tree_contains_note(&tree, &note.id));
+    }
+
+    /// Regression: a tag added (or removed) through the tag commands must show
+    /// up in `#tag` search immediately, without a vault reopen — `save_note`
+    /// only refreshes the in-memory summary index, so the command layer has to
+    /// reindex the note into the Tantivy index itself.
+    #[test]
+    fn tag_mutations_are_searchable_without_a_reopen() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        let note = create_note(state.clone(), "Photosynthesis".into()).expect("create_note");
+        // Not yet tagged: a tag search finds nothing.
+        assert!(search_by_tag(state.clone(), "biology".into(), 10).unwrap().is_empty());
+
+        add_note_tag(state.clone(), note.id.clone(), "biology".into()).expect("add_note_tag");
+        let hits = search_by_tag(state.clone(), "biology".into(), 10).unwrap();
+        assert_eq!(hits.len(), 1, "the newly added tag should be searchable at once");
+        assert_eq!(hits[0].id, note.id);
+
+        // set_note_tags replaces the set — the old tag stops matching, the new one starts.
+        set_note_tags(state.clone(), note.id.clone(), vec!["chemistry".into()]).expect("set_note_tags");
+        assert!(search_by_tag(state.clone(), "biology".into(), 10).unwrap().is_empty());
+        assert_eq!(search_by_tag(state.clone(), "chemistry".into(), 10).unwrap().len(), 1);
+
+        // Removing it clears the last tag hit.
+        remove_note_tag(state.clone(), note.id.clone(), "chemistry".into()).expect("remove_note_tag");
+        assert!(search_by_tag(state.clone(), "chemistry".into(), 10).unwrap().is_empty());
     }
 
     /// Phase 2 step 1 acceptance at the command boundary: importing an image

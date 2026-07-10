@@ -65,6 +65,11 @@ export const commands = {
 	/**  Ranked full-text search hits (id, title, snippet) for `query`. */
 	searchQuery: (query: string, limit: number) => typedError<SearchHit[], CoreError>(__TAURI_INVOKE("search_query", { query, limit })),
 	/**
+	 *  Tag-filtered search hits (id, title, and the note's tag set as snippet) for
+	 *  `tag_query` — the global search's `#tag` mode. Matches only the `tags` field.
+	 */
+	searchByTag: (tagQuery: string, limit: number) => typedError<SearchHit[], CoreError>(__TAURI_INVOKE("search_by_tag", { tagQuery, limit })),
+	/**
 	 *  Rebuild the search index from scratch (a user-triggered recovery action —
 	 *  the index is derived/rebuildable, never a source of truth).
 	 */
