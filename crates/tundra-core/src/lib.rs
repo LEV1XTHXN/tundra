@@ -5,13 +5,18 @@
 //! server or mobile app, are thin front doors over this same crate
 //! (CLAUDE.md §2, "One Rust core, thin front doors").
 
+pub mod backup;
+pub mod calendar;
 pub mod document;
 pub mod error;
 pub mod index;
 pub mod links;
+pub mod spellcheck;
 pub mod vault;
 pub mod watcher;
 
+pub use calendar::{range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry};
+pub use spellcheck::{Misspelling, SpellChecker};
 pub use document::{Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};
 pub use error::{CoreError, Result};
 pub use index::{extract_text, SearchHit, SearchIndex};

@@ -13,6 +13,7 @@ use serde_json::Value;
 use specta::Type;
 use uuid::Uuid;
 
+use crate::calendar::NoteDate;
 use crate::error::{CoreError, Result};
 
 /// Bump when the on-disk shape changes; migrations key off this (CLAUDE.md §8.10).
@@ -42,6 +43,12 @@ pub struct NoteMeta {
     pub pinned: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
+    /// note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
+    /// into `NoteSummary` + the in-memory index (like `pinned`) so calendar range
+    /// queries never re-read note files.
+    #[serde(default)]
+    pub dates: Vec<NoteDate>,
 }
 
 /// A single typed block in the note tree.
@@ -189,6 +196,11 @@ pub struct NoteSummary {
     /// re-reading files.
     #[serde(default)]
     pub pinned: bool,
+    /// Mirror of `NoteMeta::dates` (Phase 3 step 1), carried in the summary +
+    /// in-memory index so calendar range queries are served without re-reading
+    /// note files — the same pattern as `pinned`.
+    #[serde(default)]
+    pub dates: Vec<NoteDate>,
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ import { Pin } from "lucide-react";
 import {
   useCreateBlockNote,
   FormattingToolbar,
-  FormattingToolbarController,
   getFormattingToolbarItems,
   type FormattingToolbarProps,
 } from "@blocknote/react";
@@ -20,8 +19,9 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 import { FileOpenButton } from "./FileOpenButton";
 
-import { attachments, notes, watcher } from "@/services";
+import { attachments, notes, spellcheck, watcher } from "@/services";
 import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
+import { attachSpellcheckPlugin, type SpellContext, type SpellcheckController } from "./spellcheckPlugin";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { IconPicker } from "@/nav/IconPicker";
@@ -34,6 +34,7 @@ import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 import { FindBar } from "./FindBar";
 import { useKeybindings } from "@/store/keybindings";
+import { useTheme } from "@/store/theme";
 import { matchCommand } from "@/keybindings/binding";
 
 const DEBOUNCE_MS = 600;
@@ -163,6 +164,28 @@ function LoadedNoteEditor({
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
+  // Editor theme follows the app-wide Appearance setting (Phase 3 step 6) — no
+  // longer hardcoded to light; BlockNote re-styles when the resolved theme flips.
+  const resolvedTheme = useTheme((s) => s.resolved);
+
+  // In-editor spellcheck (Phase 3 step 5): attach the ProseMirror decoration
+  // plugin to BlockNote's live view once it exists. Squiggles come from the Rust
+  // service (inert until a dictionary is bundled). The context menu is React,
+  // opened from the plugin with the misspelling + screen coords.
+  const [spellMenu, setSpellMenu] = useState<SpellContext | null>(null);
+  const spellCtl = useRef<SpellcheckController | null>(null);
+  useEffect(() => {
+    const view = editor.prosemirrorView;
+    if (!view) return;
+    // Wrap onContext so a right-clicked misspelling's menu takes priority over
+    // the block/formatting context menu below (which checks defaultPrevented).
+    const ctl = attachSpellcheckPlugin(view, (text) => spellcheck.check(text), setSpellMenu);
+    spellCtl.current = ctl;
+    return () => {
+      ctl.detach();
+      spellCtl.current = null;
+    };
+  }, [editor]);
 
   // Windows Explorer's "copy" on a file puts BOTH a file entry and a
   // text/plain path onto the clipboard. BlockNote's own paste handler picks
@@ -223,6 +246,30 @@ function LoadedNoteEditor({
     container.addEventListener("click", onClick);
     return () => container.removeEventListener("click", onClick);
   }, [editor, vaultPath, onError]);
+
+  // App-specific in-app context menu, replacing the system one: right-clicking
+  // anywhere in the note body opens the formatting/block menu (the same one
+  // BlockNote used to auto-pop on text selection — that auto-popup is now off,
+  // see `formattingToolbar={false}` below) at the click point instead. Scoped
+  // to `.bn-editor` so right-clicking the title input or other chrome keeps its
+  // normal native menu. Registered on the BUBBLE phase on an ANCESTOR of
+  // ProseMirror's view.dom, so it always runs after spellcheckPlugin's own
+  // `handleDOMEvents.contextmenu` (attached directly to view.dom, a nearer
+  // ancestor of the click target) — checking `defaultPrevented` lets a
+  // right-clicked misspelling's suggestion menu take priority over this one.
+  const [formatMenu, setFormatMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const container = editorPaneRef.current;
+    if (!container) return;
+    function onContextMenu(event: MouseEvent) {
+      if (event.defaultPrevented) return;
+      if (!(event.target as HTMLElement).closest(".bn-editor")) return;
+      event.preventDefault();
+      setFormatMenu({ x: event.clientX, y: event.clientY });
+    }
+    container.addEventListener("contextmenu", onContextMenu);
+    return () => container.removeEventListener("contextmenu", onContextMenu);
+  }, []);
 
   // The two editor-scoped shortcuts read their combos from the shared keybinding
   // store (rebindable in Settings); App owns the global ones. Both listeners use
@@ -477,10 +524,33 @@ function LoadedNoteEditor({
     void flush(); // save_note falls back to a fresh path when the id isn't in the index.
   }
 
+  // --- spellcheck context-menu actions (Phase 3 step 5) ------------------
+  function replaceMisspelling(ctx: SpellContext, replacement: string) {
+    const view = editor.prosemirrorView;
+    if (view) view.dispatch(view.state.tr.insertText(replacement, ctx.from, ctx.to));
+    setSpellMenu(null);
+    spellCtl.current?.recheckAll();
+  }
+  function addMisspellingToDictionary(ctx: SpellContext) {
+    setSpellMenu(null);
+    spellcheck
+      .addWord(ctx.word)
+      .then(() => spellCtl.current?.recheckAll())
+      .catch((e) => onError(String(e)));
+  }
+
   return (
     <>
     <div className="editor-pane" ref={editorPaneRef}>
       {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
+      {spellMenu && (
+        <SpellcheckMenu
+          ctx={spellMenu}
+          onReplace={(word) => replaceMisspelling(spellMenu, word)}
+          onAddToDictionary={() => addMisspellingToDictionary(spellMenu)}
+          onClose={() => setSpellMenu(null)}
+        />
+      )}
       {reconcile.kind === "dirty-conflict" && (
         <div className="reconcile-banner">
           <span>This note changed on disk while you had unsaved edits.</span>
@@ -537,10 +607,14 @@ function LoadedNoteEditor({
           maybeConvertTypedLinks();
           scheduleSave();
         }}
-        theme="light"
+        theme={resolvedTheme}
         formattingToolbar={false}
       >
-        <FormattingToolbarController formattingToolbar={CustomFormattingToolbar} />
+        {formatMenu && (
+          <EditorContextMenu x={formatMenu.x} y={formatMenu.y} onClose={() => setFormatMenu(null)}>
+            <CustomFormattingToolbar />
+          </EditorContextMenu>
+        )}
       </BlockNoteView>
       <NoteLinkPicker
         open={linkPicker.open}
@@ -570,5 +644,103 @@ function LoadedNoteEditor({
       {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
     </div>
     </>
+  );
+}
+
+/**
+ * Context menu for a right-clicked misspelling (Phase 3 step 5): suggestions to
+ * replace the word, and "Add to dictionary". Positioned at the click; closes on
+ * Escape or an outside click. Keyboard-accessible (arrow/Tab through buttons).
+ */
+function SpellcheckMenu({
+  ctx,
+  onReplace,
+  onAddToDictionary,
+  onClose,
+}: {
+  ctx: SpellContext;
+  onReplace: (word: string) => void;
+  onAddToDictionary: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Focus the first item so the menu is immediately keyboard-drivable.
+    ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="spell-menu"
+      role="menu"
+      aria-label={`Spelling suggestions for ${ctx.word}`}
+      style={{ left: ctx.x, top: ctx.y }}
+    >
+      {ctx.suggestions.length === 0 ? (
+        <div className="spell-menu-empty muted">No suggestions</div>
+      ) : (
+        ctx.suggestions.map((s) => (
+          <button key={s} role="menuitem" className="spell-menu-item" onClick={() => onReplace(s)}>
+            {s}
+          </button>
+        ))
+      )}
+      <div className="spell-menu-sep" />
+      <button role="menuitem" className="spell-menu-item spell-menu-add" onClick={onAddToDictionary}>
+        Add “{ctx.word}” to dictionary
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The app-specific in-app context menu (replaces the system right-click
+ * menu): positioned at the click, closes on Escape or an outside click —
+ * same pattern as SpellcheckMenu above. Content is the formatting/block menu.
+ */
+function EditorContextMenu({
+  x,
+  y,
+  onClose,
+  children,
+}: {
+  x: number;
+  y: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="editor-context-menu" style={{ left: x, top: y }}>
+      {children}
+    </div>
   );
 }

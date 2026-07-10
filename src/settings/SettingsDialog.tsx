@@ -4,8 +4,8 @@
  * Preferences are owned by the keybindings store (persisted via Rust); React
  * only renders and captures the user's chosen combos.
  */
-import { useEffect, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { RotateCcw, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +17,21 @@ import { Button } from "@/components/ui/button";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
+import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
+import { appSettings, backup, pickDirectory, spellcheck } from "@/services";
+import type { SpellLanguages } from "@/services";
 
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const SECTIONS = [{ id: "keybindings", label: "Keybindings" }] as const;
+const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
+  { id: "keybindings", label: "Keybindings" },
+  { id: "dictionaries", label: "Dictionaries" },
+  { id: "backup", label: "Backup" },
+] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
@@ -49,11 +57,233 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             ))}
           </nav>
           <div className="settings-pane">
+            {section === "appearance" && <AppearanceSection />}
             {section === "keybindings" && <KeybindingsSection />}
+            {section === "dictionaries" && <DictionariesSection />}
+            {section === "backup" && <BackupSection />}
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Appearance section (Phase 3 step 6): theme preference (system/light/dark)
+ *  and clock format (24h/12h), applied app-wide via the theme store and
+ *  persisted through Rust app-settings. */
+function AppearanceSection() {
+  const theme = useTheme((s) => s.theme);
+  const setTheme = useTheme((s) => s.setTheme);
+  const timeFormat = useTheme((s) => s.timeFormat);
+  const setTimeFormat = useTheme((s) => s.setTimeFormat);
+  const options: { id: ThemePref; label: string; desc: string }[] = [
+    { id: "system", label: "System", desc: "Follow the operating system" },
+    { id: "light", label: "Light", desc: "Always light" },
+    { id: "dark", label: "Dark", desc: "Always dark" },
+  ];
+  const timeOptions: { id: TimeFormatPref; label: string; desc: string }[] = [
+    { id: "24h", label: "24-hour", desc: "13:00" },
+    { id: "12h", label: "12-hour", desc: "1:00 PM" },
+  ];
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Appearance</h3>
+      <p className="muted settings-section-desc">Choose the app theme. “System” follows your OS and updates live.</p>
+      <div className="settings-theme-options" role="radiogroup" aria-label="Theme">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            role="radio"
+            aria-checked={theme === o.id}
+            className={`settings-theme-option${theme === o.id ? " active" : ""}`}
+            onClick={() => setTheme(o.id)}
+          >
+            <span className="settings-theme-option-label">{o.label}</span>
+            <span className="muted settings-theme-option-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <h3 className="settings-section-title settings-section-title-spaced">Clock format</h3>
+      <p className="muted settings-section-desc">Used by the calendar's hourly view.</p>
+      <div className="settings-theme-options" role="radiogroup" aria-label="Clock format">
+        {timeOptions.map((o) => (
+          <button
+            key={o.id}
+            role="radio"
+            aria-checked={timeFormat === o.id}
+            className={`settings-theme-option${timeFormat === o.id ? " active" : ""}`}
+            onClick={() => setTimeFormat(o.id)}
+          >
+            <span className="settings-theme-option-label">{o.label}</span>
+            <span className="muted settings-theme-option-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Dictionaries section (Phase 3 step 6): enable/disable bundled language
+ *  dictionaries (global app-setting) and manage the per-vault custom words. */
+function DictionariesSection() {
+  const [langs, setLangs] = useState<SpellLanguages | null>(null);
+  const [words, setWords] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    spellcheck.languages().then(setLangs).catch((e) => setError(String(e)));
+    spellcheck.personalWords().then(setWords).catch(() => setWords([]));
+  }, []);
+  useEffect(() => reload(), [reload]);
+
+  const toggleLang = async (code: string, on: boolean) => {
+    if (!langs) return;
+    const enabled = on ? [...langs.enabled, code] : langs.enabled.filter((c) => c !== code);
+    try {
+      await spellcheck.setLanguages(enabled);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const removeWord = async (w: string) => {
+    try {
+      await spellcheck.removeWord(w);
+      setWords((ws) => ws.filter((x) => x !== w));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  if (!langs) return <div className="muted">Loading…</div>;
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Dictionaries</h3>
+      <p className="muted settings-section-desc">Enable spellcheck languages and manage words you’ve added.</p>
+
+      <div className="settings-field">
+        <span className="settings-field-label">Languages</span>
+        {langs.available.length === 0 ? (
+          <p className="muted">No dictionaries are bundled yet.</p>
+        ) : (
+          langs.available.map((code) => (
+            <label key={code} className="settings-check">
+              <input
+                type="checkbox"
+                checked={langs.enabled.includes(code)}
+                onChange={(e) => toggleLang(code, e.target.checked)}
+              />
+              {code}
+            </label>
+          ))
+        )}
+      </div>
+
+      <div className="settings-field">
+        <span className="settings-field-label">Custom words</span>
+        {words.length === 0 ? (
+          <p className="muted">No custom words yet — add them from the editor’s right-click menu.</p>
+        ) : (
+          <ul className="settings-wordlist">
+            {words.map((w) => (
+              <li key={w}>
+                <span>{w}</span>
+                <button onClick={() => removeWord(w)} title={`Remove “${w}”`} aria-label={`Remove ${w}`}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+/** Persisted backup preferences (global app-settings, cross-vault). */
+interface BackupSettings {
+  destDir?: string;
+  lastArchive?: string;
+  lastAt?: string;
+}
+const BACKUP_SETTINGS = "backup";
+
+/**
+ * Backup section (Phase 3 step 3, minimal): choose a destination folder OUTSIDE
+ * the vault and run a one-click `.zip` snapshot. The destination + last result
+ * persist through Rust app-settings (never localStorage). Fuller polish is step 6.
+ */
+function BackupSection() {
+  // null = still loading the saved settings.
+  const [settings, setSettings] = useState<BackupSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    appSettings
+      .read<BackupSettings>(BACKUP_SETTINGS)
+      .then((s) => setSettings(s ?? {}))
+      .catch(() => setSettings({}));
+  }, []);
+
+  const persist = async (next: BackupSettings) => {
+    setSettings(next);
+    await appSettings.write(BACKUP_SETTINGS, next).catch((e) => setError(String(e)));
+  };
+
+  const choose = async () => {
+    const dir = await pickDirectory("Choose a backup destination");
+    if (dir) await persist({ ...settings, destDir: dir });
+  };
+
+  const runBackup = async () => {
+    if (!settings?.destDir) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const archive = await backup.run(settings.destDir);
+      await persist({ ...settings, destDir: settings.destDir, lastArchive: archive, lastAt: new Date().toISOString() });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (settings === null) return <div className="muted">Loading…</div>;
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Backup</h3>
+      <p className="muted settings-section-desc">
+        Save a compressed <code>.zip</code> snapshot of the whole vault (excluding the
+        rebuildable search/graph cache) to a folder outside the vault.
+      </p>
+      <div className="settings-field">
+        <span className="settings-field-label">Destination</span>
+        <div className="settings-field-value">
+          <span className={settings.destDir ? "settings-path" : "muted"}>{settings.destDir ?? "Not set"}</span>
+          <Button variant="outline" size="sm" onClick={choose}>
+            Choose…
+          </Button>
+        </div>
+      </div>
+      <div className="settings-actions">
+        <Button size="sm" disabled={!settings.destDir || busy} onClick={runBackup}>
+          {busy ? "Backing up…" : "Back up now"}
+        </Button>
+      </div>
+      {settings.lastArchive && settings.lastAt && (
+        <p className="muted settings-backup-last">
+          Last backup {new Date(settings.lastAt).toLocaleString()} → <code>{settings.lastArchive}</code>
+        </p>
+      )}
+      {error && <p className="error">{error}</p>}
+    </div>
   );
 }
 

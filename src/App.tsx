@@ -17,6 +17,7 @@ import { QuickNoteView } from "./quicknotes/QuickNoteView";
 import { Home } from "./home/Home";
 import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
+import { useTheme } from "./store/theme";
 import { matchCommand, formatBinding } from "./keybindings/binding";
 import { SettingsDialog } from "./settings/SettingsDialog";
 
@@ -24,12 +25,18 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 // load when the user actually opens the graph view (Phase 2 step 4: "views
 // mount lazily").
 const GraphView = lazy(() => import("./graph/GraphView").then((m) => ({ default: m.GraphView })));
+// Calendar pulls in date-fns + its own view; code-split it like the graph so it
+// only loads when the user opens the calendar (Phase 3 step 2: "mount lazily").
+const CalendarView = lazy(() =>
+  import("./calendar/CalendarView").then((m) => ({ default: m.CalendarView })),
+);
 
 /** The top-level views reachable from the shell switcher, in display order. */
 const VIEWS: { id: AppView; label: string }[] = [
   { id: "home", label: "Home" },
   { id: "editor", label: "Notes" },
   { id: "graph", label: "Graph" },
+  { id: "calendar", label: "Calendar" },
   { id: "quicknotes", label: "Quick" },
 ];
 import { useLinkTitles } from "./store/linkTitles";
@@ -110,8 +117,9 @@ export default function App() {
     return list;
   }, []);
 
-  // The folder the currently open note lives in — "new note" targets this
-  // folder, falling back to the vault root when nothing is open.
+  // The folder the currently open note lives in — "new folder" nests here,
+  // falling back to the vault root when nothing is open. (New notes always
+  // go to the vault root regardless — see onNewNote.)
   const selectedFolder = useMemo(() => {
     if (!openNoteId) return "";
     const summary = noteSummaries.get(openNoteId);
@@ -163,6 +171,12 @@ export default function App() {
     void useKeybindings.getState().load();
   }, []);
 
+  // Load + apply the persisted theme (Phase 3 step 6) once on boot. App-scoped
+  // (not vault-scoped); toggles the `.dark` class on <html>.
+  useEffect(() => {
+    void useTheme.getState().load();
+  }, []);
+
   const openVaultAt = useCallback(
     async (path: string) => {
       setError(null);
@@ -192,13 +206,15 @@ export default function App() {
 
   const onNewNote = useCallback(async () => {
     try {
-      const note = await notes.createIn("Untitled", selectedFolder);
+      // Always the vault root — no default folder, regardless of what's
+      // currently open (the user can move it into a folder afterward).
+      const note = await notes.createIn("Untitled", "");
       await refreshTree();
       openNote(note.id);
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [selectedFolder, refreshTree, openNote]);
+  }, [refreshTree, openNote]);
 
   const onNewFolder = useCallback(() => {
     setNewFolderName("");
@@ -431,6 +447,12 @@ export default function App() {
         {view === "graph" && (
           <Suspense fallback={<div className="centered muted">Loading graph…</div>}>
             <GraphView />
+          </Suspense>
+        )}
+
+        {view === "calendar" && (
+          <Suspense fallback={<div className="centered muted">Loading calendar…</div>}>
+            <CalendarView onOpenNote={openNote} onError={setError} />
           </Suspense>
         )}
 

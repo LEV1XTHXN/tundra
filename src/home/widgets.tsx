@@ -5,11 +5,30 @@
  * `refreshKey` changes (the vault's notes changed). React renders; data via
  * services only.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameMonth,
+  isToday,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from "date-fns";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { notes, quickNote } from "@/services";
+import { calendar, notes, quickNote } from "@/services";
 import type { Block, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
+import { useViewState } from "@/store/viewState";
+
+const WEEKDAYS_SHORT = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const WEEK_STARTS_ON = 1;
 
 export interface WidgetProps {
   vaultPath: string;
@@ -129,6 +148,81 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
         <button className="new-note" onClick={() => void submit()} disabled={!text.trim()}>
           Add
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** A compact month calendar: navigate months locally, click a day to jump the
+ * full Calendar view there (`openCalendarOn`). Days carrying an event or a
+ * note-date link get a dot indicator, fetched the same way CalendarView's own
+ * grid does (`calendar.range` over the visible month). */
+export function CalendarWidget({}: WidgetProps) {
+  const openCalendarOn = useViewState((s) => s.openCalendarOn);
+  const [cursor, setCursor] = useState(() => new Date());
+  const [marked, setMarked] = useState<Set<string>>(new Set());
+
+  const gridStart = startOfWeek(startOfMonth(cursor), { weekStartsOn: WEEK_STARTS_ON });
+  const gridEnd = endOfWeek(endOfMonth(cursor), { weekStartsOn: WEEK_STARTS_ON });
+  const gridStartKey = format(gridStart, "yyyy-MM-dd");
+  const gridEndKey = format(gridEnd, "yyyy-MM-dd");
+  const gridDays = useMemo(
+    () => eachDayOfInterval({ start: gridStart, end: gridEnd }),
+    [gridStartKey, gridEndKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    calendar
+      .range(gridStartKey, gridEndKey)
+      .then((r) => {
+        if (cancelled) return;
+        const next = new Set<string>();
+        for (const ev of r.events) {
+          const start = startOfDay(parseISO(ev.start));
+          const end = ev.end ? startOfDay(parseISO(ev.end)) : start;
+          for (const d of eachDayOfInterval({ start, end })) next.add(format(d, "yyyy-MM-dd"));
+        }
+        for (const nd of r.note_dates) next.add(nd.date);
+        setMarked(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [gridStartKey, gridEndKey]);
+
+  return (
+    <div className="mini-calendar">
+      <div className="mini-calendar-header">
+        <button onClick={() => setCursor((c) => subMonths(c, 1))} aria-label="Previous month">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <span className="mini-calendar-month">{format(cursor, "MMMM yyyy")}</span>
+        <button onClick={() => setCursor((c) => addMonths(c, 1))} aria-label="Next month">
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="mini-calendar-weekdays">
+        {WEEKDAYS_SHORT.map((w) => (
+          <span key={w}>{w}</span>
+        ))}
+      </div>
+      <div className="mini-calendar-grid">
+        {gridDays.map((day) => {
+          const key = format(day, "yyyy-MM-dd");
+          const dim = !isSameMonth(day, cursor);
+          return (
+            <button
+              key={key}
+              className={`mini-calendar-day${dim ? " dim" : ""}${isToday(day) ? " today" : ""}${marked.has(key) ? " has-events" : ""}`}
+              onClick={() => openCalendarOn(day)}
+              title={format(day, "EEEE, MMM d, yyyy")}
+            >
+              {format(day, "d")}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

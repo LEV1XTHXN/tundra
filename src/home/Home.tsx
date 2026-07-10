@@ -9,9 +9,9 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 
 import { config } from "@/services";
-import { PinnedWidget, QuickCaptureWidget, RecentWidget, type WidgetProps } from "./widgets";
+import { CalendarWidget, PinnedWidget, QuickCaptureWidget, RecentWidget, type WidgetProps } from "./widgets";
 
-type WidgetId = "pinned" | "recent" | "quickCapture";
+type WidgetId = "pinned" | "recent" | "quickCapture" | "calendar";
 
 interface HomeConfig {
   widgets: WidgetId[];
@@ -23,9 +23,10 @@ const WIDGET_META: { id: WidgetId; title: string; render: (p: WidgetProps) => Re
   { id: "pinned", title: "Pinned", render: (p) => <PinnedWidget {...p} /> },
   { id: "recent", title: "Recent", render: (p) => <RecentWidget {...p} /> },
   { id: "quickCapture", title: "Quick capture", render: (p) => <QuickCaptureWidget {...p} /> },
+  { id: "calendar", title: "Calendar", render: (p) => <CalendarWidget {...p} /> },
 ];
 
-const DEFAULT_WIDGETS: WidgetId[] = ["pinned", "recent", "quickCapture"];
+const DEFAULT_WIDGETS: WidgetId[] = ["pinned", "recent", "quickCapture", "calendar"];
 
 /** Keep only known widget ids, de-duplicated; fall back to the default layout
  *  when there's no saved config (vs. an explicitly emptied one). */
