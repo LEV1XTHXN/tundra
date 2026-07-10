@@ -5,7 +5,15 @@ import { NOTE_LINK_TYPE } from "./NoteLink";
 import type { NoteSummary } from "@/services";
 
 function summary(id: string, title: string): NoteSummary {
-  return { id, title, path: `notes/${id}.json`, modified: "2026-07-01T00:00:00Z", icon: null };
+  return {
+    id,
+    title,
+    path: `notes/${id}.json`,
+    modified: "2026-07-01T00:00:00Z",
+    created: "2026-07-01T00:00:00Z",
+    size: 100,
+    icon: null,
+  };
 }
 
 const notes: NoteSummary[] = [

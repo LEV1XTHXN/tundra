@@ -2544,3 +2544,795 @@ body,
   min-height: 0;
   margin: 0.25rem 0;
 }
+
+/* ============================================================================
+   Note sorting + folder table view (folder "database")
+   ========================================================================= */
+
+/* --- Nav tree: folder row split into chevron + label, pin, reorder --- */
+.nav-folder-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 100%;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nav-folder-label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.nav-folder-label:hover .nav-row-label {
+  text-decoration: underline;
+}
+
+.nav-pin-indicator {
+  flex-shrink: 0;
+  margin-left: 4px;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+.nav-row-action.active {
+  color: var(--primary);
+}
+
+.nav-root-target.droppable {
+  background: var(--accent);
+  outline: 1px dashed var(--primary);
+  outline-offset: -1px;
+}
+
+/* Reorder drop indicators — a line at the top/bottom edge of the target row. */
+.nav-row-wrap.reorder-before::before,
+.nav-row-wrap.reorder-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 1px;
+  z-index: 2;
+}
+.nav-row-wrap.reorder-before::before {
+  top: 0;
+}
+.nav-row-wrap.reorder-after::after {
+  bottom: 0;
+}
+
+/* --- Folder sort menu (popover) --- */
+.folder-sort-menu {
+  width: 200px;
+  padding: 4px;
+}
+.folder-sort-heading {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+.folder-sort-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+}
+.folder-sort-option:hover {
+  background: var(--accent);
+}
+.folder-sort-check {
+  width: 14px;
+  display: inline-flex;
+  color: var(--primary);
+}
+.folder-sort-label {
+  flex: 1;
+}
+.folder-sort-dir {
+  color: var(--muted-foreground);
+  display: inline-flex;
+}
+
+/* --- Folder table view --- */
+.ft-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ft-header {
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.ft-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  margin-bottom: 0.35rem;
+}
+.ft-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ft-crumb {
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: var(--radius-sm);
+  font-size: inherit;
+}
+.ft-crumb:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ft-crumb-sep {
+  opacity: 0.5;
+}
+.ft-title {
+  font-size: 1.6rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ft-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  /* Breathing room on both sides of the table content. */
+  padding: 0 1.25rem 1rem;
+}
+
+/* The header lives in its own clip container whose horizontal scroll is kept in
+   sync (via JS) with the body's, so columns stay aligned when they overflow. */
+.ft-head-scroll {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ft-head-row,
+.ft-row {
+  display: flex;
+  align-items: stretch;
+  min-width: max-content;
+  width: 100%;
+}
+
+.ft-head-row {
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+
+.ft-th,
+.ft-td {
+  flex: 1 0 180px;
+  min-width: 180px;
+  padding: 0 0.75rem;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+/* Match the built-in columns' raw text (Last modified / Created / Size) to the
+   ordinary cell text size — otherwise it inherits the larger body font. */
+.ft-td {
+  font-size: 0.85rem;
+}
+.ft-th-name,
+.ft-td-name {
+  flex: 2 0 240px;
+  min-width: 240px;
+  position: sticky;
+  left: 0;
+  background: var(--background);
+  z-index: 1;
+}
+.ft-th-name-label {
+  flex: 1;
+}
+.ft-th-add,
+.ft-td-add {
+  flex: 0 0 44px;
+  min-width: 44px;
+  border-right: none;
+  justify-content: center;
+}
+
+.ft-th {
+  height: 38px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  gap: 2px;
+}
+.ft-th-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.ft-th-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ft-th-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-th-caret {
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+  line-height: 1;
+}
+.ft-th:hover .ft-th-caret {
+  opacity: 1;
+}
+.ft-add-column {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ft-add-column:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.ft-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ft-row {
+  border-bottom: 1px solid var(--border);
+}
+.ft-row:hover {
+  background: var(--accent);
+}
+.ft-row:hover .ft-td-name {
+  background: var(--accent);
+}
+.ft-row.pinned .ft-td-name {
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.ft-name-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+}
+.ft-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-folder-icon {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.ft-empty {
+  padding: 2rem 1.5rem;
+}
+
+/* --- Cells & editors --- */
+.ft-cell-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+}
+.ft-cell-chips {
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px 0;
+}
+.ft-cell-empty {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+.ft-cell-input {
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--ring);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  padding: 0 6px;
+}
+
+.ft-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.ft-chip-remove {
+  display: inline-flex;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0;
+}
+
+/* --- Popovers: select, column menu, add column, date --- */
+.ft-select-popover {
+  width: 240px;
+  padding: 6px;
+}
+.ft-select-search {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  padding: 0 8px;
+  margin-bottom: 6px;
+}
+.ft-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.ft-select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.ft-select-option:hover {
+  background: var(--accent);
+}
+.ft-select-check {
+  margin-left: auto;
+  color: var(--primary);
+}
+.ft-select-create {
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+.ft-popover-clear {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.ft-popover-clear:hover {
+  color: var(--foreground);
+}
+
+.ft-col-menu,
+.ft-add-popover {
+  width: 220px;
+  padding: 4px;
+}
+.ft-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+}
+.ft-menu-item:hover {
+  background: var(--accent);
+}
+.ft-menu-danger {
+  color: var(--destructive, #ef4444);
+}
+
+.ft-add-section + .ft-add-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.ft-add-heading {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+.ft-add-popover .ft-cell-input {
+  margin: 0 4px 6px;
+  width: calc(100% - 8px);
+}
+.ft-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 0 4px;
+}
+.ft-type-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.ft-type-option.active {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+.ft-add-create {
+  width: calc(100% - 8px);
+  margin: 6px 4px 2px;
+  padding: 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ft-date-popover {
+  width: auto;
+  padding: 4px;
+}
+
+/* --- Property editor dialog --- */
+.ft-prop-editor {
+  max-width: 460px;
+}
+.ft-field {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+.ft-field-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+.ft-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ft-option-row,
+.ft-option-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ft-option-name {
+  flex: 0 0 130px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  padding: 0 6px;
+}
+.ft-swatches {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.ft-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.ft-swatch.active {
+  border-color: var(--foreground);
+}
+.ft-option-remove,
+.ft-option-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.ft-option-add-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- Folder table: toolbar + multi-level sort panel --- */
+.ft-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.ft-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ft-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.ft-toolbar-button:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ft-toolbar-button.active {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+
+.ft-sort-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.ft-sort-panel {
+  width: 300px;
+  padding: 6px;
+}
+.ft-sort-empty {
+  padding: 6px 8px;
+  font-size: 0.82rem;
+}
+.ft-sort-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+}
+.ft-sort-name {
+  flex: 1;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ft-sort-dir {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.ft-sort-dir:hover {
+  background: var(--accent);
+}
+.ft-sort-move {
+  display: flex;
+}
+.ft-sort-move button,
+.ft-sort-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ft-sort-move button:hover,
+.ft-sort-remove:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ft-sort-move button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.ft-sort-add {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.83rem;
+  cursor: pointer;
+}
+.ft-sort-add:hover {
+  color: var(--foreground);
+}
+.ft-sort-add-list {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* --- Folder table: column resize + pinned-row clarity --- */
+.ft-col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+}
+.ft-col-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  right: 3px;
+  width: 2px;
+  height: 60%;
+  background: transparent;
+  border-radius: 1px;
+}
+.ft-th:hover .ft-col-resize::after {
+  background: var(--border);
+}
+.ft-col-resize:hover::after {
+  background: var(--primary);
+}
+/* Keep the resize cursor across the whole document while dragging. */
+body.ft-resizing,
+body.ft-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.ft-pin-indicator {
+  flex-shrink: 0;
+  margin-left: 5px;
+  color: var(--primary);
+}
+
+.ft-row.pinned {
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+}
+.ft-row.pinned .ft-td-name {
+  background: color-mix(in oklch, var(--primary) 7%, var(--background));
+}
+.ft-row.pinned:hover,
+.ft-row.pinned:hover .ft-td-name {
+  background: color-mix(in oklch, var(--primary) 12%, var(--background));
+}
+/* Divider between the pinned group and the rest, so the grouping is obvious. */
+.ft-row.last-pinned {
+  border-bottom: 2px solid color-mix(in oklch, var(--primary) 45%, var(--border));
+}

@@ -19,6 +19,7 @@ import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
 import { useTheme } from "./store/theme";
 import { useTagColors } from "./store/tagColors";
+import { useFolderViews } from "./store/folderViews";
 import { matchCommand, formatBinding } from "./keybindings/binding";
 import { SettingsDialog } from "./settings/SettingsDialog";
 
@@ -35,6 +36,11 @@ const CalendarView = lazy(() =>
 // drag-and-drop machinery only load when the user opens it (Phase 3+).
 const KanbanView = lazy(() =>
   import("./kanban/KanbanView").then((m) => ({ default: m.KanbanView })),
+);
+// The folder "database" table view — opened by clicking a folder in the sidebar.
+// Code-split like the other non-editor views so its table machinery loads on demand.
+const FolderTableView = lazy(() =>
+  import("./foldertable/FolderTableView").then((m) => ({ default: m.FolderTableView })),
 );
 
 /** The top-level views reachable from the shell switcher, in display order. */
@@ -112,6 +118,8 @@ export default function App() {
   // Opening a note always lands in the editor view, wherever it was triggered
   // from (nav click, search, new-note, graph click).
   const openNote = useViewState((s) => s.openNote);
+  const openFolder = useViewState((s) => s.openFolder);
+  const folderViewPath = useViewState((s) => s.folderViewPath);
   const inspectorOpen = useViewState((s) => s.inspectorOpen);
   const toggleInspector = useViewState((s) => s.toggleInspector);
   const setInspectorOpen = useViewState((s) => s.setInspectorOpen);
@@ -188,6 +196,12 @@ export default function App() {
   // Vault-scoped config, so it re-reads on switch rather than only on boot.
   useEffect(() => {
     if (vaultInfo) void useTagColors.getState().load();
+  }, [vaultInfo]);
+
+  // Load the per-folder view config (sorting + table schema) on vault change —
+  // same class of vault-scoped config as tag colors.
+  useEffect(() => {
+    if (vaultInfo) void useFolderViews.getState().load();
   }, [vaultInfo]);
 
   const openVaultAt = useCallback(
@@ -285,6 +299,22 @@ export default function App() {
       }
     },
     [openNoteId, refreshTree],
+  );
+
+  // Flip a note's pinned flag from the nav tree (pinned notes float to the top
+  // of the hierarchy). Goes through read+save like the editor's pin button —
+  // there's no dedicated pin command; meta.pinned is mirrored into the summary.
+  const onToggleNotePin = useCallback(
+    async (id: string, pinned: boolean) => {
+      try {
+        const note = await notes.read(id);
+        await notes.save({ ...note, meta: { ...note.meta, pinned: !pinned } });
+        await refreshTree();
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    },
+    [refreshTree],
   );
 
   const onRenameFolder = useCallback(
@@ -435,6 +465,7 @@ export default function App() {
           expandedFolders={expandedFolders}
           onToggleFolder={toggleFolder}
           onSelectNote={openNote}
+          onOpenFolder={openFolder}
           onMoveNote={onMoveNote}
           onMoveFolder={onMoveFolder}
           onRenameNote={onRenameNote}
@@ -442,6 +473,7 @@ export default function App() {
           onRequestDeleteNote={onRequestDeleteNote}
           onRequestDeleteFolder={onRequestDeleteFolder}
           onSetNoteIcon={onSetNoteIcon}
+          onToggleNotePin={onToggleNotePin}
         />
       </aside>
 
@@ -476,6 +508,22 @@ export default function App() {
         {view === "kanban" && (
           <Suspense fallback={<div className="centered muted">Loading kanban…</div>}>
             <KanbanView vaultPath={vaultInfo.path} onOpenNote={openNote} onError={setError} />
+          </Suspense>
+        )}
+
+        {view === "folder" && folderViewPath !== null && (
+          <Suspense fallback={<div className="centered muted">Loading folder…</div>}>
+            <FolderTableView
+              key={folderViewPath}
+              folderPath={folderViewPath}
+              vaultName={vaultInfo.name}
+              tree={treeData}
+              vaultPath={vaultInfo.path}
+              onOpenNote={openNote}
+              onOpenFolder={openFolder}
+              onError={(m) => setError(m)}
+              onChanged={() => void refreshTree()}
+            />
           </Suspense>
         )}
 

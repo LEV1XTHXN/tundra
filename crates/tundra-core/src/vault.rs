@@ -218,16 +218,8 @@ impl Vault {
         let path = first_available(&dir, &slugify(&note.title));
         self.write_note_at(&path, &note)?;
 
-        let summary = NoteSummary {
-            id: note.id.clone(),
-            title: note.title.clone(),
-            path: self.rel_to_root(&path),
-            modified: note.modified,
-            icon: note.icon.clone(),
-            pinned: note.meta.pinned,
-            dates: note.meta.dates.clone(),
-            tags: note.meta.tags.clone(),
-        };
+        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let summary = NoteSummary::from_note(&note, self.rel_to_root(&path), size);
         self.index
             .write()
             .unwrap()
@@ -336,16 +328,8 @@ impl Vault {
         };
         self.write_note_at(&path, &note)?;
 
-        let summary = NoteSummary {
-            id: note.id.clone(),
-            title: note.title.clone(),
-            path: self.rel_to_root(&path),
-            modified: note.modified,
-            icon: note.icon.clone(),
-            pinned: note.meta.pinned,
-            dates: note.meta.dates.clone(),
-            tags: note.meta.tags.clone(),
-        };
+        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let summary = NoteSummary::from_note(&note, self.rel_to_root(&path), size);
         self.index
             .write()
             .unwrap()
@@ -396,6 +380,39 @@ impl Vault {
         let before = note.meta.dates.len();
         note.meta.dates.retain(|d| d != note_date);
         if note.meta.dates.len() != before {
+            self.save_note(note)?;
+        }
+        Ok(())
+    }
+
+    // --- note properties (folder table view) -----------------------------
+
+    /// Set (or clear, with `None`) one user-defined property value on a note and
+    /// persist (which mirrors `meta.properties` into the index via `save_note`).
+    /// The value is stored opaquely — the core does not interpret the property
+    /// type system (folder-scoped definitions live in frontend config); it only
+    /// carries the value so the table view can render/sort it. Writing the value
+    /// already present, or clearing an absent key, is a no-op — no rewrite, no
+    /// mtime churn.
+    pub fn set_note_property(
+        &self,
+        id: &str,
+        key: &str,
+        value: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let mut note = self.read_note(id)?;
+        let changed = match value {
+            Some(v) => {
+                if note.meta.properties.get(key) == Some(&v) {
+                    false
+                } else {
+                    note.meta.properties.insert(key.to_string(), v);
+                    true
+                }
+            }
+            None => note.meta.properties.remove(key).is_some(),
+        };
+        if changed {
             self.save_note(note)?;
         }
         Ok(())
@@ -820,16 +837,8 @@ impl Vault {
                 // mid-write in an external editor) — a later settling event
                 // for the same path will resolve it once the write completes.
                 if let Ok(note) = read_note_at(path) {
-                    let summary = NoteSummary {
-                        id: note.id.clone(),
-                        title: note.title.clone(),
-                        path: self.rel_to_root(path),
-                        modified: note.modified,
-                        icon: note.icon.clone(),
-                        pinned: note.meta.pinned,
-                        dates: note.meta.dates.clone(),
-                        tags: note.meta.tags.clone(),
-                    };
+                    let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                    let summary = NoteSummary::from_note(&note, self.rel_to_root(path), size);
                     self.index.write().unwrap().notes.insert(
                         note.id.clone(),
                         IndexEntry {
@@ -998,20 +1007,13 @@ fn build_index(root: &Path) -> Result<VaultIndex> {
             .unwrap_or(path)
             .to_string_lossy()
             .into_owned();
+        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let summary = NoteSummary::from_note(&note, rel_to_root, size);
         idx.notes.insert(
             note.id.clone(),
             IndexEntry {
                 path: path.to_path_buf(),
-                summary: NoteSummary {
-                    id: note.id,
-                    title: note.title,
-                    path: rel_to_root,
-                    modified: note.modified,
-                    icon: note.icon,
-                    pinned: note.meta.pinned,
-                    dates: note.meta.dates,
-                    tags: note.meta.tags,
-                },
+                summary,
             },
         );
     }
@@ -1413,6 +1415,55 @@ mod tests {
             reopened.note_summary(&note.id).unwrap().tags,
             vec!["a".to_string(), "b".to_string()]
         );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn note_properties_round_trip_and_mirror_to_summary() {
+        let (vault, dir) = temp_vault();
+        let note = vault.create_note("Project").unwrap();
+        assert!(vault.note_summary(&note.id).unwrap().properties.is_empty());
+
+        // Set two opaque values (a select option id and a date string).
+        vault
+            .set_note_property(&note.id, "status", Some(serde_json::json!("in-progress")))
+            .unwrap();
+        vault
+            .set_note_property(&note.id, "deadline", Some(serde_json::json!("2026-09-01")))
+            .unwrap();
+
+        let props = vault.note_summary(&note.id).unwrap().properties;
+        assert_eq!(props.get("status"), Some(&serde_json::json!("in-progress")));
+        assert_eq!(props.get("deadline"), Some(&serde_json::json!("2026-09-01")));
+
+        // Clearing removes just that key.
+        vault.set_note_property(&note.id, "status", None).unwrap();
+        let props = vault.note_summary(&note.id).unwrap().properties;
+        assert!(!props.contains_key("status"));
+        assert!(props.contains_key("deadline"));
+
+        // Survives a reopen (rebuilt from the file's meta).
+        let reopened = Vault::open(&dir).unwrap();
+        assert_eq!(
+            reopened.note_summary(&note.id).unwrap().properties.get("deadline"),
+            Some(&serde_json::json!("2026-09-01"))
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn summary_carries_created_and_nonzero_size() {
+        let (vault, dir) = temp_vault();
+        let note = vault.create_note("Sized").unwrap();
+        let summary = vault.note_summary(&note.id).unwrap();
+        assert_eq!(summary.created, note.created, "created mirrors the note");
+        assert!(summary.size > 0, "size is the note file's byte length");
+
+        // Size self-heals on reopen (recomputed from disk during the walk).
+        let reopened = Vault::open(&dir).unwrap();
+        assert!(reopened.note_summary(&note.id).unwrap().size > 0);
 
         std::fs::remove_dir_all(&dir).ok();
     }

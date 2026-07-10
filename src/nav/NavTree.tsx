@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, ChevronRight, Pencil, Smile, Trash2 } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronRight, Pencil, Pin, PinOff, Smile, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Icon, TreeNode } from "@/services";
-import { flattenTree } from "./flatten";
+import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
+import { flattenTree, reorderKeys, type NavRow } from "./flatten";
 import { NoteIcon } from "./NoteIcon";
 import { IconPicker } from "./IconPicker";
+import { FolderSortMenu } from "./FolderSortMenu";
 import { canDropOnFolder, DRAG_MIME, serializeDragPayload, type DragPayload } from "./dragDrop";
 
 const ROW_HEIGHT = 28;
@@ -17,6 +19,8 @@ interface NavTreeProps {
   expandedFolders: ReadonlySet<string>;
   onToggleFolder: (path: string) => void;
   onSelectNote: (id: string) => void;
+  /** Open a folder's table ("database") view in the main pane. */
+  onOpenFolder: (path: string) => void;
   onMoveNote: (id: string, folder: string) => void;
   onMoveFolder: (path: string, newParent: string) => void;
   onRenameNote: (id: string, newTitle: string) => void;
@@ -24,14 +28,27 @@ interface NavTreeProps {
   onRequestDeleteNote: (id: string, title: string) => void;
   onRequestDeleteFolder: (path: string, name: string, hasChildren: boolean) => void;
   onSetNoteIcon: (id: string, icon: Icon | null) => void;
+  /** Flip a note's pinned flag (pinned notes float to the top of the hierarchy). */
+  onToggleNotePin: (id: string, pinned: boolean) => void;
 }
 
 type EditingKey = { kind: "note"; id: string } | { kind: "folder"; path: string };
 
+/** Where a drag would land relative to a row: into a folder, or reordered among siblings. */
+type DropIntent =
+  | { kind: "into"; folderPath: string }
+  | { kind: "reorder"; parent: string; targetKey: string; position: "before" | "after" };
+
 /**
  * Virtualized folder/note tree (CLAUDE.md Phase 1 preamble: design for a
- * ~50k-note vault) with move (native HTML5 drag-and-drop — no DnD library),
- * inline rename, and delete (via the caller's confirmation dialog).
+ * ~50k-note vault) with move + reorder (native HTML5 drag-and-drop — no DnD
+ * library), inline rename, per-folder sort/pin, and delete.
+ *
+ * Ordering is per-folder and lives in the `folderViews` store (independent of
+ * the table view): pinned items float to the top, then either a field sort or
+ * the user's manual drag order. Dragging a row onto a sibling's top/bottom edge
+ * reorders (switching the folder to manual order); dropping onto a folder's body
+ * moves the item into it.
  */
 export function NavTree({
   tree,
@@ -40,6 +57,7 @@ export function NavTree({
   expandedFolders,
   onToggleFolder,
   onSelectNote,
+  onOpenFolder,
   onMoveNote,
   onMoveFolder,
   onRenameNote,
@@ -47,9 +65,13 @@ export function NavTree({
   onRequestDeleteNote,
   onRequestDeleteFolder,
   onSetNoteIcon,
+  onToggleNotePin,
 }: NavTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const rows = useMemo(() => flattenTree(tree, expandedFolders), [tree, expandedFolders]);
+  const views = useFolderViews((s) => s.views);
+  const patch = useFolderViews((s) => s.patch);
+  const getView = useCallback((path: string) => views[path] ?? {}, [views]);
+  const rows = useMemo(() => flattenTree(tree, expandedFolders, getView), [tree, expandedFolders, getView]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -62,9 +84,14 @@ export function NavTree({
   // the HTML5 DnD spec, drag payload values (only `.types`) aren't readable
   // until drop, so the drop-target guard needs the payload kept in state.
   const [dragging, setDragging] = useState<DragPayload | null>(null);
-  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const [dropIntent, setDropIntent] = useState<DropIntent | null>(null);
   const [editing, setEditing] = useState<EditingKey | null>(null);
   const [editValue, setEditValue] = useState("");
+
+  /** The drag key ("note:x" / "folder:name") for a row's payload. */
+  const rowKeyOf = (row: NavRow) => (row.kind === "folder" ? folderKey(row.name) : noteKey(row.id));
+  /** A parent folder's children keys in current display order (from the flattened rows). */
+  const siblingKeysOf = (parent: string) => rows.filter((r) => r.parent === parent).map(rowKeyOf);
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
     setDragging(payload);
@@ -74,26 +101,94 @@ export function NavTree({
 
   function endDrag() {
     setDragging(null);
-    setDragOverTarget(null);
+    setDropIntent(null);
   }
 
-  function dragOverFolder(e: React.DragEvent, folderPath: string) {
-    if (!dragging || !canDropOnFolder(dragging, folderPath)) return;
+  /** Same item as the one being dragged? (can't drop relative to yourself) */
+  function isSelf(row: NavRow): boolean {
+    if (!dragging) return true;
+    return dragging.kind === "note"
+      ? row.kind === "note" && row.id === dragging.id
+      : row.kind === "folder" && row.path === dragging.path;
+  }
+
+  function computeIntent(e: React.DragEvent, row: NavRow): DropIntent | null {
+    if (!dragging || isSelf(row)) return null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offset = (e.clientY - rect.top) / rect.height;
+
+    if (row.kind === "folder") {
+      // Top/bottom quarters reorder; the wide middle drops INTO the folder.
+      if (offset < 0.25 && canDropOnFolder(dragging, row.parent)) {
+        return { kind: "reorder", parent: row.parent, targetKey: rowKeyOf(row), position: "before" };
+      }
+      if (offset > 0.75 && canDropOnFolder(dragging, row.parent)) {
+        return { kind: "reorder", parent: row.parent, targetKey: rowKeyOf(row), position: "after" };
+      }
+      return canDropOnFolder(dragging, row.path) ? { kind: "into", folderPath: row.path } : null;
+    }
+    // Note row: top half = before, bottom half = after.
+    if (!canDropOnFolder(dragging, row.parent)) return null;
+    return {
+      kind: "reorder",
+      parent: row.parent,
+      targetKey: rowKeyOf(row),
+      position: offset < 0.5 ? "before" : "after",
+    };
+  }
+
+  function dragOverRow(e: React.DragEvent, row: NavRow) {
+    const intent = computeIntent(e, row);
+    if (!intent) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverTarget(folderPath);
+    setDropIntent(intent);
   }
 
-  function dropOnFolder(e: React.DragEvent, folderPath: string) {
-    e.preventDefault();
-    setDragOverTarget(null);
-    if (!dragging || !canDropOnFolder(dragging, folderPath)) return;
-    if (dragging.kind === "note") {
-      onMoveNote(dragging.id, folderPath);
-    } else {
-      onMoveFolder(dragging.path, folderPath);
+  async function applyReorder(
+    parent: string,
+    targetKey: string,
+    position: "before" | "after",
+    payload: DragPayload,
+  ) {
+    const draggedKey =
+      payload.kind === "note" ? noteKey(payload.id) : folderKey(payload.path.split("/").pop()!);
+    // Is the dragged item already a direct child of `parent`?
+    const sameParent =
+      payload.kind === "folder"
+        ? payload.path.split("/").slice(0, -1).join("/") === parent
+        : rows.some((r) => r.kind === "note" && r.id === payload.id && r.parent === parent);
+    if (!sameParent) {
+      if (payload.kind === "note") onMoveNote(payload.id, parent);
+      else onMoveFolder(payload.path, parent);
     }
+    const order = reorderKeys(siblingKeysOf(parent), draggedKey, targetKey, position);
+    await patch(parent, { treeSort: { by: "manual", dir: "asc" }, manualOrder: order });
+  }
+
+  function dropOnRow(e: React.DragEvent, row: NavRow) {
+    e.preventDefault();
+    const intent = computeIntent(e, row);
+    const payload = dragging;
+    setDropIntent(null);
     setDragging(null);
+    if (!intent || !payload) return;
+    if (intent.kind === "into") {
+      if (payload.kind === "note") onMoveNote(payload.id, intent.folderPath);
+      else onMoveFolder(payload.path, intent.folderPath);
+    } else {
+      void applyReorder(intent.parent, intent.targetKey, intent.position, payload);
+    }
+  }
+
+  function dropOnRoot(e: React.DragEvent) {
+    e.preventDefault();
+    const payload = dragging;
+    setDropIntent(null);
+    setDragging(null);
+    if (!payload || !canDropOnFolder(payload, "")) return;
+    if (payload.kind === "note") onMoveNote(payload.id, "");
+    else onMoveFolder(payload.path, "");
   }
 
   function startRename(key: EditingKey, currentValue: string) {
@@ -116,15 +211,21 @@ export function NavTree({
     else if (e.key === "Escape") setEditing(null);
   }
 
+  const rootDroppable = dragging !== null && canDropOnFolder(dragging, "") && dropIntent === null;
+
   return (
     <>
       {/* Persistent drop target for "move to vault root" — the virtualized
           rows below only cover the folders/notes actually in view. */}
       <div
-        className={cn("nav-root-target", dragOverTarget === "" && "drag-over")}
-        onDragOver={(e) => dragOverFolder(e, "")}
-        onDragLeave={() => setDragOverTarget((t) => (t === "" ? null : t))}
-        onDrop={(e) => dropOnFolder(e, "")}
+        className={cn("nav-root-target", rootDroppable && "droppable")}
+        onDragOver={(e) => {
+          if (dragging && canDropOnFolder(dragging, "")) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }
+        }}
+        onDrop={dropOnRoot}
       >
         Vault root
       </div>
@@ -144,12 +245,23 @@ export function NavTree({
                 ((editing.kind === "folder" && row.kind === "folder" && editing.path === row.path) ||
                   (editing.kind === "note" && row.kind === "note" && editing.id === row.id));
 
+              const intentHere =
+                dropIntent?.kind === "reorder" &&
+                dropIntent.parent === row.parent &&
+                dropIntent.targetKey === rowKeyOf(row)
+                  ? dropIntent.position
+                  : dropIntent?.kind === "into" && row.kind === "folder" && dropIntent.folderPath === row.path
+                    ? "into"
+                    : null;
+
               return (
                 <div
                   key={rowKey}
                   className={cn(
                     "nav-row-wrap",
-                    row.kind === "folder" && dragOverTarget === row.path && "drag-over",
+                    intentHere === "into" && "drag-over",
+                    intentHere === "before" && "reorder-before",
+                    intentHere === "after" && "reorder-after",
                   )}
                   data-testid="nav-row"
                   style={{
@@ -165,13 +277,8 @@ export function NavTree({
                     startDrag(e, row.kind === "folder" ? { kind: "folder", path: row.path } : { kind: "note", id: row.id })
                   }
                   onDragEnd={endDrag}
-                  onDragOver={row.kind === "folder" ? (e) => dragOverFolder(e, row.path) : undefined}
-                  onDragLeave={
-                    row.kind === "folder"
-                      ? () => setDragOverTarget((t) => (t === row.path ? null : t))
-                      : undefined
-                  }
-                  onDrop={row.kind === "folder" ? (e) => dropOnFolder(e, row.path) : undefined}
+                  onDragOver={(e) => dragOverRow(e, row)}
+                  onDrop={(e) => dropOnRow(e, row)}
                 >
                   {isEditing ? (
                     <input
@@ -185,14 +292,19 @@ export function NavTree({
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : row.kind === "folder" ? (
-                    <button
-                      className="nav-row nav-row-folder"
-                      style={{ paddingLeft: row.depth * 16 + 8 }}
-                      onClick={() => onToggleFolder(row.path)}
-                    >
-                      {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      <span className="nav-row-label">{row.name}</span>
-                    </button>
+                    <div className="nav-row nav-row-folder" style={{ paddingLeft: row.depth * 16 + 8 }}>
+                      <button
+                        className="nav-folder-chevron"
+                        title={row.expanded ? "Collapse" : "Expand"}
+                        onClick={() => onToggleFolder(row.path)}
+                      >
+                        {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
+                        <span className="nav-row-label">{row.name}</span>
+                      </button>
+                      {row.pinned && <Pin size={11} className="nav-pin-indicator" />}
+                    </div>
                   ) : (
                     <button
                       className={cn("nav-row nav-row-note", row.id === openNoteId && "active")}
@@ -201,11 +313,33 @@ export function NavTree({
                     >
                       <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
                       <span className="nav-row-label">{row.title}</span>
+                      {row.pinned && <Pin size={11} className="nav-pin-indicator" />}
                     </button>
                   )}
 
                   {!isEditing && (
                     <div className="nav-row-actions">
+                      {row.kind === "folder" && (
+                        <FolderSortMenu
+                          path={row.path}
+                          trigger={
+                            <button className="nav-row-action" title="Sort folder" onClick={(e) => e.stopPropagation()}>
+                              <ArrowUpDown size={12} />
+                            </button>
+                          }
+                        />
+                      )}
+                      <button
+                        className={cn("nav-row-action", row.pinned && "active")}
+                        title={row.pinned ? "Unpin" : "Pin to top"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (row.kind === "folder") void patch(row.path, { pinned: !row.pinned });
+                          else onToggleNotePin(row.id, row.pinned);
+                        }}
+                      >
+                        {row.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                      </button>
                       <button
                         className="nav-row-action"
                         title="Rename"
@@ -223,11 +357,7 @@ export function NavTree({
                         <IconPicker
                           onChange={(icon) => onSetNoteIcon(row.id, icon)}
                           trigger={
-                            <button
-                              className="nav-row-action"
-                              title="Set icon"
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <button className="nav-row-action" title="Set icon" onClick={(e) => e.stopPropagation()}>
                               <Smile size={12} />
                             </button>
                           }

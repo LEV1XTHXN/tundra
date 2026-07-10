@@ -568,6 +568,29 @@ pub fn remove_note_date(
     current(&state)?.remove_note_date(&id, &date)
 }
 
+// --- note properties (folder table view) --------------------------------
+
+/// Set (or clear, with a `null` value) one user-defined property value on a
+/// note. `value` is a raw JSON string (the serialized property value), or `null`
+/// to clear the key — the same raw-JSON-string boundary as the config
+/// passthrough, since specta can't pass an opaque `serde_json::Value` as a
+/// command arg. The folder table view owns the property-type system; the core
+/// just stores + mirrors the value for rendering/sorting.
+#[tauri::command]
+#[specta::specta]
+pub fn set_note_property(
+    state: State<AppState>,
+    id: String,
+    key: String,
+    value: Option<String>,
+) -> Result<(), CoreError> {
+    let parsed = match value {
+        Some(json) => Some(serde_json::from_str(&json)?),
+        None => None,
+    };
+    current(&state)?.set_note_property(&id, &key, parsed)
+}
+
 // --- note tags (Phase 3+ / Kanban) --------------------------------------
 
 /// Replace a note's tag set wholesale (trimmed + deduped by the core).

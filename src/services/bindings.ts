@@ -138,6 +138,15 @@ export const commands = {
 	addNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_date", { id, date })),
 	/**  Remove a note→date link (matched exactly). */
 	removeNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_date", { id, date })),
+	/**
+	 *  Set (or clear, with a `null` value) one user-defined property value on a
+	 *  note. `value` is a raw JSON string (the serialized property value), or `null`
+	 *  to clear the key — the same raw-JSON-string boundary as the config
+	 *  passthrough, since specta can't pass an opaque `serde_json::Value` as a
+	 *  command arg. The folder table view owns the property-type system; the core
+	 *  just stores + mirrors the value for rendering/sorting.
+	 */
+	setNoteProperty: (id: string, key: string, value: string | null) => typedError<null, CoreError>(__TAURI_INVOKE("set_note_property", { id, key, value })),
 	/**  Replace a note's tag set wholesale (trimmed + deduped by the core). */
 	setNoteTags: (id: string, tags: string[]) => typedError<null, CoreError>(__TAURI_INVOKE("set_note_tags", { id, tags })),
 	/**  Add one tag to a note (no-op if blank or already present). */
@@ -556,6 +565,17 @@ export type NoteMeta_Deserialize = {
 	 *  queries never re-read note files.
 	 */
 	dates?: NoteDate_Deserialize[],
+	/**
+	 *  User-defined property values, keyed by the property's id (folder table
+	 *  view). The **definitions** (name, type, select options) are folder-scoped
+	 *  and owned by the frontend in `.vault/config/folder-views.json`; the core
+	 *  stores each note's *values* opaquely (like `Block.props`/`content`) so it
+	 *  never re-implements the property-type system. Mirrored into `NoteSummary`
+	 *  (same pattern as `tags`/`dates`) so the table renders every row without
+	 *  loading note bodies. `#[serde(default)]`, so old notes load unchanged — no
+	 *  `SCHEMA_VERSION` bump.
+	 */
+	properties?: { [key in string]: any },
 };
 
 /**  Note-level metadata that is cheap to read and useful for listings. */
@@ -569,6 +589,17 @@ export type NoteMeta_Serialize = {
 	 *  queries never re-read note files.
 	 */
 	dates: NoteDate_Serialize[],
+	/**
+	 *  User-defined property values, keyed by the property's id (folder table
+	 *  view). The **definitions** (name, type, select options) are folder-scoped
+	 *  and owned by the frontend in `.vault/config/folder-views.json`; the core
+	 *  stores each note's *values* opaquely (like `Block.props`/`content`) so it
+	 *  never re-implements the property-type system. Mirrored into `NoteSummary`
+	 *  (same pattern as `tags`/`dates`) so the table renders every row without
+	 *  loading note bodies. `#[serde(default)]`, so old notes load unchanged — no
+	 *  `SCHEMA_VERSION` bump.
+	 */
+	properties?: { [key in string]: any },
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -581,6 +612,20 @@ export type NoteSummary_Deserialize = {
 	/**  Path of the note file relative to the vault root (portable identity aid). */
 	path: string,
 	modified: string,
+	/**
+	 *  Note creation time, mirrored from the note file so the folder table view
+	 *  can sort by "date created" without reading every note body.
+	 */
+	created: string,
+	/**
+	 *  On-disk size of the note file in bytes, captured at index/write time so
+	 *  the folder table view can sort by size. Derived/cheap — a stale value
+	 *  self-heals on the note's next write or an external-change reconcile.
+	 *  `u32` (not `u64`): specta forbids exporting bigint types, and a JSON note
+	 *  file never approaches 4 GB (attachments are separate files) — the helper
+	 *  saturates rather than wraps just in case.
+	 */
+	size?: number,
 	icon?: Icon | null,
 	/**
 	 *  Mirror of `NoteMeta::pinned`, carried in the summary so listings (the
@@ -600,6 +645,12 @@ export type NoteSummary_Deserialize = {
 	 *  cards, tag filters) never re-read note files — same pattern as `dates`.
 	 */
 	tags?: string[],
+	/**
+	 *  Mirror of `NoteMeta::properties` (folder table view), carried in the
+	 *  summary + in-memory index so the table renders/sorts every row's custom
+	 *  property values without loading note bodies — same pattern as `tags`.
+	 */
+	properties?: { [key in string]: any },
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -609,6 +660,20 @@ export type NoteSummary_Serialize = {
 	/**  Path of the note file relative to the vault root (portable identity aid). */
 	path: string,
 	modified: string,
+	/**
+	 *  Note creation time, mirrored from the note file so the folder table view
+	 *  can sort by "date created" without reading every note body.
+	 */
+	created: string,
+	/**
+	 *  On-disk size of the note file in bytes, captured at index/write time so
+	 *  the folder table view can sort by size. Derived/cheap — a stale value
+	 *  self-heals on the note's next write or an external-change reconcile.
+	 *  `u32` (not `u64`): specta forbids exporting bigint types, and a JSON note
+	 *  file never approaches 4 GB (attachments are separate files) — the helper
+	 *  saturates rather than wraps just in case.
+	 */
+	size: number,
 	icon?: Icon | null,
 	/**
 	 *  Mirror of `NoteMeta::pinned`, carried in the summary so listings (the
@@ -628,6 +693,12 @@ export type NoteSummary_Serialize = {
 	 *  cards, tag filters) never re-read note files — same pattern as `dates`.
 	 */
 	tags: string[],
+	/**
+	 *  Mirror of `NoteMeta::properties` (folder table view), carried in the
+	 *  summary + in-memory index so the table renders/sorts every row's custom
+	 *  property values without loading note bodies — same pattern as `tags`.
+	 */
+	properties?: { [key in string]: any },
 };
 
 /**  A full note document — one JSON file per note. */

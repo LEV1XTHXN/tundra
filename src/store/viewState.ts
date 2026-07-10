@@ -5,7 +5,7 @@ import { create } from "zustand";
  * the note-editing view; graph, quick notes, and home are peers switched via the
  * shell's view switcher. `quicknotes` and `home` are wired in steps 5–6.
  */
-export type AppView = "editor" | "graph" | "quicknotes" | "home" | "calendar" | "kanban";
+export type AppView = "editor" | "graph" | "quicknotes" | "home" | "calendar" | "kanban" | "folder";
 
 /**
  * UI view state ONLY (CLAUDE.md §8.5 / Phase 1 preamble: zustand holds view
@@ -21,6 +21,12 @@ interface ViewState {
 
   openNoteId: string | null;
   setOpenNoteId: (id: string | null) => void;
+
+  /** The folder whose table ("database") view is open, when `view === "folder"`
+   *  (`""` = vault root). Set via {@link openFolder}. */
+  folderViewPath: string | null;
+  /** Open a folder's table view in the main pane and switch to it. */
+  openFolder: (path: string) => void;
 
   expandedFolders: ReadonlySet<string>;
   toggleFolder: (path: string) => void;
@@ -56,6 +62,9 @@ export const useViewState = create<ViewState>((set) => ({
 
   openNoteId: null,
   setOpenNoteId: (id) => set({ openNoteId: id }),
+
+  folderViewPath: null,
+  openFolder: (path) => set({ folderViewPath: path, view: "folder" }),
 
   expandedFolders: new Set(),
   toggleFolder: (path) =>

@@ -14,6 +14,8 @@ function bigFlatTree(count: number): TreeNode[] {
         title: `Note ${i}`,
         path: `notes/n${i}.json`,
         modified: new Date().toISOString(),
+        created: new Date().toISOString(),
+        size: 100,
         icon: null,
       },
     } as TreeNode);
@@ -48,6 +50,7 @@ describe("NavTree virtualization", () => {
         expandedFolders={new Set()}
         onToggleFolder={() => {}}
         onSelectNote={() => {}}
+        onOpenFolder={() => {}}
         onMoveNote={() => {}}
         onMoveFolder={() => {}}
         onRenameNote={() => {}}
@@ -55,6 +58,7 @@ describe("NavTree virtualization", () => {
         onRequestDeleteNote={() => {}}
         onRequestDeleteFolder={() => {}}
         onSetNoteIcon={() => {}}
+        onToggleNotePin={() => {}}
       />,
     );
 

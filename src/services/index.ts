@@ -47,6 +47,26 @@ import type { KanbanBoard_Serialize, KanbanColumn_Serialize } from "./bindings";
 export type KanbanBoard = KanbanBoard_Serialize;
 export type KanbanColumn = KanbanColumn_Serialize;
 
+/**
+ * The five primitive property kinds a folder-table column can be. The set is
+ * fixed; users compose columns by naming a property and picking one of these.
+ */
+export type PropertyType = "text" | "number" | "select" | "multiSelect" | "date";
+
+/**
+ * A user-defined property *value* stored on a note (folder table view). This is
+ * the typed shape the frontend puts on the opaque JSON the core carries in
+ * `NoteSummary.properties` — the core never interprets it (see `notes.setProperty`).
+ * `select`/`multiSelect` values are option *ids* (resolved to names/colors via
+ * the folder's `PropertyDef`); `date` is an ISO `YYYY-MM-DD` string.
+ */
+export type PropertyValue =
+  | { type: "text"; value: string }
+  | { type: "number"; value: number }
+  | { type: "select"; value: string }
+  | { type: "multiSelect"; value: string[] }
+  | { type: "date"; value: string };
+
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
 
 /** Unwrap a tauri-specta result, throwing the typed `CoreError` on failure. */
@@ -80,6 +100,14 @@ export const notes = {
   delete: (id: string): Promise<null> => unwrap(commands.deleteNote(id)),
   /** Move a note to a different folder (relative to the notes root, e.g. `"Biology/Plants"` or `""` for the root). */
   move: (id: string, folder: string): Promise<null> => unwrap(commands.moveNote(id, folder)),
+  /**
+   * Set (or clear, with `value: null`) one user-defined property value on a note
+   * (folder table view). The value crosses the boundary as a raw JSON string —
+   * the property-type system is folder-scoped frontend config, so the core stores
+   * the value opaquely and mirrors it into the note summary for the table.
+   */
+  setProperty: (id: string, key: string, value: PropertyValue | null): Promise<null> =>
+    unwrap(commands.setNoteProperty(id, key, value === null ? null : JSON.stringify(value))),
 };
 
 /** Folder ops on real directories under `notes/`. Paths are `/`-separated and relative to the notes root. */

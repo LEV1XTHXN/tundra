@@ -17,6 +17,8 @@ would also have to, drop a note here.
 - [`ui-fonts.md`](ui-fonts.md) — the UI font (Inter), why text looks thin on WebKitGTK/WKWebView, and the one-knob global weight nudge (`--ui-text-weight`).
 - [`graph-and-views.md`](graph-and-views.md) — the shell view switcher, the sigma/graphology graph view (imperative + FA2 worker), and the vault-scoped `.vault/config/*.json` store (Phase 2 step 4).
 - [`keybindings.md`](keybindings.md) — the rebindable keybinding system (registry + matcher + app-scoped persistence), the Settings dialog, and the ProseMirror-based find-in-note.
+- [`kanban-and-tags.md`](kanban-and-tags.md) — the Kanban board view, the note tag system, and the column↔tag drag automation.
+- [`note-sorting-and-folder-tables.md`](note-sorting-and-folder-tables.md) — per-folder sidebar sorting (field / manual drag / pin) and the folder "database" table view with user-defined columns.
 
 ## Conventions
 

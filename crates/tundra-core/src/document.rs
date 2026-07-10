@@ -5,7 +5,7 @@
 //! the on-disk format; Phase 4 wraps the same tree in `yrs` with no data-model
 //! rewrite. Never let a block lose its `id`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,17 @@ pub struct NoteMeta {
     /// queries never re-read note files.
     #[serde(default)]
     pub dates: Vec<NoteDate>,
+    /// User-defined property values, keyed by the property's id (folder table
+    /// view). The **definitions** (name, type, select options) are folder-scoped
+    /// and owned by the frontend in `.vault/config/folder-views.json`; the core
+    /// stores each note's *values* opaquely (like `Block.props`/`content`) so it
+    /// never re-implements the property-type system. Mirrored into `NoteSummary`
+    /// (same pattern as `tags`/`dates`) so the table renders every row without
+    /// loading note bodies. `#[serde(default)]`, so old notes load unchanged — no
+    /// `SCHEMA_VERSION` bump.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[specta(type = HashMap<String, specta_typescript::Any>)]
+    pub properties: HashMap<String, Value>,
 }
 
 /// A single typed block in the note tree.
@@ -189,6 +200,17 @@ pub struct NoteSummary {
     /// Path of the note file relative to the vault root (portable identity aid).
     pub path: String,
     pub modified: DateTime<Utc>,
+    /// Note creation time, mirrored from the note file so the folder table view
+    /// can sort by "date created" without reading every note body.
+    pub created: DateTime<Utc>,
+    /// On-disk size of the note file in bytes, captured at index/write time so
+    /// the folder table view can sort by size. Derived/cheap — a stale value
+    /// self-heals on the note's next write or an external-change reconcile.
+    /// `u32` (not `u64`): specta forbids exporting bigint types, and a JSON note
+    /// file never approaches 4 GB (attachments are separate files) — the helper
+    /// saturates rather than wraps just in case.
+    #[serde(default)]
+    pub size: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
     /// Mirror of `NoteMeta::pinned`, carried in the summary so listings (the
@@ -206,6 +228,34 @@ pub struct NoteSummary {
     /// cards, tag filters) never re-read note files — same pattern as `dates`.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Mirror of `NoteMeta::properties` (folder table view), carried in the
+    /// summary + in-memory index so the table renders/sorts every row's custom
+    /// property values without loading note bodies — same pattern as `tags`.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[specta(type = HashMap<String, specta_typescript::Any>)]
+    pub properties: HashMap<String, Value>,
+}
+
+impl NoteSummary {
+    /// Build a summary from a note plus its vault-relative path and on-disk size.
+    /// Centralizes the summary shape so every index-mutation site (create, save,
+    /// external-change reconcile, initial walk) stays in lock-step — a new
+    /// mirrored field is added here once, not at four call sites.
+    pub fn from_note(note: &Note, rel_path: String, size: u64) -> Self {
+        NoteSummary {
+            id: note.id.clone(),
+            title: note.title.clone(),
+            path: rel_path,
+            modified: note.modified,
+            created: note.created,
+            size: u32::try_from(size).unwrap_or(u32::MAX),
+            icon: note.icon.clone(),
+            pinned: note.meta.pinned,
+            dates: note.meta.dates.clone(),
+            tags: note.meta.tags.clone(),
+            properties: note.meta.properties.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
