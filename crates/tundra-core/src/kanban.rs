@@ -329,13 +329,15 @@ impl KanbanStore {
     }
 
     /// Apply a card move's tag delta to the note (remove old column's tag, add
-    /// new column's), each a no-op when its tag is absent.
+    /// new column's), each a no-op when its tag is absent. The destination tag is
+    /// **prepended** so the Kanban board tag always sorts before the note's other
+    /// tags.
     fn apply_tag_delta(&self, vault: &Vault, note_id: &str, delta: &TagDelta) -> Result<()> {
         if let Some(tag) = &delta.remove {
             vault.remove_note_tag(note_id, tag)?;
         }
         if let Some(tag) = &delta.add {
-            vault.add_note_tag(note_id, tag)?;
+            vault.prepend_note_tag(note_id, tag)?;
         }
         Ok(())
     }
@@ -449,6 +451,39 @@ mod tests {
         // Removing from the board strips the last column's tag.
         store.remove_card(&vault, &board.id, &note.id).unwrap();
         assert!(vault.note_summary(&note.id).unwrap().tags.is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn kanban_tag_sorts_before_a_notes_existing_tags() {
+        let (vault, dir) = temp_vault();
+        let store = KanbanStore::open(&vault).unwrap();
+        let note = vault.create_note("Task").unwrap();
+        // The note already carries user tags before it ever touches a board.
+        vault
+            .set_note_tags(&note.id, vec!["biology".into(), "urgent".into()])
+            .unwrap();
+
+        store.create_board(&vault, "Work").unwrap();
+        let board = only_board(&store);
+        let (todo, done) = (board.columns[0].clone(), board.columns[1].clone());
+        store.update_column(&vault, &board.id, &todo.id, "To do", Some("todo".into())).unwrap();
+        store.update_column(&vault, &board.id, &done.id, "Done", Some("done".into())).unwrap();
+
+        // Dropped into "To do": the board tag leads the list.
+        store.add_card(&vault, &board.id, &todo.id, &note.id).unwrap();
+        assert_eq!(
+            vault.note_summary(&note.id).unwrap().tags,
+            vec!["todo".to_string(), "biology".to_string(), "urgent".to_string()],
+        );
+
+        // Moved to "Done": the new board tag replaces the old one, still first.
+        store.move_card(&vault, &board.id, &note.id, &done.id, 0).unwrap();
+        assert_eq!(
+            vault.note_summary(&note.id).unwrap().tags,
+            vec!["done".to_string(), "biology".to_string(), "urgent".to_string()],
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -448,6 +448,25 @@ impl Vault {
         Ok(())
     }
 
+    /// Add a single tag to a note at the **front** of its tag list (deduped,
+    /// trimmed). Used for the Kanban column tag so the board's tag always sorts
+    /// before a note's other tags. If the tag is already present it's moved to the
+    /// front; a blank tag is a no-op.
+    pub fn prepend_note_tag(&self, id: &str, tag: &str) -> Result<()> {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            return Ok(());
+        }
+        let mut note = self.read_note(id)?;
+        if note.meta.tags.first().map(|t| t.as_str()) == Some(tag) {
+            return Ok(());
+        }
+        note.meta.tags.retain(|t| t != tag);
+        note.meta.tags.insert(0, tag.to_string());
+        self.save_note(note)?;
+        Ok(())
+    }
+
     /// Remove a single tag from a note (exact match) and persist if it changed.
     pub fn remove_note_tag(&self, id: &str, tag: &str) -> Result<()> {
         let mut note = self.read_note(id)?;

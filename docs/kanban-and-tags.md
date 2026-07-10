@@ -46,8 +46,12 @@ A column may carry an optional **tag**. `KanbanStore::place_card` (shared by
   the destination's. Equal from/to tags collapse to a no-op (`TagDelta::between`).
 - Remove a note from the board → it **loses** the column's tag.
 
-The board mutation is persisted **before** the tag change is applied to the note,
-so a crash can't leave a tag change without its placement. Changing a column's tag
+The destination tag is **prepended** (`vault::prepend_note_tag`), not appended, so
+a note's Kanban board tag always sorts *before* its other tags in the tag list —
+including when a card is moved between columns/boards, which strips the old board
+tag and prepends the new one. The board mutation is persisted **before** the tag
+change is applied to the note, so a crash can't leave a tag change without its
+placement. Changing a column's tag
 does **not** retro-tag cards already in it (deliberately simple; a bulk re-tag can
 come later). Deleting a column/board leaves notes' tags untouched.
 
