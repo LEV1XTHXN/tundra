@@ -5,7 +5,7 @@ import { create } from "zustand";
  * the note-editing view; graph, quick notes, and home are peers switched via the
  * shell's view switcher. `quicknotes` and `home` are wired in steps 5–6.
  */
-export type AppView = "editor" | "graph" | "quicknotes" | "home" | "calendar";
+export type AppView = "editor" | "graph" | "quicknotes" | "home" | "calendar" | "kanban";
 
 /**
  * UI view state ONLY (CLAUDE.md §8.5 / Phase 1 preamble: zustand holds view

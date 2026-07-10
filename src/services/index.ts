@@ -37,6 +37,15 @@ import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 import type { Event, NoteDate, CalendarRange } from "./bindings";
 import type { Misspelling, SpellLanguages } from "./bindings";
+import type { KanbanBoard_Serialize, KanbanColumn_Serialize } from "./bindings";
+
+/**
+ * Kanban boards cross the boundary in their fully-serialized shape (all fields
+ * present), so the view can rely on `note_ids` always being an array. Re-exported
+ * under friendly names so consumers never touch the generated `_Serialize` suffix.
+ */
+export type KanbanBoard = KanbanBoard_Serialize;
+export type KanbanColumn = KanbanColumn_Serialize;
 
 type CmdResult<T> = { status: "ok"; data: T } | { status: "error"; error: CoreError };
 
@@ -142,6 +151,74 @@ export const calendar = {
   /** Remove a note→date link (matched exactly). */
   removeNoteDate: (id: string, date: NoteDate): Promise<null> =>
     unwrap(commands.removeNoteDate(id, date)),
+};
+
+/**
+ * Note tags (Phase 3+) — a first-class, note-level set of string labels stored on
+ * the note's `meta.tags` and mirrored into the summary/index by Rust. Edited
+ * directly from the note inspector, and driven automatically by Kanban column
+ * membership (see `kanban`). All mutation lives in the core; the frontend only
+ * sends the desired change.
+ */
+export const tags = {
+  /** Replace a note's whole tag set (trimmed + deduped by the core). */
+  set: (id: string, tags: string[]): Promise<null> => unwrap(commands.setNoteTags(id, tags)),
+  /** Add one tag to a note (no-op if blank or already present). */
+  add: (id: string, tag: string): Promise<null> => unwrap(commands.addNoteTag(id, tag)),
+  /** Remove one tag from a note (exact match). */
+  remove: (id: string, tag: string): Promise<null> => unwrap(commands.removeNoteTag(id, tag)),
+};
+
+/**
+ * Kanban (Phase 3+) — user-curated boards of notes, a view onto the vault (like
+ * the calendar) rather than a block inside a note. Boards persist to
+ * `.vault/config/kanban.json` (content — backed up, MAY sync). Membership is
+ * explicit: a board only shows notes the user placed on it. Each column may carry
+ * a tag that is auto-added to notes dropped in and auto-removed when they leave.
+ *
+ * Every mutation returns the full, freshly-persisted board list, so callers just
+ * replace their state with the result — no client-side reconciliation.
+ */
+export const kanban = {
+  /** All boards, in tab order. */
+  boards: (): Promise<KanbanBoard[]> => unwrap(commands.kanbanBoards()),
+  /** Create a board (seeded with To do / Doing / Done); returns all boards. */
+  createBoard: (name: string): Promise<KanbanBoard[]> => unwrap(commands.kanbanCreateBoard(name)),
+  /** Rename a board. */
+  renameBoard: (boardId: string, name: string): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanRenameBoard(boardId, name)),
+  /** Delete a board (note tags left as-is). */
+  deleteBoard: (boardId: string): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanDeleteBoard(boardId)),
+  /** Append a column, optionally with an auto-assign tag. */
+  addColumn: (boardId: string, name: string, tag: string | null): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanAddColumn(boardId, name, tag)),
+  /** Rename a column and/or change its auto-assign tag. */
+  updateColumn: (
+    boardId: string,
+    columnId: string,
+    name: string,
+    tag: string | null,
+  ): Promise<KanbanBoard[]> => unwrap(commands.kanbanUpdateColumn(boardId, columnId, name, tag)),
+  /** Delete a column (its cards drop off the board). */
+  deleteColumn: (boardId: string, columnId: string): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanDeleteColumn(boardId, columnId)),
+  /** Reorder columns (move `columnId` to `toIndex`). */
+  moveColumn: (boardId: string, columnId: string, toIndex: number): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanMoveColumn(boardId, columnId, toIndex)),
+  /** Add a note to a column (applies the column's tag); moves it if already on the board. */
+  addCard: (boardId: string, columnId: string, noteId: string): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanAddCard(boardId, columnId, noteId)),
+  /** Move a note to `toColumnId` at `toIndex` (swaps source/destination tags). */
+  moveCard: (
+    boardId: string,
+    noteId: string,
+    toColumnId: string,
+    toIndex: number,
+  ): Promise<KanbanBoard[]> => unwrap(commands.kanbanMoveCard(boardId, noteId, toColumnId, toIndex)),
+  /** Remove a note from a board (strips the tag of the column it was in). */
+  removeCard: (boardId: string, noteId: string): Promise<KanbanBoard[]> =>
+    unwrap(commands.kanbanRemoveCard(boardId, noteId)),
 };
 
 /**

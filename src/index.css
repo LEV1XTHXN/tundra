@@ -2054,3 +2054,493 @@ body,
 .settings-wordlist li button:hover {
   color: var(--destructive);
 }
+
+/* --- Kanban view (Phase 3+) -------------------------------------------- */
+.kanban {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem clamp(0.75rem, 2.5vw, 1.5rem) 0;
+  overflow: hidden;
+}
+.kanban-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.kanban-tab {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kanban-tab:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.kanban-tab.active {
+  background: var(--accent);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.kanban-tab-add,
+.kanban-board-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.kanban-tab-add:hover,
+.kanban-board-menu:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.kanban-tabs-spacer {
+  flex: 1;
+}
+.kanban-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem;
+  width: 12rem;
+}
+.kanban-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm, 0.4rem);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.kanban-menu-item:hover {
+  background: var(--accent);
+}
+.kanban-menu-item.danger {
+  color: var(--destructive);
+}
+.kanban-empty {
+  gap: 0.9rem;
+  flex-direction: column;
+}
+
+.kanban-columns {
+  display: flex;
+  gap: 0.85rem;
+  /* Stretch columns to (almost) the full height of the view so they run down
+     to the bottom; the trailing "Add column" button opts out via align-self. */
+  align-items: stretch;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+.kanban-column {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 clamp(15rem, 22vw, 19rem);
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem;
+}
+.kanban-column-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.kanban-column-titles {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+}
+.kanban-column-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kanban-column-count {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+.kanban-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: var(--radius-sm, 0.4rem);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.kanban-icon-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.kanban-icon-btn.danger:hover {
+  color: var(--destructive);
+}
+
+.kanban-tag-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  white-space: nowrap;
+}
+.kanban-tag-chip.small {
+  font-size: 0.68rem;
+  padding: 0.02rem 0.4rem;
+}
+
+.kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 2.5rem;
+}
+.kanban-column-empty {
+  font-size: 0.82rem;
+  padding: 0.6rem 0.3rem;
+  text-align: center;
+}
+.kanban-card {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  /* Roughly double the previous card height so notes read as substantial cards. */
+  min-height: 3.5rem;
+  padding: 0.75rem 0.5rem 0.75rem 0.2rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: grab;
+}
+.kanban-card:active {
+  cursor: grabbing;
+}
+.kanban-card-grip {
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+.kanban-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
+}
+.kanban-card-open {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.kanban-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kanban-card-missing {
+  cursor: default;
+  font-style: italic;
+}
+/* Tags sit BELOW the title and wrap; the card grows taller to fit them. */
+.kanban-card-tags {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  max-width: 100%;
+  justify-content: flex-start;
+}
+.kanban-card-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: var(--radius-sm, 0.4rem);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.kanban-card-remove:hover {
+  background: var(--accent);
+  color: var(--destructive);
+}
+.kanban-drop-line {
+  height: 2px;
+  background: var(--ring);
+  border-radius: 2px;
+  margin: 0.1rem 0;
+}
+.kanban-add-card {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.kanban-add-card:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.kanban-add-column {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 12rem;
+  align-self: flex-start;
+  padding: 0.7rem 0.8rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kanban-add-column:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.kanban-field-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0.6rem 0 0.3rem;
+}
+.kanban-field-hint {
+  font-size: 0.78rem;
+  margin: 0.4rem 0 0;
+}
+
+/* --- Note tags in the inspector (Phase 3+) ----------------------------- */
+.inspector-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.inspector-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.25rem 0.1rem 0.5rem;
+}
+.inspector-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.inspector-tag-remove:hover {
+  color: var(--destructive);
+}
+.inspector-tag-add {
+  margin-top: 0.15rem;
+}
+.inspector-tag-input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+}
+.inspector-tag-input:focus {
+  outline: none;
+  border-color: var(--ring);
+}
+
+/* --- Kanban tag colors + column/tag editor (Phase 3+) ------------------ */
+.kanban-column-tagdot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.kanban-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.kanban-checkbox-row input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+.kanban-checkbox-row code,
+.kanban-field-hint code {
+  font-size: 0.82em;
+  background: var(--muted);
+  border-radius: 0.3rem;
+  padding: 0.02rem 0.3rem;
+}
+.kanban-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.kanban-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+  cursor: pointer;
+  padding: 0;
+}
+.kanban-swatch.selected {
+  border-color: var(--foreground);
+}
+.kanban-swatch.none {
+  position: relative;
+  background: var(--background);
+}
+.kanban-swatch.none::after {
+  content: "";
+  position: absolute;
+  inset: 0.3rem;
+  border-top: 2px solid var(--destructive);
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+
+/* Inspector tag chip becomes a color-picker trigger + remove button. */
+.inspector-tag-label {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.inspector-color-popover {
+  width: auto;
+  padding: 0.6rem;
+}
+
+/* --- Kanban column reorder (Phase 3+) ---------------------------------- */
+.kanban-column-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  cursor: grab;
+  opacity: 0.6;
+  flex: 0 0 auto;
+}
+.kanban-column-grip:hover {
+  opacity: 1;
+}
+.kanban-column-grip:active {
+  cursor: grabbing;
+}
+/* Insertion marker: a bar on the left edge of the column the dragged row
+   would land in front of. */
+.kanban-column.drop-before {
+  box-shadow: inset 3px 0 0 0 var(--ring);
+}
+
+/* --- Kanban collapsed columns (Phase 3+) ------------------------------- */
+.kanban-column.collapsed {
+  flex: 0 0 2.75rem;
+  padding: 0.5rem 0.25rem;
+  overflow: hidden;
+  cursor: default;
+}
+.kanban-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  height: 100%;
+}
+/* Column name turned on its side, filling the thin strip's height. */
+.kanban-collapsed-name {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-height: 0;
+  margin: 0.25rem 0;
+}

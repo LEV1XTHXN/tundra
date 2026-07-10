@@ -9,7 +9,7 @@ mod events;
 use std::sync::{Arc, Mutex};
 
 use tauri_specta::{collect_commands, collect_events, Builder};
-use tundra_core::{CalendarStore, LinkIndex, SearchIndex, SpellChecker, Vault, Watcher};
+use tundra_core::{CalendarStore, KanbanStore, LinkIndex, SearchIndex, SpellChecker, Vault, Watcher};
 
 /// Managed application state: the single currently-open vault, its file
 /// watcher (Phase 1 step 8), its search index (Phase 1 step 9), and its link
@@ -24,6 +24,9 @@ pub struct AppState {
     /// The calendar event store for the open vault (Phase 3 step 1) — opened and
     /// held alongside `search`/`links`, replaced whenever a different vault opens.
     pub calendar: Mutex<Option<Arc<CalendarStore>>>,
+    /// The Kanban board store for the open vault (Phase 3+) — content under
+    /// `.vault/config/kanban.json`, same lifecycle as `calendar`.
+    pub kanban: Mutex<Option<Arc<KanbanStore>>>,
     /// The spellchecker for the open vault (Phase 3 step 4) — per-vault personal
     /// dictionary + enabled language dictionaries; same lifecycle as the rest.
     pub spellcheck: Mutex<Option<Arc<SpellChecker>>>,
@@ -82,6 +85,20 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::calendar_range,
             commands::add_note_date,
             commands::remove_note_date,
+            commands::set_note_tags,
+            commands::add_note_tag,
+            commands::remove_note_tag,
+            commands::kanban_boards,
+            commands::kanban_create_board,
+            commands::kanban_rename_board,
+            commands::kanban_delete_board,
+            commands::kanban_add_column,
+            commands::kanban_update_column,
+            commands::kanban_delete_column,
+            commands::kanban_move_column,
+            commands::kanban_add_card,
+            commands::kanban_move_card,
+            commands::kanban_remove_card,
             commands::backup_vault,
             commands::spellcheck_check,
             commands::spellcheck_add_word,

@@ -226,6 +226,7 @@ impl Vault {
             icon: note.icon.clone(),
             pinned: note.meta.pinned,
             dates: note.meta.dates.clone(),
+            tags: note.meta.tags.clone(),
         };
         self.index
             .write()
@@ -343,6 +344,7 @@ impl Vault {
             icon: note.icon.clone(),
             pinned: note.meta.pinned,
             dates: note.meta.dates.clone(),
+            tags: note.meta.tags.clone(),
         };
         self.index
             .write()
@@ -394,6 +396,47 @@ impl Vault {
         let before = note.meta.dates.len();
         note.meta.dates.retain(|d| d != note_date);
         if note.meta.dates.len() != before {
+            self.save_note(note)?;
+        }
+        Ok(())
+    }
+
+    // --- note tags (Phase 3+ / Kanban) -----------------------------------
+
+    /// Replace a note's tag set wholesale and persist (which mirrors the new tags
+    /// into the index via `save_note`). Tags are trimmed, de-duplicated, and
+    /// empties dropped so the on-disk set stays clean regardless of caller input.
+    pub fn set_note_tags(&self, id: &str, tags: Vec<String>) -> Result<()> {
+        let mut note = self.read_note(id)?;
+        let cleaned = normalize_tags(tags);
+        if note.meta.tags != cleaned {
+            note.meta.tags = cleaned;
+            self.save_note(note)?;
+        }
+        Ok(())
+    }
+
+    /// Add a single tag to a note (deduped, trimmed). A blank or already-present
+    /// tag is a no-op — no rewrite, no mtime bump.
+    pub fn add_note_tag(&self, id: &str, tag: &str) -> Result<()> {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            return Ok(());
+        }
+        let mut note = self.read_note(id)?;
+        if !note.meta.tags.iter().any(|t| t == tag) {
+            note.meta.tags.push(tag.to_string());
+            self.save_note(note)?;
+        }
+        Ok(())
+    }
+
+    /// Remove a single tag from a note (exact match) and persist if it changed.
+    pub fn remove_note_tag(&self, id: &str, tag: &str) -> Result<()> {
+        let mut note = self.read_note(id)?;
+        let before = note.meta.tags.len();
+        note.meta.tags.retain(|t| t != tag);
+        if note.meta.tags.len() != before {
             self.save_note(note)?;
         }
         Ok(())
@@ -785,6 +828,7 @@ impl Vault {
                         icon: note.icon.clone(),
                         pinned: note.meta.pinned,
                         dates: note.meta.dates.clone(),
+                        tags: note.meta.tags.clone(),
                     };
                     self.index.write().unwrap().notes.insert(
                         note.id.clone(),
@@ -857,6 +901,16 @@ pub enum ChangeEvent {
 
 fn is_root(rel: &str) -> bool {
     rel.split('/').all(|c| c.is_empty())
+}
+
+/// Trim, drop empties, and de-duplicate a tag set (first occurrence wins,
+/// original order preserved) so the note's on-disk tag list is always clean.
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    tags.into_iter()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+        .collect()
 }
 
 /// First path of the form `{dir}/{base}.json`, `{dir}/{base}-2.json`, ... that
@@ -956,6 +1010,7 @@ fn build_index(root: &Path) -> Result<VaultIndex> {
                     icon: note.icon,
                     pinned: note.meta.pinned,
                     dates: note.meta.dates,
+                    tags: note.meta.tags,
                 },
             },
         );
@@ -1321,6 +1376,43 @@ mod tests {
         // Survives a reopen (rebuilt from the file's meta).
         let reopened = Vault::open(&dir).unwrap();
         assert!(reopened.note_summary(&note.id).unwrap().pinned);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn note_tags_surface_in_summary_and_survive_reopen() {
+        let (vault, dir) = temp_vault();
+        let note = vault.create_note("Taggable").unwrap();
+        assert!(vault.note_summary(&note.id).unwrap().tags.is_empty());
+
+        vault.add_note_tag(&note.id, "work").unwrap();
+        vault.add_note_tag(&note.id, "  work  ").unwrap(); // trimmed dupe -> no-op
+        vault.add_note_tag(&note.id, "urgent").unwrap();
+        assert_eq!(
+            vault.note_summary(&note.id).unwrap().tags,
+            vec!["work".to_string(), "urgent".to_string()],
+            "tags mirror into the summary, deduped/trimmed"
+        );
+
+        vault.remove_note_tag(&note.id, "work").unwrap();
+        assert_eq!(vault.note_summary(&note.id).unwrap().tags, vec!["urgent".to_string()]);
+
+        // set_note_tags replaces wholesale and cleans input.
+        vault
+            .set_note_tags(&note.id, vec!["  a ".into(), "b".into(), "a".into(), "".into()])
+            .unwrap();
+        assert_eq!(
+            vault.note_summary(&note.id).unwrap().tags,
+            vec!["a".to_string(), "b".to_string()]
+        );
+
+        // Survives a reopen (rebuilt from the file's meta).
+        let reopened = Vault::open(&dir).unwrap();
+        assert_eq!(
+            reopened.note_summary(&note.id).unwrap().tags,
+            vec!["a".to_string(), "b".to_string()]
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

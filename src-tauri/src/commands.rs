@@ -13,8 +13,8 @@ use chrono::NaiveDate;
 
 use tundra_core::{
     AttachmentKind, CalendarRange, CalendarStore, ChangeEvent, CoreError,
-    Event as CalendarEvent, GraphData, LinkIndex, Misspelling, Note, NoteDate, NoteSummary,
-    SearchHit, SearchIndex, SpellChecker, TreeNode, Vault, VaultInfo, Watcher,
+    Event as CalendarEvent, GraphData, KanbanBoard, KanbanStore, LinkIndex, Misspelling, Note,
+    NoteDate, NoteSummary, SearchHit, SearchIndex, SpellChecker, TreeNode, Vault, VaultInfo, Watcher,
 };
 
 use crate::events::{NoteChangedExternally, TreeChanged};
@@ -85,6 +85,16 @@ fn current_links(state: &State<AppState>) -> Result<Arc<LinkIndex>, CoreError> {
 fn current_calendar(state: &State<AppState>) -> Result<Arc<CalendarStore>, CoreError> {
     state
         .calendar
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| CoreError::Vault("no vault is open".into()))
+}
+
+/// The Kanban board store for the currently open vault (Phase 3+).
+fn current_kanban(state: &State<AppState>) -> Result<Arc<KanbanStore>, CoreError> {
+    state
+        .kanban
         .lock()
         .unwrap()
         .clone()
@@ -169,6 +179,10 @@ pub fn open_vault(
     // content (an in-vault file under .vault/config/), not a rebuildable cache.
     let calendar = CalendarStore::open(&vault)?;
 
+    // Open the Kanban board store (Phase 3+) — content under .vault/config/, same
+    // lifecycle as the calendar store.
+    let kanban = KanbanStore::open(&vault)?;
+
     // Open the spellchecker (Phase 3 step 4): the vault's personal dictionary plus
     // the enabled language dictionaries, whose contents we read from the bundled
     // app resources (empty/inert until a real dictionary is bundled).
@@ -209,6 +223,7 @@ pub fn open_vault(
     *state.search.lock().unwrap() = Some(search);
     *state.links.lock().unwrap() = Some(links);
     *state.calendar.lock().unwrap() = Some(calendar);
+    *state.kanban.lock().unwrap() = Some(kanban);
     *state.spellcheck.lock().unwrap() = Some(spellcheck);
     save_config(
         &app,
@@ -551,6 +566,152 @@ pub fn remove_note_date(
     date: NoteDate,
 ) -> Result<(), CoreError> {
     current(&state)?.remove_note_date(&id, &date)
+}
+
+// --- note tags (Phase 3+ / Kanban) --------------------------------------
+
+/// Replace a note's tag set wholesale (trimmed + deduped by the core).
+#[tauri::command]
+#[specta::specta]
+pub fn set_note_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Result<(), CoreError> {
+    current(&state)?.set_note_tags(&id, tags)
+}
+
+/// Add one tag to a note (no-op if blank or already present).
+#[tauri::command]
+#[specta::specta]
+pub fn add_note_tag(state: State<AppState>, id: String, tag: String) -> Result<(), CoreError> {
+    current(&state)?.add_note_tag(&id, &tag)
+}
+
+/// Remove one tag from a note (exact match).
+#[tauri::command]
+#[specta::specta]
+pub fn remove_note_tag(state: State<AppState>, id: String, tag: String) -> Result<(), CoreError> {
+    current(&state)?.remove_note_tag(&id, &tag)
+}
+
+// --- kanban (Phase 3+) --------------------------------------------------
+//
+// Every mutation returns the full, freshly-persisted board list so the frontend
+// replaces its state in one round trip (boards are small; this avoids client-side
+// reconciliation bugs). Card moves also mutate note tags in the core, so a fresh
+// `list_notes`/inspector read reflects the tag change immediately.
+
+/// All Kanban boards (tab order).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_boards(state: State<AppState>) -> Result<Vec<KanbanBoard>, CoreError> {
+    Ok(current_kanban(&state)?.list())
+}
+
+/// Create a board (seeded with To do / Doing / Done columns); returns all boards.
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_create_board(state: State<AppState>, name: String) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.create_board(&current(&state)?, &name)
+}
+
+/// Rename a board.
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_rename_board(
+    state: State<AppState>,
+    board_id: String,
+    name: String,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.rename_board(&current(&state)?, &board_id, &name)
+}
+
+/// Delete a board (note tags are left as-is).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_delete_board(state: State<AppState>, board_id: String) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.delete_board(&current(&state)?, &board_id)
+}
+
+/// Append a column to a board, optionally with an auto-assign tag.
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_add_column(
+    state: State<AppState>,
+    board_id: String,
+    name: String,
+    tag: Option<String>,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.add_column(&current(&state)?, &board_id, &name, tag)
+}
+
+/// Rename a column and/or change its auto-assign tag.
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_update_column(
+    state: State<AppState>,
+    board_id: String,
+    column_id: String,
+    name: String,
+    tag: Option<String>,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.update_column(&current(&state)?, &board_id, &column_id, &name, tag)
+}
+
+/// Delete a column (its cards drop off the board; note tags left as-is).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_delete_column(
+    state: State<AppState>,
+    board_id: String,
+    column_id: String,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.delete_column(&current(&state)?, &board_id, &column_id)
+}
+
+/// Reorder a board's columns (move `column_id` to `to_index`).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_move_column(
+    state: State<AppState>,
+    board_id: String,
+    column_id: String,
+    to_index: u32,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.move_column(&current(&state)?, &board_id, &column_id, to_index as usize)
+}
+
+/// Add a note to a column (applies the column's tag). Moves it if already on the board.
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_add_card(
+    state: State<AppState>,
+    board_id: String,
+    column_id: String,
+    note_id: String,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.add_card(&current(&state)?, &board_id, &column_id, &note_id)
+}
+
+/// Move a note to `to_column_id` at `to_index` (swaps the source/destination tags).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_move_card(
+    state: State<AppState>,
+    board_id: String,
+    note_id: String,
+    to_column_id: String,
+    to_index: u32,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.move_card(&current(&state)?, &board_id, &note_id, &to_column_id, to_index as usize)
+}
+
+/// Remove a note from a board (strips the tag of the column it was in).
+#[tauri::command]
+#[specta::specta]
+pub fn kanban_remove_card(
+    state: State<AppState>,
+    board_id: String,
+    note_id: String,
+) -> Result<Vec<KanbanBoard>, CoreError> {
+    current_kanban(&state)?.remove_card(&current(&state)?, &board_id, &note_id)
 }
 
 // --- backup (Phase 3 step 3) --------------------------------------------

@@ -201,6 +201,11 @@ pub struct NoteSummary {
     /// note files — the same pattern as `pinned`.
     #[serde(default)]
     pub dates: Vec<NoteDate>,
+    /// Mirror of `NoteMeta::tags` (Phase 3+ / Kanban), carried in the summary +
+    /// in-memory index so tag-driven listings (the Kanban board resolving its
+    /// cards, tag filters) never re-read note files — same pattern as `dates`.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[cfg(test)]

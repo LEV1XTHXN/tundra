@@ -138,6 +138,34 @@ export const commands = {
 	addNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_date", { id, date })),
 	/**  Remove a note→date link (matched exactly). */
 	removeNoteDate: (id: string, date: NoteDate_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_date", { id, date })),
+	/**  Replace a note's tag set wholesale (trimmed + deduped by the core). */
+	setNoteTags: (id: string, tags: string[]) => typedError<null, CoreError>(__TAURI_INVOKE("set_note_tags", { id, tags })),
+	/**  Add one tag to a note (no-op if blank or already present). */
+	addNoteTag: (id: string, tag: string) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_tag", { id, tag })),
+	/**  Remove one tag from a note (exact match). */
+	removeNoteTag: (id: string, tag: string) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_tag", { id, tag })),
+	/**  All Kanban boards (tab order). */
+	kanbanBoards: () => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_boards")),
+	/**  Create a board (seeded with To do / Doing / Done columns); returns all boards. */
+	kanbanCreateBoard: (name: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_create_board", { name })),
+	/**  Rename a board. */
+	kanbanRenameBoard: (boardId: string, name: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_rename_board", { boardId, name })),
+	/**  Delete a board (note tags are left as-is). */
+	kanbanDeleteBoard: (boardId: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_delete_board", { boardId })),
+	/**  Append a column to a board, optionally with an auto-assign tag. */
+	kanbanAddColumn: (boardId: string, name: string, tag: string | null) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_add_column", { boardId, name, tag })),
+	/**  Rename a column and/or change its auto-assign tag. */
+	kanbanUpdateColumn: (boardId: string, columnId: string, name: string, tag: string | null) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_update_column", { boardId, columnId, name, tag })),
+	/**  Delete a column (its cards drop off the board; note tags left as-is). */
+	kanbanDeleteColumn: (boardId: string, columnId: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_delete_column", { boardId, columnId })),
+	/**  Reorder a board's columns (move `column_id` to `to_index`). */
+	kanbanMoveColumn: (boardId: string, columnId: string, toIndex: number) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_move_column", { boardId, columnId, toIndex })),
+	/**  Add a note to a column (applies the column's tag). Moves it if already on the board. */
+	kanbanAddCard: (boardId: string, columnId: string, noteId: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_add_card", { boardId, columnId, noteId })),
+	/**  Move a note to `to_column_id` at `to_index` (swaps the source/destination tags). */
+	kanbanMoveCard: (boardId: string, noteId: string, toColumnId: string, toIndex: number) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_move_card", { boardId, noteId, toColumnId, toIndex })),
+	/**  Remove a note from a board (strips the tag of the column it was in). */
+	kanbanRemoveCard: (boardId: string, noteId: string) => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_remove_card", { boardId, noteId })),
 	/**
 	 *  One-click backup: zip the whole vault (excluding the rebuildable
 	 *  `.vault/cache/`) into `dest_dir` — which must be OUTSIDE the vault — verify
@@ -366,6 +394,76 @@ export type Icon =
 { type: "custom"; value: string };
 
 /**
+ *  A single Kanban board: a name and its ordered columns. Boards are switched
+ *  between as tabs in the one Kanban view.
+ */
+export type KanbanBoard = KanbanBoard_Serialize | KanbanBoard_Deserialize;
+
+/**
+ *  A single Kanban board: a name and its ordered columns. Boards are switched
+ *  between as tabs in the one Kanban view.
+ */
+export type KanbanBoard_Deserialize = {
+	id: string,
+	name: string,
+	columns?: KanbanColumn_Deserialize[],
+};
+
+/**
+ *  A single Kanban board: a name and its ordered columns. Boards are switched
+ *  between as tabs in the one Kanban view.
+ */
+export type KanbanBoard_Serialize = {
+	id: string,
+	name: string,
+	columns: KanbanColumn_Serialize[],
+};
+
+/**
+ *  One column (row) in a board: a name, the notes placed in it (ordered), and an
+ *  optional tag that is auto-applied/removed as cards enter/leave the column.
+ */
+export type KanbanColumn = KanbanColumn_Serialize | KanbanColumn_Deserialize;
+
+/**
+ *  One column (row) in a board: a name, the notes placed in it (ordered), and an
+ *  optional tag that is auto-applied/removed as cards enter/leave the column.
+ */
+export type KanbanColumn_Deserialize = {
+	id: string,
+	name: string,
+	/**
+	 *  The tag auto-assigned to notes dropped here (and removed when they leave).
+	 *  `None` means this column has no tag automation.
+	 */
+	tag?: string | null,
+	/**
+	 *  Ordered note ids placed in this column. A note appears at most once per
+	 *  board (adding it to a second column moves it).
+	 */
+	note_ids?: string[],
+};
+
+/**
+ *  One column (row) in a board: a name, the notes placed in it (ordered), and an
+ *  optional tag that is auto-applied/removed as cards enter/leave the column.
+ */
+export type KanbanColumn_Serialize = {
+	id: string,
+	name: string,
+	/**
+	 *  The tag auto-assigned to notes dropped here (and removed when they leave).
+	 *  `None` means this column has no tag automation.
+	 */
+	tag?: string | null,
+	/**
+	 *  Ordered note ids placed in this column. A note appears at most once per
+	 *  board (adding it to a second column moves it).
+	 */
+	note_ids: string[],
+};
+
+/**
  *  A misspelled span within checked text. `offset`/`length` are in **UTF-16 code
  *  units**, so they line up directly with JavaScript string indexing — the editor
  *  (step 5) decorates ProseMirror text nodes, which address text in JS string
@@ -496,6 +594,12 @@ export type NoteSummary_Deserialize = {
 	 *  note files — the same pattern as `pinned`.
 	 */
 	dates?: NoteDate_Deserialize[],
+	/**
+	 *  Mirror of `NoteMeta::tags` (Phase 3+ / Kanban), carried in the summary +
+	 *  in-memory index so tag-driven listings (the Kanban board resolving its
+	 *  cards, tag filters) never re-read note files — same pattern as `dates`.
+	 */
+	tags?: string[],
 };
 
 /**  Lightweight listing entry for the note tree — avoids loading full block trees. */
@@ -518,6 +622,12 @@ export type NoteSummary_Serialize = {
 	 *  note files — the same pattern as `pinned`.
 	 */
 	dates: NoteDate_Serialize[],
+	/**
+	 *  Mirror of `NoteMeta::tags` (Phase 3+ / Kanban), carried in the summary +
+	 *  in-memory index so tag-driven listings (the Kanban board resolving its
+	 *  cards, tag filters) never re-read note files — same pattern as `dates`.
+	 */
+	tags: string[],
 };
 
 /**  A full note document — one JSON file per note. */

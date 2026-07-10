@@ -10,12 +10,14 @@ pub mod calendar;
 pub mod document;
 pub mod error;
 pub mod index;
+pub mod kanban;
 pub mod links;
 pub mod spellcheck;
 pub mod vault;
 pub mod watcher;
 
 pub use calendar::{range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry};
+pub use kanban::{KanbanBoard, KanbanColumn, KanbanStore};
 pub use spellcheck::{Misspelling, SpellChecker};
 pub use document::{Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};
 pub use error::{CoreError, Result};

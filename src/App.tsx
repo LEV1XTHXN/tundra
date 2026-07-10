@@ -18,6 +18,7 @@ import { Home } from "./home/Home";
 import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
 import { useTheme } from "./store/theme";
+import { useTagColors } from "./store/tagColors";
 import { matchCommand, formatBinding } from "./keybindings/binding";
 import { SettingsDialog } from "./settings/SettingsDialog";
 
@@ -30,6 +31,11 @@ const GraphView = lazy(() => import("./graph/GraphView").then((m) => ({ default:
 const CalendarView = lazy(() =>
   import("./calendar/CalendarView").then((m) => ({ default: m.CalendarView })),
 );
+// Kanban is its own view (like the calendar/graph) — code-split so its board +
+// drag-and-drop machinery only load when the user opens it (Phase 3+).
+const KanbanView = lazy(() =>
+  import("./kanban/KanbanView").then((m) => ({ default: m.KanbanView })),
+);
 
 /** The top-level views reachable from the shell switcher, in display order. */
 const VIEWS: { id: AppView; label: string }[] = [
@@ -37,6 +43,7 @@ const VIEWS: { id: AppView; label: string }[] = [
   { id: "editor", label: "Notes" },
   { id: "graph", label: "Graph" },
   { id: "calendar", label: "Calendar" },
+  { id: "kanban", label: "Kanban" },
   { id: "quicknotes", label: "Quick" },
 ];
 import { useLinkTitles } from "./store/linkTitles";
@@ -176,6 +183,12 @@ export default function App() {
   useEffect(() => {
     void useTheme.getState().load();
   }, []);
+
+  // Load the vault's tag → color map whenever the open vault changes (Phase 3+).
+  // Vault-scoped config, so it re-reads on switch rather than only on boot.
+  useEffect(() => {
+    if (vaultInfo) void useTagColors.getState().load();
+  }, [vaultInfo]);
 
   const openVaultAt = useCallback(
     async (path: string) => {
@@ -453,6 +466,12 @@ export default function App() {
         {view === "calendar" && (
           <Suspense fallback={<div className="centered muted">Loading calendar…</div>}>
             <CalendarView onOpenNote={openNote} onError={setError} />
+          </Suspense>
+        )}
+
+        {view === "kanban" && (
+          <Suspense fallback={<div className="centered muted">Loading kanban…</div>}>
+            <KanbanView vaultPath={vaultInfo.path} onOpenNote={openNote} onError={setError} />
           </Suspense>
         )}
 
