@@ -354,6 +354,10 @@ export default function App() {
           e.preventDefault();
           void onNewNote();
           break;
+        case "view.quicknotes":
+          e.preventDefault();
+          setView("quicknotes");
+          break;
         case "inspector.toggle":
           // Context-dependent: the note-metadata panel in the editor (needs an
           // open note), or the graph's info/settings panel in the graph view.
@@ -369,7 +373,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindings, onNewNote, view, openNoteId, toggleInspector, toggleGraphInspector]);
+  }, [bindings, onNewNote, setView, view, openNoteId, toggleInspector, toggleGraphInspector]);
 
   if (booting) {
     return <div className="centered muted">Loading…</div>;

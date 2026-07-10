@@ -48,6 +48,7 @@ describe("matchCommand", () => {
     "search.inNote": "Ctrl+F",
     "inspector.toggle": "Alt+I",
     "note.new": "Ctrl+Alt+N",
+    "view.quicknotes": "Ctrl+Q",
     "link.create": "Ctrl+Shift+K",
   };
 

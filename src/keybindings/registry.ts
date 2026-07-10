@@ -16,7 +16,8 @@ export type CommandId =
   | "search.inNote"
   | "inspector.toggle"
   | "link.create"
-  | "note.new";
+  | "note.new"
+  | "view.quicknotes";
 
 /** Groups commands in the Settings UI; room to grow as more commands land. */
 export type CommandCategory = "navigation" | "editing";
@@ -67,6 +68,13 @@ export const COMMANDS: readonly CommandDef[] = [
     description: "Create a new note in the current folder",
     category: "navigation",
     defaultBinding: "Ctrl+Alt+N",
+  },
+  {
+    id: "view.quicknotes",
+    label: "Open quick notes",
+    description: "Switch to the quick notes view",
+    category: "navigation",
+    defaultBinding: "Ctrl+Q",
   },
   {
     id: "link.create",
