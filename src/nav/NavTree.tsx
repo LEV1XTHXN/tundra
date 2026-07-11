@@ -264,7 +264,7 @@ export function NavTree({
         }}
         onDrop={dropOnRoot}
       >
-        Vault root
+        Vault
       </div>
 
       {rows.length === 0 ? (

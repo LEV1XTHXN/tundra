@@ -572,13 +572,6 @@ export default function App() {
             <Settings className="h-4 w-4" /> Settings
           </button>
         </div>
-        <SidebarSections
-          vaultPath={vaultInfo.path}
-          activeTemplateId={view === "template" ? templateEditId : null}
-          onOpenTemplate={onOpenTemplate}
-          onNewTemplate={() => void onNewTemplate()}
-          onRequestDeleteTemplate={onRequestDeleteTemplate}
-        />
         <NavTree
           tree={treeData}
           vaultPath={vaultInfo.path}
@@ -595,6 +588,16 @@ export default function App() {
           onRequestDeleteFolder={onRequestDeleteFolder}
           onSetNoteIcon={onSetNoteIcon}
           onRequestDeleteGroup={onRequestDeleteGroup}
+        />
+        {/* Templates live at the bottom of the sidebar, below the vault tree,
+            separated by a divider. */}
+        <div className="sidebar-divider" />
+        <SidebarSections
+          vaultPath={vaultInfo.path}
+          activeTemplateId={view === "template" ? templateEditId : null}
+          onOpenTemplate={onOpenTemplate}
+          onNewTemplate={() => void onNewTemplate()}
+          onRequestDeleteTemplate={onRequestDeleteTemplate}
         />
       </aside>
 

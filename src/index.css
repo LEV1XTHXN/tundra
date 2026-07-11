@@ -307,7 +307,7 @@ body,
   flex: 0 0 auto;
   max-height: 45%;
   overflow-y: auto;
-  margin: 0.25rem -0.75rem 0;
+  margin: 0 -0.75rem;
   display: flex;
   flex-direction: column;
 }
@@ -506,9 +506,19 @@ body,
 .nav-root-target {
   padding: 0.35rem 0.5rem;
   margin: 0 -0.75rem;
-  font-size: 0.8rem;
+  /* Same type as the tree rows/folders (Inter, 0.9rem) so it reads as part of
+     the hierarchy rather than a smaller muted caption. */
+  font-size: 0.9rem;
   color: var(--muted-foreground);
   border-bottom: 1px dashed var(--border);
+}
+
+/* Full-bleed separator between the tree and the bottom-anchored Templates section. */
+.sidebar-divider {
+  height: 1px;
+  margin: 0 -0.75rem;
+  background: var(--border);
+  flex: 0 0 auto;
 }
 
 .drag-over {
