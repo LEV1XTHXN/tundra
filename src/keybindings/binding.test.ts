@@ -50,6 +50,7 @@ describe("matchCommand", () => {
     "note.new": "Ctrl+Alt+N",
     "view.quicknotes": "Ctrl+Q",
     "link.create": "Ctrl+Shift+K",
+    "template.use": "Alt+T",
   };
 
   it("resolves a combo to its command id", () => {

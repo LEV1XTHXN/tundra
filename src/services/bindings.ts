@@ -39,6 +39,19 @@ export const commands = {
 	 *  link indexes — the quick note is outside the notes tree.
 	 */
 	saveQuickNote: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_quick_note", { note })),
+	/**  Every template's shallow summary (id/title/icon), title-sorted. */
+	listTemplates: () => typedError<TemplateSummary_Serialize[], CoreError>(__TAURI_INVOKE("list_templates")),
+	/**  Create a new, empty template and return it. */
+	createTemplate: (title: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("create_template", { title })),
+	/**  Read a template's full document by id. */
+	readTemplate: (id: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("read_template", { id })),
+	/**
+	 *  Persist an edited template (validated + atomic, like a note). Deliberately
+	 *  does NOT touch the search or link indexes — templates are outside the notes tree.
+	 */
+	saveTemplate: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_template", { note })),
+	/**  Delete a template by id. */
+	deleteTemplate: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_template", { id })),
 	readNote: (id: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("read_note", { id })),
 	saveNote: (note: Note_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("save_note", { note })),
 	deleteNote: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_note", { id })),
@@ -751,6 +764,47 @@ export type SpellLanguages = {
 	available: string[],
 	/**  Language codes currently enabled (app-setting; defaults to all available). */
 	enabled: string[],
+};
+
+/**
+ *  Lightweight listing entry for a reusable note template (see the `templates`
+ *  section on `Vault`). Templates are `Note`-shaped documents kept OUTSIDE
+ *  `notes/` (under the vault's `templates/` directory), so they never appear in
+ *  the note tree, search, links, or graph — the same "not one of the vault's
+ *  notes" treatment as the quick-note scratchpad. Only the cheap-to-show fields
+ *  are carried across the boundary; the full block tree is loaded on demand via
+ *  `read_template`.
+ */
+export type TemplateSummary = TemplateSummary_Serialize | TemplateSummary_Deserialize;
+
+/**
+ *  Lightweight listing entry for a reusable note template (see the `templates`
+ *  section on `Vault`). Templates are `Note`-shaped documents kept OUTSIDE
+ *  `notes/` (under the vault's `templates/` directory), so they never appear in
+ *  the note tree, search, links, or graph — the same "not one of the vault's
+ *  notes" treatment as the quick-note scratchpad. Only the cheap-to-show fields
+ *  are carried across the boundary; the full block tree is loaded on demand via
+ *  `read_template`.
+ */
+export type TemplateSummary_Deserialize = {
+	id: string,
+	title: string,
+	icon?: Icon | null,
+};
+
+/**
+ *  Lightweight listing entry for a reusable note template (see the `templates`
+ *  section on `Vault`). Templates are `Note`-shaped documents kept OUTSIDE
+ *  `notes/` (under the vault's `templates/` directory), so they never appear in
+ *  the note tree, search, links, or graph — the same "not one of the vault's
+ *  notes" treatment as the quick-note scratchpad. Only the cheap-to-show fields
+ *  are carried across the boundary; the full block tree is loaded on demand via
+ *  `read_template`.
+ */
+export type TemplateSummary_Serialize = {
+	id: string,
+	title: string,
+	icon?: Icon | null,
 };
 
 /**

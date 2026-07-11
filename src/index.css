@@ -300,6 +300,118 @@ body,
   text-align: left;
 }
 
+/* Dedicated sidebar sections (Pinned, Templates) above the folder/note tree.
+   Full-bleed like .nav-tree-scroll; capped so a long list can't crowd out the
+   tree (it scrolls within the cap instead). */
+.sidebar-sections {
+  flex: 0 0 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  margin: 0.25rem -0.75rem 0;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.75rem 0.2rem 0.4rem;
+}
+.sidebar-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sidebar-section-toggle:hover {
+  color: var(--foreground);
+}
+.sidebar-section-heading {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-section-count {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+.sidebar-section-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.sidebar-section-action:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.sidebar-section-body {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.25rem;
+}
+.sidebar-section-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.sidebar-section-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.25rem 0.75rem 0.25rem 1.5rem;
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--foreground);
+}
+.sidebar-section-row:hover {
+  background: var(--accent);
+}
+.sidebar-section-row.active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.sidebar-section-row-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  gap: 2px;
+}
+.sidebar-section-row-wrap:hover .sidebar-section-row-actions {
+  display: flex;
+}
+.sidebar-section-empty {
+  padding: 0.15rem 0.75rem 0.35rem 1.5rem;
+  font-size: 0.8rem;
+}
+
 .nav-tree-scroll {
   flex: 1;
   min-height: 0;
@@ -857,6 +969,46 @@ body,
    nothing is hidden behind it. */
 .main-pane.inspector-open .editor-pane {
   padding-right: calc(clamp(1.5rem, 8vw, 6rem) + 300px);
+}
+
+/* Templates manager: the template edit view fills the main pane with a small
+   top bar ("Done editing template") above the reused NoteEditor. The body is a
+   positioned flex child so the editor's height:100% + absolute .status resolve
+   against it, exactly as they do against .main-pane in the notes view. */
+.template-editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.template-editor-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.template-editor-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.375rem;
+}
+.template-editor-back:hover {
+  background: var(--border);
+}
+.template-editor-hint {
+  font-size: 0.8rem;
+}
+.template-editor-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* BlockNoteView auto-detects the OS color scheme independently of the app
@@ -2053,6 +2205,41 @@ body,
 }
 .settings-wordlist li button:hover {
   color: var(--destructive);
+}
+
+/* Templates management list (reuses .settings-wordlist layout). */
+.settings-templatelist {
+  max-height: 20rem;
+  margin-top: 0.75rem;
+}
+.settings-template-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-template-actions,
+.settings-template-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+/* Edit (pencil) is not destructive — only the trash turns red on hover. */
+.settings-template-actions button:first-child:hover {
+  color: var(--foreground);
+}
+.settings-template-confirm button {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.settings-template-danger {
+  color: var(--destructive) !important;
+  font-weight: 500;
 }
 
 /* --- Kanban view (Phase 3+) -------------------------------------------- */

@@ -33,6 +33,7 @@ const DIRS: &[&str] = &[
     ".vault/config",
     ".vault/dictionaries",
     "notes",
+    "templates",
     "attachments/images",
     "attachments/videos",
     "attachments/files",
@@ -46,6 +47,21 @@ pub struct VaultInfo {
     pub name: String,
     /// Absolute path to the vault root.
     pub path: String,
+}
+
+/// Lightweight listing entry for a reusable note template (see the `templates`
+/// section on `Vault`). Templates are `Note`-shaped documents kept OUTSIDE
+/// `notes/` (under the vault's `templates/` directory), so they never appear in
+/// the note tree, search, links, or graph — the same "not one of the vault's
+/// notes" treatment as the quick-note scratchpad. Only the cheap-to-show fields
+/// are carried across the boundary; the full block tree is loaded on demand via
+/// `read_template`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TemplateSummary {
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<crate::document::Icon>,
 }
 
 /// Which attachment library an import lands in (CLAUDE.md §5.2:
@@ -258,6 +274,117 @@ impl Vault {
         note.validate()?;
         note.modified = chrono::Utc::now();
         self.write_note_at(&self.quick_note_path(), &note)
+    }
+
+    // --- templates -------------------------------------------------------
+    //
+    // A template is a reusable, `Note`-shaped document the user inserts into a
+    // blank note. Templates live in their own `templates/` directory at the vault
+    // root — OUTSIDE `notes/` — so, exactly like the quick note, they never enter
+    // the note index, tree, search, links, or graph. They reuse the `Note` block
+    // model (and thus the same atomic-write + validation machinery) but are a
+    // separate, small collection kept off the note index entirely.
+    //
+    // The collection is small (a handful of templates), so — unlike notes — there
+    // is no in-memory id→path index: template ops walk `templates/` directly. That
+    // keeps `Vault::open` untouched and the note index uncontaminated, at the cost
+    // of an O(n) directory scan on operations the user triggers by hand (never a
+    // hot path).
+
+    fn templates_dir(&self) -> PathBuf {
+        self.root.join("templates")
+    }
+
+    /// The on-disk path of the template with `id`, found by scanning
+    /// `templates/`. Errors with `NotFound` if no template file carries that id.
+    fn template_path(&self, id: &str) -> Result<PathBuf> {
+        let dir = self.templates_dir();
+        if dir.is_dir() {
+            for entry in fs::read_dir(&dir)?.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                // Skip unreadable/corrupt template files rather than failing.
+                if let Ok(note) = read_note_at(&path) {
+                    if note.id == id {
+                        return Ok(path);
+                    }
+                }
+            }
+        }
+        Err(CoreError::NotFound(id.to_string()))
+    }
+
+    /// Every template's shallow summary (id/title/icon), title-sorted. Corrupt or
+    /// unreadable template files are skipped, never fatal.
+    pub fn list_templates(&self) -> Result<Vec<TemplateSummary>> {
+        let dir = self.templates_dir();
+        let mut out = Vec::new();
+        if dir.is_dir() {
+            for entry in fs::read_dir(&dir)?.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Ok(note) = read_note_at(&path) {
+                    out.push(TemplateSummary {
+                        id: note.id,
+                        title: note.title,
+                        icon: note.icon,
+                    });
+                }
+            }
+        }
+        out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        Ok(out)
+    }
+
+    /// Create a new, empty template and persist it under `templates/`.
+    pub fn create_template(&self, title: &str) -> Result<Note> {
+        let title = if title.trim().is_empty() {
+            "Untitled template"
+        } else {
+            title.trim()
+        };
+        let dir = self.templates_dir();
+        fs::create_dir_all(&dir)?;
+        let note = Note::new(title);
+        let path = first_available(&dir, &slugify(&note.title));
+        self.write_note_at(&path, &note)?;
+        Ok(note)
+    }
+
+    /// Read a template's full document by id.
+    pub fn read_template(&self, id: &str) -> Result<Note> {
+        read_note_at(&self.template_path(id)?)
+    }
+
+    /// Persist an edited template (atomic, validated like any note). Bumps
+    /// `modified`. If the id isn't found on disk (e.g. first save of a template
+    /// created in-memory) it's written to a fresh, collision-free path — the same
+    /// fallback `save_note` uses for a note missing from the index.
+    pub fn save_template(&self, mut note: Note) -> Result<()> {
+        note.validate()?;
+        note.modified = chrono::Utc::now();
+        let path = match self.template_path(&note.id) {
+            Ok(p) => p,
+            Err(_) => {
+                let dir = self.templates_dir();
+                fs::create_dir_all(&dir)?;
+                first_available(&dir, &slugify(&note.title))
+            }
+        };
+        self.write_note_at(&path, &note)?;
+        Ok(())
+    }
+
+    /// Delete a template by id (removes the file and any rolling `.bak`).
+    pub fn delete_template(&self, id: &str) -> Result<()> {
+        let path = self.template_path(id)?;
+        fs::remove_file(&path)?;
+        let _ = fs::remove_file(path.with_extension("json.bak"));
+        Ok(())
     }
 
     /// List all notes in the vault (shallow metadata only) — served entirely
@@ -1401,6 +1528,71 @@ mod tests {
             other => panic!("expected emoji icon, got {other:?}"),
         }
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn templates_crud_round_trip_and_stay_out_of_the_note_index() {
+        let (vault, dir) = temp_vault();
+
+        // A brand-new vault has no templates.
+        assert!(vault.list_templates().unwrap().is_empty());
+
+        // Create two templates; both list, title-sorted, and neither enters the
+        // note tree/index (templates are not "notes").
+        let meeting = vault.create_template("Meeting notes").unwrap();
+        let daily = vault.create_template("Daily journal").unwrap();
+        let listed = vault.list_templates().unwrap();
+        assert_eq!(
+            listed.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(),
+            vec!["Daily journal", "Meeting notes"],
+            "templates list title-sorted"
+        );
+        assert!(vault.list_notes().unwrap().is_empty(), "templates are not notes");
+        assert!(
+            vault.list_tree().is_empty(),
+            "templates never appear in the note tree"
+        );
+
+        // Edit + read-back a template's body and icon.
+        let mut edited = vault.read_template(&meeting.id).unwrap();
+        edited.icon = Some(Icon::Emoji("1f4dd".to_string()));
+        edited.blocks[0].content =
+            Some(serde_json::json!([{ "type": "text", "text": "## Agenda", "styles": {} }]));
+        vault.save_template(edited.clone()).unwrap();
+
+        let reread = vault.read_template(&meeting.id).unwrap();
+        assert_eq!(reread.id, meeting.id);
+        assert_eq!(reread.blocks[0].content, edited.blocks[0].content);
+        match reread.icon {
+            Some(Icon::Emoji(ref cp)) => assert_eq!(cp, "1f4dd"),
+            other => panic!("expected emoji icon, got {other:?}"),
+        }
+
+        // Delete one; it drops out of the listing, the other stays.
+        vault.delete_template(&daily.id).unwrap();
+        assert!(vault.read_template(&daily.id).is_err());
+        let after = vault.list_templates().unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].id, meeting.id);
+
+        // Templates survive a reopen (they're plain files under templates/).
+        let reopened = Vault::open(&dir).unwrap();
+        assert_eq!(reopened.list_templates().unwrap().len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn save_template_rejects_invalid_block_tree() {
+        let (vault, dir) = temp_vault();
+        let mut tpl = vault.create_template("Bad").unwrap();
+        // Duplicate the sole block's id — must be rejected before touching disk.
+        tpl.blocks.push(tpl.blocks[0].clone());
+        assert!(matches!(
+            vault.save_template(tpl).unwrap_err(),
+            CoreError::DuplicateBlockId(_)
+        ));
         std::fs::remove_dir_all(&dir).ok();
     }
 

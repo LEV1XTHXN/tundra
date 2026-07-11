@@ -8,7 +8,7 @@
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pin } from "lucide-react";
+import { BookmarkPlus, LayoutTemplate, Pin } from "lucide-react";
 import {
   useCreateBlockNote,
   FormattingToolbar,
@@ -19,8 +19,11 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 import { FileOpenButton } from "./FileOpenButton";
 
-import { attachments, notes, spellcheck, watcher } from "@/services";
+import { attachments, notes, spellcheck, templates, watcher } from "@/services";
 import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
+import { TemplatePicker } from "@/templates/TemplatePicker";
+import { SaveAsTemplateDialog } from "@/templates/SaveAsTemplateDialog";
+import { isEmptyDocument, stripBlockIds, type RawBlock } from "@/templates/applyTemplate";
 import { attachSpellcheckPlugin, type SpellContext, type SpellcheckController } from "./spellcheckPlugin";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
@@ -35,6 +38,7 @@ import { NoteLinkPicker } from "./NoteLinkPicker";
 import { FindBar } from "./FindBar";
 import { useKeybindings } from "@/store/keybindings";
 import { useTheme } from "@/store/theme";
+import { useTemplates } from "@/store/templates";
 import { matchCommand } from "@/keybindings/binding";
 
 const DEBOUNCE_MS = 600;
@@ -47,9 +51,30 @@ function attachmentKindFromMime(mime: string): AttachmentKind {
   return "file";
 }
 
+/**
+ * How the editor loads and persists its document. Notes go through `notes`;
+ * templates through `templates` — same `Note` shape and editor, different files
+ * (templates live outside `notes/`). Everything else in the editor is identical,
+ * so a single component drives both, parameterized by this and `mode`.
+ */
+export interface NotePersistence {
+  read: (id: string) => Promise<Note>;
+  save: (note: Note) => Promise<null>;
+}
+
+const NOTE_PERSISTENCE: NotePersistence = { read: notes.read, save: notes.save };
+/** Persistence for editing a template document (Templates manager). */
+export const TEMPLATE_PERSISTENCE: NotePersistence = { read: templates.read, save: templates.save };
+
 interface NoteEditorProps {
   noteId: string;
   vaultPath: string;
+  /** Where the document lives — defaults to the vault's notes. Pass
+   *  {@link TEMPLATE_PERSISTENCE} to edit a template instead. */
+  persistence?: NotePersistence;
+  /** `"template"` hides note-only chrome (pin, use/save-template) and is used by
+   *  the Templates manager; defaults to `"note"`. */
+  mode?: "note" | "template";
   /** Current note summaries (id + title) — drives the backlinks panel refresh
    * and the `[[` link menu; changes whenever the nav tree refreshes. */
   noteSummaries: Map<string, NoteSummary>;
@@ -65,7 +90,16 @@ interface NoteEditorProps {
  * always created fresh with the correct `initialContent` for that note, never
  * reused/rehydrated across notes.
  */
-export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved, onNeedsReload }: NoteEditorProps) {
+export function NoteEditor({
+  noteId,
+  vaultPath,
+  persistence = NOTE_PERSISTENCE,
+  mode = "note",
+  noteSummaries,
+  onError,
+  onSaved,
+  onNeedsReload,
+}: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
 
   useEffect(() => {
@@ -73,7 +107,7 @@ export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved,
     setNote(null);
     (async () => {
       try {
-        const loaded = await notes.read(noteId);
+        const loaded = await persistence.read(noteId);
         if (!cancelled) setNote(loaded);
       } catch (e) {
         if (!cancelled) onError(String(e));
@@ -82,7 +116,7 @@ export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved,
     return () => {
       cancelled = true;
     };
-  }, [noteId, onError]);
+  }, [noteId, persistence, onError]);
 
   if (!note) {
     return <div className="centered muted">Loading…</div>;
@@ -92,6 +126,8 @@ export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved,
       key={note.id}
       note={note}
       vaultPath={vaultPath}
+      persistence={persistence}
+      mode={mode}
       noteSummaries={noteSummaries}
       onError={onError}
       onSaved={onSaved}
@@ -103,6 +139,8 @@ export function NoteEditor({ noteId, vaultPath, noteSummaries, onError, onSaved,
 function LoadedNoteEditor({
   note,
   vaultPath,
+  persistence,
+  mode,
   noteSummaries,
   onError,
   onSaved,
@@ -110,11 +148,14 @@ function LoadedNoteEditor({
 }: {
   note: Note;
   vaultPath: string;
+  persistence: NotePersistence;
+  mode: "note" | "template";
   noteSummaries: Map<string, NoteSummary>;
   onError: (message: string) => void;
   onSaved?: () => void;
   onNeedsReload?: () => void;
 }) {
+  const isTemplateMode = mode === "template";
   // BlockNote's own document JSON, loaded verbatim (no transformation) — the
   // core treats blocks as opaque, validated-but-unmodeled JSON (Phase 1
   // preamble), so this is the one place the shape actually matters.
@@ -164,6 +205,10 @@ function LoadedNoteEditor({
   });
   // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
   const [findOpen, setFindOpen] = useState(false);
+  // Templates (note mode only): the "Use template" picker and the "Save as
+  // template" name prompt.
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   // Editor theme follows the app-wide Appearance setting (Phase 3 step 6) — no
   // longer hardcoded to light; BlockNote re-styles when the resolved theme flips.
   const resolvedTheme = useTheme((s) => s.resolved);
@@ -284,11 +329,15 @@ function LoadedNoteEditor({
       } else if (cmd === "search.inNote") {
         e.preventDefault();
         setFindOpen(true);
+      } else if (cmd === "template.use" && !isTemplateMode) {
+        // Insert a saved template — meaningless while editing a template itself.
+        e.preventDefault();
+        setTemplatePickerOpen(true);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, bindings]);
+  }, [editor, bindings, isTemplateMode]);
 
   // Manually typed / pasted `[[Title]]` → link node (bug fix). A title→target
   // lookup over the current summaries (case-insensitive, self excluded), so the
@@ -393,7 +442,7 @@ function LoadedNoteEditor({
         title: titleRef.current,
         blocks: editor.document as unknown as Note["blocks"],
       };
-      await notes.save(updated);
+      await persistence.save(updated);
       noteRef.current = updated;
       isDirtyRef.current = false;
       setSaveState("saved");
@@ -449,7 +498,7 @@ function LoadedNoteEditor({
         blocks: editor.document as unknown as Note["blocks"],
         icon: newIcon ?? undefined,
       };
-      await notes.save(updated);
+      await persistence.save(updated);
       noteRef.current = updated;
       setIconState(newIcon);
       setSaveState("saved");
@@ -472,7 +521,7 @@ function LoadedNoteEditor({
         blocks: editor.document as unknown as Note["blocks"],
         meta: { ...(current.meta ?? { pinned: false, tags: [] }), pinned: next },
       };
-      await notes.save(updated);
+      await persistence.save(updated);
       noteRef.current = updated;
       setPinned(next);
       setSaveState("saved");
@@ -539,6 +588,52 @@ function LoadedNoteEditor({
       .catch((e) => onError(String(e)));
   }
 
+  // --- templates ---------------------------------------------------------
+
+  // Insert a saved template into this note. Smart apply: a blank note has its
+  // body REPLACED by the template; a note that already has content gets the
+  // template's blocks inserted after the cursor, so existing writing is never
+  // lost. Block ids are stripped first so BlockNote assigns fresh, unique ones
+  // (inserting the same template twice must not collide ids — `Note::validate`
+  // would reject the save). BlockNote doesn't reliably fire onChange for these
+  // programmatic edits, so we schedule the save ourselves.
+  async function useTemplate(templateId: string) {
+    try {
+      const tpl = await templates.read(templateId);
+      const blocks = stripBlockIds(tpl.blocks as unknown as RawBlock[]);
+      if (blocks.length === 0) return;
+      if (isEmptyDocument(editor.document as unknown as RawBlock[])) {
+        editor.replaceBlocks(editor.document, blocks as never);
+      } else {
+        const ref = editor.getTextCursorPosition().block;
+        editor.insertBlocks(blocks as never, ref, "after");
+      }
+      scheduleSave();
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
+  // Save this note's current content as a reusable template. Creates a blank
+  // template (fresh id/file under templates/), then persists it with the note's
+  // live blocks and icon — two round trips, but reuses the create + validated
+  // save path with no special-case command.
+  async function saveAsTemplate(name: string) {
+    try {
+      const created = await templates.create(name);
+      await templates.save({
+        ...created,
+        icon: icon ?? undefined,
+        blocks: editor.document as unknown as Note["blocks"],
+      });
+      // Keep the sidebar Templates section + Settings manager in sync.
+      await useTemplates.getState().refresh();
+      setSaveState("saved");
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
   return (
     <>
     <div className="editor-pane" ref={editorPaneRef}>
@@ -587,14 +682,38 @@ function LoadedNoteEditor({
             scheduleSave();
           }}
         />
-        <button
-          className={`editor-icon-button${pinned ? " pinned" : ""}`}
-          onClick={() => void togglePin()}
-          title={pinned ? "Unpin from Home" : "Pin to Home"}
-          aria-pressed={pinned}
-        >
-          <Pin className="h-5 w-5" fill={pinned ? "currentColor" : "none"} />
-        </button>
+        {/* Template actions — note mode only (a template doesn't use/save
+            templates of itself). */}
+        {!isTemplateMode && (
+          <>
+            <button
+              className="editor-icon-button"
+              onClick={() => setTemplatePickerOpen(true)}
+              title="Use template — insert a saved template"
+              aria-label="Use template"
+            >
+              <LayoutTemplate className="h-5 w-5" />
+            </button>
+            <button
+              className="editor-icon-button"
+              onClick={() => setSaveAsTemplateOpen(true)}
+              title="Save this note as a template"
+              aria-label="Save as template"
+            >
+              <BookmarkPlus className="h-5 w-5" />
+            </button>
+          </>
+        )}
+        {!isTemplateMode && (
+          <button
+            className={`editor-icon-button${pinned ? " pinned" : ""}`}
+            onClick={() => void togglePin()}
+            title={pinned ? "Unpin from Home" : "Pin to Home"}
+            aria-pressed={pinned}
+          >
+            <Pin className="h-5 w-5" fill={pinned ? "currentColor" : "none"} />
+          </button>
+        )}
       </div>
       <BlockNoteView
         editor={editor}
@@ -637,6 +756,21 @@ function LoadedNoteEditor({
           old in-editor `padding-bottom: 60vh` did). */}
       <div className="editor-tail-space" aria-hidden="true" />
     </div>
+    {!isTemplateMode && (
+      <>
+        <TemplatePicker
+          open={templatePickerOpen}
+          onOpenChange={setTemplatePickerOpen}
+          onPick={(t) => void useTemplate(t.id)}
+        />
+        <SaveAsTemplateDialog
+          open={saveAsTemplateOpen}
+          onOpenChange={setSaveAsTemplateOpen}
+          defaultName={title}
+          onSave={(name) => void saveAsTemplate(name)}
+        />
+      </>
+    )}
     {/* Save-state indicator: a sibling of .editor-pane (not a child), so it
         anchors to the non-scrolling .main-pane and stays pinned to its
         bottom-left corner regardless of note length or scroll (see .status). */}

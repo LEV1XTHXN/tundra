@@ -17,7 +17,8 @@ export type CommandId =
   | "inspector.toggle"
   | "link.create"
   | "note.new"
-  | "view.quicknotes";
+  | "view.quicknotes"
+  | "template.use";
 
 /** Groups commands in the Settings UI; room to grow as more commands land. */
 export type CommandCategory = "navigation" | "editing";
@@ -82,6 +83,13 @@ export const COMMANDS: readonly CommandDef[] = [
     description: "Turn the selected text into a link to another note",
     category: "editing",
     defaultBinding: "Ctrl+Shift+K",
+  },
+  {
+    id: "template.use",
+    label: "Use template",
+    description: "Insert a saved template into the open note",
+    category: "editing",
+    defaultBinding: "Alt+T",
   },
 ] as const;
 

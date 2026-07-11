@@ -5,7 +5,7 @@
  * only renders and captures the user's chosen combos.
  */
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -18,8 +18,9 @@ import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
-import { appSettings, backup, notes, pickDirectory, spellcheck } from "@/services";
+import { appSettings, backup, notes, pickDirectory, spellcheck, templates } from "@/services";
 import type { SpellLanguages } from "@/services";
+import { useTemplates } from "@/store/templates";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -27,18 +28,22 @@ interface SettingsDialogProps {
   /** Called after a vault cleanup with the ids that were deleted, so the app can
    *  refresh the note tree and close the open note if it was one of them. */
   onCleaned?: (deletedIds: string[]) => void;
+  /** Open a template for editing in the main pane (closes the dialog); the
+   *  Templates section calls this for "New template" and "Edit". */
+  onEditTemplate?: (id: string) => void;
 }
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "keybindings", label: "Keybindings" },
+  { id: "templates", label: "Templates" },
   { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
   { id: "maintenance", label: "Maintenance" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-export function SettingsDialog({ open, onOpenChange, onCleaned }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate }: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("keybindings");
 
   return (
@@ -63,6 +68,7 @@ export function SettingsDialog({ open, onOpenChange, onCleaned }: SettingsDialog
           <div className="settings-pane">
             {section === "appearance" && <AppearanceSection />}
             {section === "keybindings" && <KeybindingsSection />}
+            {section === "templates" && <TemplatesSection onEditTemplate={onEditTemplate} />}
             {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
             {section === "maintenance" && <MaintenanceSection onCleaned={onCleaned} />}
@@ -348,6 +354,94 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
         <p className="muted settings-backup-last">
           {result === 0 ? "No empty notes found." : `Deleted ${result} empty note${result === 1 ? "" : "s"}.`}
         </p>
+      )}
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Templates section: manage reusable note templates. Create a blank template
+ * (opens it in the editor), edit an existing one, or delete it. Templates are
+ * stored by Rust outside `notes/`, so they never appear in the tree/search/graph.
+ * Note that a note can also be turned into a template from its header
+ * ("Save as template"); this section is the from-scratch / management path.
+ */
+function TemplatesSection({ onEditTemplate }: { onEditTemplate?: (id: string) => void }) {
+  const list = useTemplates((s) => s.list);
+  const loaded = useTemplates((s) => s.loaded);
+  const refresh = useTemplates((s) => s.refresh);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const newTemplate = async () => {
+    try {
+      const tpl = await templates.create("Untitled template");
+      await refresh();
+      onEditTemplate?.(tpl.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const remove = async (id: string) => {
+    try {
+      await templates.delete(id);
+      setConfirmId(null);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Templates</h3>
+      <p className="muted settings-section-desc">
+        Reusable note layouts. Insert one into any note with the “Use template” button in its
+        header (or the shortcut). Create one here from scratch, or save an existing note as a
+        template from its header.
+      </p>
+
+      <div className="settings-actions">
+        <Button size="sm" onClick={() => void newTemplate()}>
+          <Plus className="h-4 w-4" /> New template
+        </Button>
+      </div>
+
+      {!loaded ? (
+        <div className="muted">Loading…</div>
+      ) : list.length === 0 ? (
+        <p className="muted">No templates yet.</p>
+      ) : (
+        <ul className="settings-wordlist settings-templatelist">
+          {list.map((t) => (
+            <li key={t.id}>
+              <span className="settings-template-name">{t.title || "Untitled template"}</span>
+              {confirmId === t.id ? (
+                <span className="settings-template-confirm">
+                  <button className="settings-template-danger" onClick={() => void remove(t.id)}>
+                    Delete
+                  </button>
+                  <button onClick={() => setConfirmId(null)}>Cancel</button>
+                </span>
+              ) : (
+                <span className="settings-template-actions">
+                  <button onClick={() => onEditTemplate?.(t.id)} title="Edit template" aria-label={`Edit ${t.title}`}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => setConfirmId(t.id)} title="Delete template" aria-label={`Delete ${t.title}`}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
       {error && <p className="error">{error}</p>}
     </div>

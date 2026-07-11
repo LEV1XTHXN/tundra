@@ -38,6 +38,14 @@ import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindin
 import type { Event, NoteDate, CalendarRange } from "./bindings";
 import type { Misspelling, SpellLanguages } from "./bindings";
 import type { KanbanBoard_Serialize, KanbanColumn_Serialize } from "./bindings";
+import type { TemplateSummary_Serialize } from "./bindings";
+
+/**
+ * A template's shallow listing entry (id/title/icon). Templates cross the
+ * boundary fully serialized, so — like `KanbanBoard` — we re-export the
+ * `_Serialize` shape under a friendly name (no generated suffix for consumers).
+ */
+export type TemplateSummary = TemplateSummary_Serialize;
 
 /**
  * Kanban boards cross the boundary in their fully-serialized shape (all fields
@@ -140,6 +148,27 @@ export const quickNote = {
   read: (): Promise<Note> => unwrap(commands.readQuickNote()),
   /** Persist the scratchpad. */
   save: (note: Note): Promise<null> => unwrap(commands.saveQuickNote(note)),
+};
+
+/**
+ * Note templates — reusable, `Note`-shaped documents the user inserts into a
+ * blank note. Stored by Rust under the vault's `templates/` directory, OUTSIDE
+ * `notes/`, so (like the quick note) they never appear in the tree, search,
+ * links, or graph and never touch the search/link indexes. Authored either by
+ * saving an existing note "as a template" or by creating + editing a blank one
+ * in the Templates manager; applied via the editor's "Use template" action.
+ */
+export const templates = {
+  /** Every template's shallow summary (id/title/icon), title-sorted. */
+  list: (): Promise<TemplateSummary[]> => unwrap(commands.listTemplates()),
+  /** Create a new, empty template and return it. */
+  create: (title: string): Promise<Note> => unwrap(commands.createTemplate(title)),
+  /** Read a template's full document by id. */
+  read: (id: string): Promise<Note> => unwrap(commands.readTemplate(id)),
+  /** Persist an edited template (validated + atomic in Rust, like a note). */
+  save: (note: Note): Promise<null> => unwrap(commands.saveTemplate(note)),
+  /** Delete a template by id. */
+  delete: (id: string): Promise<null> => unwrap(commands.deleteTemplate(id)),
 };
 
 /**

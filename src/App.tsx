@@ -5,11 +5,14 @@
  * of data flows through the `services` layer.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRight, Settings } from "lucide-react";
+import { ChevronLeft, PanelRight, Settings } from "lucide-react";
 import { folders, notes, pickVaultFolder, tree as fetchTree, vault, watcher } from "./services";
 import type { CoreError, Icon, NoteSummary, TreeNode, VaultInfo } from "./services";
-import { NoteEditor } from "./editor/NoteEditor";
+import { NoteEditor, TEMPLATE_PERSISTENCE } from "./editor/NoteEditor";
 import { NavTree } from "./nav/NavTree";
+import { SidebarSections } from "./nav/SidebarSections";
+import { templates as templatesService } from "./services";
+import { useTemplates } from "./store/templates";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
 import { NoteInspector } from "./inspector/NoteInspector";
@@ -85,7 +88,8 @@ function errorMessage(err: unknown): string {
 
 type PendingDelete =
   | { kind: "note"; id: string; title: string }
-  | { kind: "folder"; path: string; name: string; hasChildren: boolean };
+  | { kind: "folder"; path: string; name: string; hasChildren: boolean }
+  | { kind: "template"; id: string; title: string };
 
 export default function App() {
   const [vaultInfo, setVaultInfo] = useState<VaultInfo | null>(null);
@@ -120,6 +124,8 @@ export default function App() {
   const openNote = useViewState((s) => s.openNote);
   const openFolder = useViewState((s) => s.openFolder);
   const folderViewPath = useViewState((s) => s.folderViewPath);
+  const openTemplate = useViewState((s) => s.openTemplate);
+  const templateEditId = useViewState((s) => s.templateEditId);
   const inspectorOpen = useViewState((s) => s.inspectorOpen);
   const toggleInspector = useViewState((s) => s.toggleInspector);
   const setInspectorOpen = useViewState((s) => s.setInspectorOpen);
@@ -140,6 +146,16 @@ export default function App() {
     const summary = noteSummaries.get(openNoteId);
     return summary ? folderOfNotePath(summary.path) : "";
   }, [openNoteId, noteSummaries]);
+
+  // Every pinned note across the vault, for the sidebar's dedicated Pinned
+  // section (the note also still appears in its folder in the tree). Title-sorted.
+  const pinnedNotes = useMemo(
+    () =>
+      [...noteSummaries.values()]
+        .filter((n) => n.pinned)
+        .sort((a, b) => (a.title || "").localeCompare(b.title || "")),
+    [noteSummaries],
+  );
 
   // On launch, reopen the last vault so returning users skip onboarding.
   // Guarded against React StrictMode's dev-only double-invocation of effects:
@@ -202,6 +218,12 @@ export default function App() {
   // same class of vault-scoped config as tag colors.
   useEffect(() => {
     if (vaultInfo) void useFolderViews.getState().load();
+  }, [vaultInfo]);
+
+  // Load the vault's template list on vault change, for the sidebar Templates
+  // section + Settings manager (both read the shared store).
+  useEffect(() => {
+    if (vaultInfo) void useTemplates.getState().refresh();
   }, [vaultInfo]);
 
   const openVaultAt = useCallback(
@@ -364,9 +386,62 @@ export default function App() {
     setPendingDelete({ kind: "folder", path, name, hasChildren });
   }, []);
 
+  // Editing a template opens it in the main editor pane (template mode). We
+  // remember where the user came from so "Done" returns there — and reopens the
+  // Settings dialog only when the edit was launched from the Templates manager
+  // (not from the sidebar Templates section).
+  const templateReturn = useRef<{ view: AppView; settings: boolean }>({ view: "home", settings: false });
+  const openTemplateForEdit = useCallback(
+    (id: string, fromSettings: boolean) => {
+      const current = useViewState.getState().view;
+      templateReturn.current = { view: current === "template" ? "home" : current, settings: fromSettings };
+      setSettingsOpen(false);
+      openTemplate(id);
+    },
+    [openTemplate],
+  );
+  // Launched from the Settings ▸ Templates manager (returns to Settings on Done).
+  const onEditTemplateFromSettings = useCallback(
+    (id: string) => openTemplateForEdit(id, true),
+    [openTemplateForEdit],
+  );
+  // Launched from the sidebar Templates section (returns to the prior view).
+  const onOpenTemplate = useCallback(
+    (id: string) => openTemplateForEdit(id, false),
+    [openTemplateForEdit],
+  );
+  const onDoneEditingTemplate = useCallback(() => {
+    setView(templateReturn.current.view);
+    if (templateReturn.current.settings) setSettingsOpen(true);
+    // A rename/edit may have changed the title — refresh the sidebar list.
+    void useTemplates.getState().refresh();
+  }, [setView]);
+
+  const onNewTemplate = useCallback(async () => {
+    try {
+      const tpl = await templatesService.create("Untitled template");
+      await useTemplates.getState().refresh();
+      openTemplateForEdit(tpl.id, false);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [openTemplateForEdit]);
+
+  const onRequestDeleteTemplate = useCallback((id: string, title: string) => {
+    setPendingDelete({ kind: "template", id, title });
+  }, []);
+
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return;
     try {
+      if (pendingDelete.kind === "template") {
+        const id = pendingDelete.id;
+        await templatesService.delete(id);
+        await useTemplates.getState().refresh();
+        // If the deleted template was open for editing, leave the template view.
+        if (templateEditId === id) setView(templateReturn.current.view);
+        return;
+      }
       if (pendingDelete.kind === "note") {
         await notes.delete(pendingDelete.id);
       } else {
@@ -381,7 +456,7 @@ export default function App() {
     } finally {
       setPendingDelete(null);
     }
-  }, [pendingDelete, openNoteId, refreshTree, setOpenNoteId]);
+  }, [pendingDelete, openNoteId, refreshTree, setOpenNoteId, templateEditId, setView]);
 
   // Global shortcut dispatcher (app-level commands). Editor-scoped commands
   // (find-in-note, note links) are handled inside NoteEditor; both listeners
@@ -471,6 +546,17 @@ export default function App() {
             <Settings className="h-4 w-4" /> Settings
           </button>
         </div>
+        <SidebarSections
+          pinnedNotes={pinnedNotes}
+          vaultPath={vaultInfo.path}
+          openNoteId={openNoteId}
+          activeTemplateId={view === "template" ? templateEditId : null}
+          onSelectNote={openNote}
+          onUnpinNote={(id) => void onToggleNotePin(id, true)}
+          onOpenTemplate={onOpenTemplate}
+          onNewTemplate={() => void onNewTemplate()}
+          onRequestDeleteTemplate={onRequestDeleteTemplate}
+        />
         <NavTree
           tree={treeData}
           vaultPath={vaultInfo.path}
@@ -540,6 +626,30 @@ export default function App() {
           </Suspense>
         )}
 
+        {view === "template" && templateEditId && (
+          <div className="template-editor">
+            <div className="template-editor-bar">
+              <button className="template-editor-back" onClick={onDoneEditingTemplate}>
+                <ChevronLeft className="h-4 w-4" /> Done editing template
+              </button>
+              <span className="muted template-editor-hint">
+                Editing a template — it won’t appear in your notes, search, or graph.
+              </span>
+            </div>
+            <div className="template-editor-body">
+              <NoteEditor
+                key={`tpl:${templateEditId}`}
+                noteId={templateEditId}
+                persistence={TEMPLATE_PERSISTENCE}
+                mode="template"
+                vaultPath={vaultInfo.path}
+                noteSummaries={noteSummaries}
+                onError={setError}
+              />
+            </div>
+          </div>
+        )}
+
         {view === "quicknotes" && <QuickNoteView vaultPath={vaultInfo.path} onError={setError} />}
 
         {view === "home" && (
@@ -580,22 +690,29 @@ export default function App() {
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onCleaned={onVaultCleaned} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onCleaned={onVaultCleaned}
+        onEditTemplate={onEditTemplateFromSettings}
+      />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete?.kind === "note"
-                ? `Delete "${pendingDelete.title || "Untitled"}"?`
-                : `Delete "${pendingDelete?.name}"?`}
+              {pendingDelete?.kind === "folder"
+                ? `Delete "${pendingDelete.name}"?`
+                : `Delete "${pendingDelete?.title || (pendingDelete?.kind === "template" ? "Untitled template" : "Untitled")}"?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.kind === "note"
                 ? "This note will be permanently deleted."
-                : pendingDelete?.hasChildren
-                  ? "This folder and everything inside it — all notes and subfolders — will be permanently deleted."
-                  : "This empty folder will be permanently deleted."}
+                : pendingDelete?.kind === "template"
+                  ? "This template will be permanently deleted. Notes created from it are not affected."
+                  : pendingDelete?.hasChildren
+                    ? "This folder and everything inside it — all notes and subfolders — will be permanently deleted."
+                    : "This empty folder will be permanently deleted."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
