@@ -1,24 +1,30 @@
 import twemoji from "@twemoji/api";
-import { FileText } from "lucide-react";
+import { FileText, Folder, Library } from "lucide-react";
 import { icons as iconsService } from "@/services";
 import type { Icon } from "@/services";
 import { cn } from "@/lib/utils";
 
+/** Which default glyph to show when there's no custom icon. */
+const FALLBACK_GLYPH = { note: FileText, folder: Folder, group: Library } as const;
+
 /**
- * Renders a note's icon: an emoji as a glyph from our bundled Twemoji COLR font
- * (the SINGLE emoji source shared with the picker and note bodies, so every
- * emoji in the app looks identical — see styles/twemoji.css), a custom image via
- * the Tauri asset protocol (`convertFileSrc`, exposed via `services`), or a
- * generic glyph if there's no icon.
+ * Renders an icon: an emoji as a glyph from our bundled Twemoji COLR font (the
+ * SINGLE emoji source shared with the picker and note bodies, so every emoji in
+ * the app looks identical — see styles/twemoji.css), a custom image via the Tauri
+ * asset protocol (`convertFileSrc`, exposed via `services`), or a generic glyph
+ * if there's no icon. `fallback` picks the generic glyph (note/folder/group) —
+ * the same component renders note, folder, and group icons.
  */
 export function NoteIcon({
   icon,
   vaultPath,
   className,
+  fallback = "note",
 }: {
   icon?: Icon | null;
   vaultPath: string;
   className?: string;
+  fallback?: keyof typeof FALLBACK_GLYPH;
 }) {
   if (icon?.type === "emoji") {
     // The font renders the emoji CHARACTER, so turn the stored codepoint(s)
@@ -45,7 +51,8 @@ export function NoteIcon({
       />
     );
   }
-  return <FileText className={className ?? "h-4 w-4 text-muted-foreground"} />;
+  const Glyph = FALLBACK_GLYPH[fallback];
+  return <Glyph className={className ?? "h-4 w-4 text-muted-foreground"} />;
 }
 
 /** Rebuild an emoji string from its stored codepoint form (hyphen-joined for

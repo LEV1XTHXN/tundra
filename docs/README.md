@@ -20,6 +20,7 @@ would also have to, drop a note here.
 - [`kanban-and-tags.md`](kanban-and-tags.md) — the Kanban board view, the note tag system, the column↔tag drag automation, and `#tag` search in the global palette.
 - [`note-sorting-and-folder-tables.md`](note-sorting-and-folder-tables.md) — per-folder sidebar sorting (field / manual drag / pin) and the folder "database" table view with user-defined columns.
 - [`templates.md`](templates.md) — reusable note templates: stored outside `notes/`, authored via "Save as template" or the Templates manager, and smart-applied (replace-if-blank / insert-otherwise) with block-id regeneration.
+- [`folder-groups.md`](folder-groups.md) — collapsible folder groups, per-folder icons, and the removal of sidebar tree pinning (Home's "Pin to Home" kept).
 
 ## Conventions
 

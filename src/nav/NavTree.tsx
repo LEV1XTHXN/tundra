@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUpDown, ChevronDown, ChevronRight, Pencil, Pin, PinOff, Smile, Trash2 } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronRight, Pencil, Smile, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Icon, TreeNode } from "@/services";
 import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
-import { flattenTree, reorderKeys, type NavRow } from "./flatten";
+import { useFolderGroups } from "@/store/folderGroups";
+import { flattenWithGroups, reorderKeys, type NavRow } from "./flatten";
 import { NoteIcon } from "./NoteIcon";
 import { IconPicker } from "./IconPicker";
 import { FolderSortMenu } from "./FolderSortMenu";
@@ -28,27 +29,36 @@ interface NavTreeProps {
   onRequestDeleteNote: (id: string, title: string) => void;
   onRequestDeleteFolder: (path: string, name: string, hasChildren: boolean) => void;
   onSetNoteIcon: (id: string, icon: Icon | null) => void;
-  /** Flip a note's pinned flag (pinned notes float to the top of the hierarchy). */
-  onToggleNotePin: (id: string, pinned: boolean) => void;
+  /** Confirm-and-delete a folder group (folders survive; only the grouping is removed). */
+  onRequestDeleteGroup: (id: string, name: string) => void;
 }
 
-type EditingKey = { kind: "note"; id: string } | { kind: "folder"; path: string };
+type EditingKey =
+  | { kind: "note"; id: string }
+  | { kind: "folder"; path: string }
+  | { kind: "group"; id: string };
 
-/** Where a drag would land relative to a row: into a folder, or reordered among siblings. */
+/** Where a drag would land relative to a row: into a folder, reordered among
+ *  siblings, or assigned to a folder group (dropping a top-level folder on a header). */
 type DropIntent =
   | { kind: "into"; folderPath: string }
-  | { kind: "reorder"; parent: string; targetKey: string; position: "before" | "after" };
+  | { kind: "reorder"; parent: string; targetKey: string; position: "before" | "after" }
+  | { kind: "assign"; groupId: string };
+
+/** A top-level folder (single path segment) — the only thing a group can hold. */
+const isTopLevel = (path: string) => path !== "" && !path.includes("/");
 
 /**
  * Virtualized folder/note tree (CLAUDE.md Phase 1 preamble: design for a
  * ~50k-note vault) with move + reorder (native HTML5 drag-and-drop — no DnD
- * library), inline rename, per-folder sort/pin, and delete.
+ * library), inline rename, per-folder sort, per-folder/note icons, and delete.
  *
- * Ordering is per-folder and lives in the `folderViews` store (independent of
- * the table view): pinned items float to the top, then either a field sort or
- * the user's manual drag order. Dragging a row onto a sibling's top/bottom edge
- * reorders (switching the folder to manual order); dropping onto a folder's body
- * moves the item into it.
+ * The top level is laid out into user-defined **folder groups** (collapsible
+ * sections holding top-level folders) followed by everything ungrouped — see
+ * `flattenWithGroups`. Ordering within a folder is per-folder and lives in the
+ * `folderViews` store: a field sort or the user's manual drag order. Dragging a
+ * row onto a sibling's top/bottom edge reorders; dropping onto a folder's body
+ * moves into it; dropping a top-level folder onto a group header assigns it there.
  */
 export function NavTree({
   tree,
@@ -65,13 +75,21 @@ export function NavTree({
   onRequestDeleteNote,
   onRequestDeleteFolder,
   onSetNoteIcon,
-  onToggleNotePin,
+  onRequestDeleteGroup,
 }: NavTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const views = useFolderViews((s) => s.views);
   const patch = useFolderViews((s) => s.patch);
+  const groups = useFolderGroups((s) => s.groups);
+  const assignFolderToGroup = useFolderGroups((s) => s.assign);
+  const setGroupCollapsed = useFolderGroups((s) => s.setCollapsed);
+  const setGroupIcon = useFolderGroups((s) => s.setIcon);
+  const renameGroup = useFolderGroups((s) => s.rename);
   const getView = useCallback((path: string) => views[path] ?? {}, [views]);
-  const rows = useMemo(() => flattenTree(tree, expandedFolders, getView), [tree, expandedFolders, getView]);
+  const rows = useMemo(
+    () => flattenWithGroups(tree, groups, expandedFolders, getView),
+    [tree, groups, expandedFolders, getView],
+  );
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -88,10 +106,12 @@ export function NavTree({
   const [editing, setEditing] = useState<EditingKey | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  /** The drag key ("note:x" / "folder:name") for a row's payload. */
-  const rowKeyOf = (row: NavRow) => (row.kind === "folder" ? folderKey(row.name) : noteKey(row.id));
+  /** The drag key ("note:x" / "folder:name") for a row's payload (folder/note only). */
+  const rowKeyOf = (row: NavRow) =>
+    row.kind === "folder" ? folderKey(row.name) : row.kind === "note" ? noteKey(row.id) : "";
   /** A parent folder's children keys in current display order (from the flattened rows). */
-  const siblingKeysOf = (parent: string) => rows.filter((r) => r.parent === parent).map(rowKeyOf);
+  const siblingKeysOf = (parent: string) =>
+    rows.filter((r) => (r.kind === "folder" || r.kind === "note") && r.parent === parent).map(rowKeyOf);
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
     setDragging(payload);
@@ -114,6 +134,14 @@ export function NavTree({
 
   function computeIntent(e: React.DragEvent, row: NavRow): DropIntent | null {
     if (!dragging || isSelf(row)) return null;
+
+    // Drop a top-level folder onto a group header → assign it to that group.
+    if (row.kind === "group") {
+      return dragging.kind === "folder" && isTopLevel(dragging.path)
+        ? { kind: "assign", groupId: row.id }
+        : null;
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
     const offset = (e.clientY - rect.top) / rect.height;
 
@@ -173,7 +201,9 @@ export function NavTree({
     setDropIntent(null);
     setDragging(null);
     if (!intent || !payload) return;
-    if (intent.kind === "into") {
+    if (intent.kind === "assign") {
+      if (payload.kind === "folder") void assignFolderToGroup(payload.path, intent.groupId);
+    } else if (intent.kind === "into") {
       if (payload.kind === "note") onMoveNote(payload.id, intent.folderPath);
       else onMoveFolder(payload.path, intent.folderPath);
     } else {
@@ -187,8 +217,14 @@ export function NavTree({
     setDropIntent(null);
     setDragging(null);
     if (!payload || !canDropOnFolder(payload, "")) return;
-    if (payload.kind === "note") onMoveNote(payload.id, "");
-    else onMoveFolder(payload.path, "");
+    if (payload.kind === "note") {
+      onMoveNote(payload.id, "");
+    } else {
+      // Only an actual move for a nested folder; a top-level folder is already at
+      // root, so dropping it here just ungroups it (no pointless "already exists" move).
+      if (payload.path.includes("/")) onMoveFolder(payload.path, "");
+      void assignFolderToGroup(payload.path, null);
+    }
   }
 
   function startRename(key: EditingKey, currentValue: string) {
@@ -201,7 +237,8 @@ export function NavTree({
     const value = editValue.trim();
     if (value) {
       if (editing.kind === "note") onRenameNote(editing.id, value);
-      else onRenameFolder(editing.path, value);
+      else if (editing.kind === "folder") onRenameFolder(editing.path, value);
+      else void renameGroup(editing.id, value);
     }
     setEditing(null);
   }
@@ -215,8 +252,8 @@ export function NavTree({
 
   return (
     <>
-      {/* Persistent drop target for "move to vault root" — the virtualized
-          rows below only cover the folders/notes actually in view. */}
+      {/* Persistent drop target for "move to vault root" (also ungroups a folder
+          dropped here) — the virtualized rows below only cover what's in view. */}
       <div
         className={cn("nav-root-target", rootDroppable && "droppable")}
         onDragOver={(e) => {
@@ -239,20 +276,36 @@ export function NavTree({
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualizer.getVirtualItems().map((item) => {
               const row = rows[item.index];
-              const rowKey = row.kind === "folder" ? `folder:${row.path}` : `note:${row.id}`;
+              const rowKey =
+                row.kind === "folder"
+                  ? `folder:${row.path}`
+                  : row.kind === "note"
+                    ? `note:${row.id}`
+                    : `group:${row.id}`;
               const isEditing =
                 editing !== null &&
                 ((editing.kind === "folder" && row.kind === "folder" && editing.path === row.path) ||
-                  (editing.kind === "note" && row.kind === "note" && editing.id === row.id));
+                  (editing.kind === "note" && row.kind === "note" && editing.id === row.id) ||
+                  (editing.kind === "group" && row.kind === "group" && editing.id === row.id));
 
               const intentHere =
                 dropIntent?.kind === "reorder" &&
+                (row.kind === "folder" || row.kind === "note") &&
                 dropIntent.parent === row.parent &&
                 dropIntent.targetKey === rowKeyOf(row)
                   ? dropIntent.position
                   : dropIntent?.kind === "into" && row.kind === "folder" && dropIntent.folderPath === row.path
                     ? "into"
-                    : null;
+                    : dropIntent?.kind === "assign" && row.kind === "group" && dropIntent.groupId === row.id
+                      ? "into"
+                      : null;
+
+              const editIndent =
+                row.kind === "group"
+                  ? 28
+                  : row.kind === "folder"
+                    ? row.depth * 16 + 8
+                    : row.depth * 16 + 28;
 
               return (
                 <div
@@ -272,10 +325,11 @@ export function NavTree({
                     height: item.size,
                     transform: `translateY(${item.start}px)`,
                   }}
-                  draggable={!isEditing}
-                  onDragStart={(e) =>
-                    startDrag(e, row.kind === "folder" ? { kind: "folder", path: row.path } : { kind: "note", id: row.id })
-                  }
+                  draggable={!isEditing && row.kind !== "group"}
+                  onDragStart={(e) => {
+                    if (row.kind === "folder") startDrag(e, { kind: "folder", path: row.path });
+                    else if (row.kind === "note") startDrag(e, { kind: "note", id: row.id });
+                  }}
                   onDragEnd={endDrag}
                   onDragOver={(e) => dragOverRow(e, row)}
                   onDrop={(e) => dropOnRow(e, row)}
@@ -284,13 +338,38 @@ export function NavTree({
                     <input
                       autoFocus
                       className="nav-row-edit"
-                      style={{ marginLeft: row.depth * 16 + (row.kind === "folder" ? 8 : 28) }}
+                      style={{ marginLeft: editIndent }}
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       onBlur={commitRename}
                       onKeyDown={renameKeyDown}
                       onClick={(e) => e.stopPropagation()}
                     />
+                  ) : row.kind === "group" ? (
+                    <div className="nav-row nav-row-group" style={{ paddingLeft: 8 }}>
+                      <button
+                        className="nav-folder-chevron"
+                        title={row.collapsed ? "Expand group" : "Collapse group"}
+                        onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
+                      >
+                        {row.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                      <IconPicker
+                        onChange={(icon) => void setGroupIcon(row.id, icon)}
+                        trigger={
+                          <button className="nav-group-icon" title="Set group icon" onClick={(e) => e.stopPropagation()}>
+                            <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="group" className="h-4 w-4 shrink-0" />
+                          </button>
+                        }
+                      />
+                      <button
+                        className="nav-group-label"
+                        onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
+                      >
+                        <span className="nav-row-label">{row.name}</span>
+                        <span className="nav-group-count">{row.folderCount}</span>
+                      </button>
+                    </div>
                   ) : row.kind === "folder" ? (
                     <div className="nav-row nav-row-folder" style={{ paddingLeft: row.depth * 16 + 8 }}>
                       <button
@@ -301,9 +380,9 @@ export function NavTree({
                         {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
                       <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
+                        <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
                         <span className="nav-row-label">{row.name}</span>
                       </button>
-                      {row.pinned && <Pin size={11} className="nav-pin-indicator" />}
                     </div>
                   ) : (
                     <button
@@ -313,7 +392,6 @@ export function NavTree({
                     >
                       <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
                       <span className="nav-row-label">{row.title}</span>
-                      {row.pinned && <Pin size={11} className="nav-pin-indicator" />}
                     </button>
                   )}
 
@@ -329,33 +407,13 @@ export function NavTree({
                           }
                         />
                       )}
-                      <button
-                        className={cn("nav-row-action", row.pinned && "active")}
-                        title={row.pinned ? "Unpin" : "Pin to top"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (row.kind === "folder") void patch(row.path, { pinned: !row.pinned });
-                          else onToggleNotePin(row.id, row.pinned);
-                        }}
-                      >
-                        {row.pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                      </button>
-                      <button
-                        className="nav-row-action"
-                        title="Rename"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startRename(
-                            row.kind === "folder" ? { kind: "folder", path: row.path } : { kind: "note", id: row.id },
-                            row.kind === "folder" ? row.name : row.title,
-                          );
-                        }}
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      {row.kind === "note" && (
+                      {(row.kind === "folder" || row.kind === "note") && (
                         <IconPicker
-                          onChange={(icon) => onSetNoteIcon(row.id, icon)}
+                          onChange={(icon) =>
+                            row.kind === "folder"
+                              ? void patch(row.path, { icon: icon ?? undefined })
+                              : onSetNoteIcon(row.id, icon)
+                          }
                           trigger={
                             <button className="nav-row-action" title="Set icon" onClick={(e) => e.stopPropagation()}>
                               <Smile size={12} />
@@ -365,14 +423,24 @@ export function NavTree({
                       )}
                       <button
                         className="nav-row-action"
-                        title="Delete"
+                        title="Rename"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (row.kind === "folder") {
-                            onRequestDeleteFolder(row.path, row.name, row.hasChildren);
-                          } else {
-                            onRequestDeleteNote(row.id, row.title);
-                          }
+                          if (row.kind === "folder") startRename({ kind: "folder", path: row.path }, row.name);
+                          else if (row.kind === "note") startRename({ kind: "note", id: row.id }, row.title);
+                          else startRename({ kind: "group", id: row.id }, row.name);
+                        }}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        className="nav-row-action"
+                        title={row.kind === "group" ? "Delete group" : "Delete"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (row.kind === "folder") onRequestDeleteFolder(row.path, row.name, row.hasChildren);
+                          else if (row.kind === "note") onRequestDeleteNote(row.id, row.title);
+                          else onRequestDeleteGroup(row.id, row.name);
                         }}
                       >
                         <Trash2 size={12} />

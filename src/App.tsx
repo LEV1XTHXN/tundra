@@ -13,6 +13,7 @@ import { NavTree } from "./nav/NavTree";
 import { SidebarSections } from "./nav/SidebarSections";
 import { templates as templatesService } from "./services";
 import { useTemplates } from "./store/templates";
+import { useFolderGroups } from "./store/folderGroups";
 import { folderOfNotePath } from "./nav/flatten";
 import { SearchPalette } from "./search/SearchPalette";
 import { NoteInspector } from "./inspector/NoteInspector";
@@ -89,7 +90,8 @@ function errorMessage(err: unknown): string {
 type PendingDelete =
   | { kind: "note"; id: string; title: string }
   | { kind: "folder"; path: string; name: string; hasChildren: boolean }
-  | { kind: "template"; id: string; title: string };
+  | { kind: "template"; id: string; title: string }
+  | { kind: "group"; id: string; name: string };
 
 export default function App() {
   const [vaultInfo, setVaultInfo] = useState<VaultInfo | null>(null);
@@ -146,16 +148,6 @@ export default function App() {
     const summary = noteSummaries.get(openNoteId);
     return summary ? folderOfNotePath(summary.path) : "";
   }, [openNoteId, noteSummaries]);
-
-  // Every pinned note across the vault, for the sidebar's dedicated Pinned
-  // section (the note also still appears in its folder in the tree). Title-sorted.
-  const pinnedNotes = useMemo(
-    () =>
-      [...noteSummaries.values()]
-        .filter((n) => n.pinned)
-        .sort((a, b) => (a.title || "").localeCompare(b.title || "")),
-    [noteSummaries],
-  );
 
   // On launch, reopen the last vault so returning users skip onboarding.
   // Guarded against React StrictMode's dev-only double-invocation of effects:
@@ -224,6 +216,12 @@ export default function App() {
   // section + Settings manager (both read the shared store).
   useEffect(() => {
     if (vaultInfo) void useTemplates.getState().refresh();
+  }, [vaultInfo]);
+
+  // Load the vault's folder groups (collapsible sidebar sections) on vault change
+  // — vault-scoped config, same as folder views.
+  useEffect(() => {
+    if (vaultInfo) void useFolderGroups.getState().load();
   }, [vaultInfo]);
 
   const openVaultAt = useCallback(
@@ -301,6 +299,9 @@ export default function App() {
     async (path: string, newParent: string) => {
       try {
         await folders.move(path, newParent);
+        // Moving a folder under another folder makes it non-top-level, so it can
+        // no longer belong to a group — drop it from any (a move to root is fine).
+        if (newParent !== "") await useFolderGroups.getState().dropFolder(path);
         await refreshTree();
       } catch (e) {
         setError(errorMessage(e));
@@ -323,26 +324,15 @@ export default function App() {
     [openNoteId, refreshTree],
   );
 
-  // Flip a note's pinned flag from the nav tree (pinned notes float to the top
-  // of the hierarchy). Goes through read+save like the editor's pin button —
-  // there's no dedicated pin command; meta.pinned is mirrored into the summary.
-  const onToggleNotePin = useCallback(
-    async (id: string, pinned: boolean) => {
-      try {
-        const note = await notes.read(id);
-        await notes.save({ ...note, meta: { ...note.meta, pinned: !pinned } });
-        await refreshTree();
-      } catch (e) {
-        setError(errorMessage(e));
-      }
-    },
-    [refreshTree],
-  );
-
   const onRenameFolder = useCallback(
     async (path: string, newName: string) => {
       try {
         await folders.rename(path, newName);
+        // Keep a grouped top-level folder in its group after a rename (the path,
+        // which is group membership's key, changed to the new leaf name).
+        if (!path.includes("/")) {
+          await useFolderGroups.getState().renameFolder(path, newName);
+        }
         await refreshTree();
       } catch (e) {
         setError(errorMessage(e));
@@ -431,6 +421,24 @@ export default function App() {
     setPendingDelete({ kind: "template", id, title });
   }, []);
 
+  // Folder groups (collapsible sidebar sections). Create prompts for a name; the
+  // group starts empty and folders are dragged in (or the group is filled later).
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const createGroup = useCallback(async () => {
+    const name = newGroupName.trim();
+    if (!name) return;
+    try {
+      await useFolderGroups.getState().create(name);
+      setNewGroupOpen(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [newGroupName]);
+  const onRequestDeleteGroup = useCallback((id: string, name: string) => {
+    setPendingDelete({ kind: "group", id, name });
+  }, []);
+
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return;
     try {
@@ -442,9 +450,18 @@ export default function App() {
         if (templateEditId === id) setView(templateReturn.current.view);
         return;
       }
+      if (pendingDelete.kind === "group") {
+        // Deleting a group is non-destructive — its folders just become ungrouped.
+        await useFolderGroups.getState().remove(pendingDelete.id);
+        return;
+      }
       if (pendingDelete.kind === "note") {
         await notes.delete(pendingDelete.id);
       } else {
+        // A deleted top-level folder must also leave any group it was in.
+        if (!pendingDelete.path.includes("/")) {
+          await useFolderGroups.getState().dropFolder(pendingDelete.path);
+        }
         await folders.delete(pendingDelete.path);
       }
       const list = await refreshTree();
@@ -542,17 +559,22 @@ export default function App() {
           <button className="new-note" onClick={onNewFolder}>
             + New folder
           </button>
+          <button
+            className="new-note"
+            onClick={() => {
+              setNewGroupName("");
+              setNewGroupOpen(true);
+            }}
+          >
+            + New group
+          </button>
           <button className="new-note settings-button" onClick={() => setSettingsOpen(true)}>
             <Settings className="h-4 w-4" /> Settings
           </button>
         </div>
         <SidebarSections
-          pinnedNotes={pinnedNotes}
           vaultPath={vaultInfo.path}
-          openNoteId={openNoteId}
           activeTemplateId={view === "template" ? templateEditId : null}
-          onSelectNote={openNote}
-          onUnpinNote={(id) => void onToggleNotePin(id, true)}
           onOpenTemplate={onOpenTemplate}
           onNewTemplate={() => void onNewTemplate()}
           onRequestDeleteTemplate={onRequestDeleteTemplate}
@@ -572,7 +594,7 @@ export default function App() {
           onRequestDeleteNote={onRequestDeleteNote}
           onRequestDeleteFolder={onRequestDeleteFolder}
           onSetNoteIcon={onSetNoteIcon}
-          onToggleNotePin={onToggleNotePin}
+          onRequestDeleteGroup={onRequestDeleteGroup}
         />
       </aside>
 
@@ -701,7 +723,7 @@ export default function App() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete?.kind === "folder"
+              {pendingDelete?.kind === "folder" || pendingDelete?.kind === "group"
                 ? `Delete "${pendingDelete.name}"?`
                 : `Delete "${pendingDelete?.title || (pendingDelete?.kind === "template" ? "Untitled template" : "Untitled")}"?`}
             </AlertDialogTitle>
@@ -710,9 +732,11 @@ export default function App() {
                 ? "This note will be permanently deleted."
                 : pendingDelete?.kind === "template"
                   ? "This template will be permanently deleted. Notes created from it are not affected."
-                  : pendingDelete?.hasChildren
-                    ? "This folder and everything inside it — all notes and subfolders — will be permanently deleted."
-                    : "This empty folder will be permanently deleted."}
+                  : pendingDelete?.kind === "group"
+                    ? "This group will be removed. The folders inside it are not deleted — they'll just no longer be grouped."
+                    : pendingDelete?.hasChildren
+                      ? "This folder and everything inside it — all notes and subfolders — will be permanently deleted."
+                      : "This empty folder will be permanently deleted."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -744,6 +768,39 @@ export default function App() {
                 Cancel
               </Button>
               <Button type="submit" disabled={!newFolderName.trim()}>
+                Create
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newGroupOpen} onOpenChange={setNewGroupOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New group</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createGroup();
+            }}
+          >
+            <Input
+              autoFocus
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="Group name"
+            />
+            <p className="muted mt-2 text-sm">
+              A group is a collapsible section in the sidebar. Drag top-level folders onto its
+              header to add them.
+            </p>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setNewGroupOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!newGroupName.trim()}>
                 Create
               </Button>
             </DialogFooter>

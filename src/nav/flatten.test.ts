@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TreeNode } from "@/services";
 import type { FolderView } from "@/store/folderViews";
-import { flattenTree, folderOfNotePath } from "./flatten";
+import { flattenTree, flattenWithGroups, folderOfNotePath, type NavGroup } from "./flatten";
 
-function note(id: string, title: string, extra: Partial<{ modified: string; created: string; size: number; pinned: boolean }> = {}): TreeNode {
+function note(id: string, title: string, extra: Partial<{ modified: string; created: string; size: number }> = {}): TreeNode {
   return {
     kind: "Note",
     data: {
@@ -13,7 +13,7 @@ function note(id: string, title: string, extra: Partial<{ modified: string; crea
       modified: extra.modified ?? "2026-01-01T00:00:00Z",
       created: extra.created ?? "2026-01-01T00:00:00Z",
       size: extra.size ?? 100,
-      pinned: extra.pinned ?? false,
+      pinned: false,
       icon: null,
     },
   } as TreeNode;
@@ -23,7 +23,7 @@ function folder(name: string, path: string, children: TreeNode[]): TreeNode {
   return { kind: "Folder", data: { name, path, children } } as TreeNode;
 }
 
-/** No per-folder config: every folder is an empty view (defaults: manual sort, unpinned). */
+/** No per-folder config: every folder is an empty view (defaults: manual sort). */
 const noViews = () => ({}) as FolderView;
 /** Build a `getView` from a path→view map. */
 const views = (map: Record<string, FolderView>) => (path: string) => map[path] ?? {};
@@ -37,8 +37,8 @@ describe("flattenTree", () => {
 
     const rows = flattenTree(tree, new Set(), noViews); // nothing expanded
     expect(rows).toEqual([
-      { kind: "folder", path: "Biology", name: "Biology", parent: "", depth: 0, expanded: false, hasChildren: true, pinned: false },
-      { kind: "note", id: "n2", title: "Root Note", icon: null, parent: "", depth: 0, pinned: false },
+      { kind: "folder", path: "Biology", name: "Biology", icon: undefined, parent: "", depth: 0, expanded: false, hasChildren: true, groupId: null },
+      { kind: "note", id: "n2", title: "Root Note", icon: null, parent: "", depth: 0 },
     ]);
   });
 
@@ -47,8 +47,8 @@ describe("flattenTree", () => {
 
     const rows = flattenTree(tree, new Set(["Biology"]), noViews);
     expect(rows).toEqual([
-      { kind: "folder", path: "Biology", name: "Biology", parent: "", depth: 0, expanded: true, hasChildren: true, pinned: false },
-      { kind: "note", id: "n1", title: "Cell", icon: null, parent: "Biology", depth: 1, pinned: false },
+      { kind: "folder", path: "Biology", name: "Biology", icon: undefined, parent: "", depth: 0, expanded: true, hasChildren: true, groupId: null },
+      { kind: "note", id: "n1", title: "Cell", icon: null, parent: "Biology", depth: 1 },
     ]);
   });
 
@@ -56,14 +56,21 @@ describe("flattenTree", () => {
     const tree: TreeNode[] = [folder("Empty", "Empty", [])];
     const rows = flattenTree(tree, new Set(["Empty"]), noViews);
     expect(rows).toEqual([
-      { kind: "folder", path: "Empty", name: "Empty", parent: "", depth: 0, expanded: true, hasChildren: false, pinned: false },
+      { kind: "folder", path: "Empty", name: "Empty", icon: undefined, parent: "", depth: 0, expanded: true, hasChildren: false, groupId: null },
     ]);
+  });
+
+  it("surfaces a folder's icon from its view", () => {
+    const tree: TreeNode[] = [folder("Work", "Work", [])];
+    const getView = views({ Work: { icon: { type: "emoji", value: "1f4bc" } } });
+    const rows = flattenTree(tree, new Set(), getView);
+    expect(rows[0]).toMatchObject({ kind: "folder", icon: { type: "emoji", value: "1f4bc" } });
   });
 
   it("falls back to 'Untitled' for a blank note title", () => {
     const tree: TreeNode[] = [note("n1", "")];
     const rows = flattenTree(tree, new Set(), noViews);
-    expect(rows).toEqual([{ kind: "note", id: "n1", title: "Untitled", icon: null, parent: "", depth: 0, pinned: false }]);
+    expect(rows).toEqual([{ kind: "note", id: "n1", title: "Untitled", icon: null, parent: "", depth: 0 }]);
   });
 
   it("produces one row per node when fully collapsed, regardless of how deep the tree is", () => {
@@ -104,23 +111,6 @@ describe("flattenTree ordering", () => {
     expect(titles(rows)).toEqual(["Banana", "Cherry", "Apple"]);
   });
 
-  it("floats pinned notes to the top, keeping the sort within each group", () => {
-    const t: TreeNode[] = [
-      note("nb", "Banana"),
-      note("na", "Apple", { pinned: true }),
-      note("nc", "Cherry"),
-    ];
-    const rows = flattenTree(t, new Set(), views({ "": { treeSort: { by: "name", dir: "asc" } } }));
-    expect(titles(rows)).toEqual(["Apple", "Banana", "Cherry"]); // Apple pinned + already first
-    const t2: TreeNode[] = [
-      note("nb", "Banana"),
-      note("nc", "Cherry", { pinned: true }),
-      note("na", "Apple"),
-    ];
-    const rows2 = flattenTree(t2, new Set(), views({ "": { treeSort: { by: "name", dir: "asc" } } }));
-    expect(titles(rows2)).toEqual(["Cherry", "Apple", "Banana"]); // Cherry pinned floats above A/B
-  });
-
   it("honors manual order, dropping unlisted items to the bottom", () => {
     const rows = flattenTree(
       tree,
@@ -131,19 +121,69 @@ describe("flattenTree ordering", () => {
     expect(titles(rows)).toEqual(["Cherry", "Apple", "Banana"]);
   });
 
-  it("in a field sort, folders render above notes; a pinned folder floats up", () => {
+  it("in a field sort, folders render above notes (by name)", () => {
     const t: TreeNode[] = [
       note("na", "Apple"),
       folder("Zebra", "Zebra", []),
       folder("Alpha", "Alpha", []),
     ];
-    const getView = views({ "": { treeSort: { by: "name", dir: "asc" } }, Zebra: { pinned: true } });
+    const getView = views({ "": { treeSort: { by: "name", dir: "asc" } } });
     const rows = flattenTree(t, new Set(), getView);
-    expect(rows.map((r) => (r.kind === "folder" ? `F:${r.name}` : `N:${r.title}`))).toEqual([
-      "F:Zebra", // pinned folder first
-      "F:Alpha", // then remaining folders by name
-      "N:Apple", // notes after folders
+    expect(
+      rows.map((r) => (r.kind === "folder" ? `F:${r.name}` : r.kind === "note" ? `N:${r.title}` : "")),
+    ).toEqual(["F:Alpha", "F:Zebra", "N:Apple"]);
+  });
+});
+
+describe("flattenWithGroups", () => {
+  const label = (rows: ReturnType<typeof flattenWithGroups>) =>
+    rows.map((r) =>
+      r.kind === "group" ? `G:${r.name}(${r.folderCount})` : r.kind === "folder" ? `F:${r.name}@${r.depth}` : `N:${r.title}`,
+    );
+
+  it("lays out groups first (folders nested under headers), then ungrouped items", () => {
+    const tree: TreeNode[] = [
+      folder("Projects", "Projects", []),
+      folder("Meetings", "Meetings", []),
+      folder("Inbox", "Inbox", []),
+      note("n1", "loose"),
+    ];
+    const groups: NavGroup[] = [{ id: "g1", name: "Work", folders: ["Projects", "Meetings"] }];
+    const rows = flattenWithGroups(tree, groups, new Set(), noViews);
+    expect(label(rows)).toEqual([
+      "G:Work(2)",
+      "F:Projects@1",
+      "F:Meetings@1",
+      "F:Inbox@0", // ungrouped folder at root depth
+      "N:loose",
     ]);
+    // The grouped folder carries its group id (for drag/unassign).
+    const projects = rows.find((r) => r.kind === "folder" && r.name === "Projects");
+    expect(projects).toMatchObject({ groupId: "g1" });
+  });
+
+  it("hides a collapsed group's folders but still shows the header", () => {
+    const tree: TreeNode[] = [folder("Projects", "Projects", []), folder("Inbox", "Inbox", [])];
+    const groups: NavGroup[] = [{ id: "g1", name: "Work", folders: ["Projects"], collapsed: true }];
+    const rows = flattenWithGroups(tree, groups, new Set(), noViews);
+    expect(label(rows)).toEqual(["G:Work(1)", "F:Inbox@0"]);
+  });
+
+  it("skips a group folder that no longer exists on disk (count reflects only real folders)", () => {
+    const tree: TreeNode[] = [folder("Projects", "Projects", [])];
+    const groups: NavGroup[] = [{ id: "g1", name: "Work", folders: ["Projects", "Gone"] }];
+    const rows = flattenWithGroups(tree, groups, new Set(), noViews);
+    expect(label(rows)).toEqual(["G:Work(1)", "F:Projects@1"]);
+  });
+
+  it("a folder claimed by two groups shows only under the first", () => {
+    const tree: TreeNode[] = [folder("Shared", "Shared", [])];
+    const groups: NavGroup[] = [
+      { id: "g1", name: "A", folders: ["Shared"] },
+      { id: "g2", name: "B", folders: ["Shared"] },
+    ];
+    const rows = flattenWithGroups(tree, groups, new Set(), noViews);
+    expect(label(rows)).toEqual(["G:A(1)", "F:Shared@1", "G:B(0)"]);
   });
 });
 
