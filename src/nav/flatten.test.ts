@@ -185,6 +185,33 @@ describe("flattenWithGroups", () => {
     const rows = flattenWithGroups(tree, groups, new Set(), noViews);
     expect(label(rows)).toEqual(["G:A(1)", "F:Shared@1", "G:B(0)"]);
   });
+
+  it("interleaves a group among ungrouped folders/notes per the root manual order", () => {
+    const tree: TreeNode[] = [
+      folder("Projects", "Projects", []),
+      folder("Inbox", "Inbox", []),
+      note("n1", "loose"),
+    ];
+    const groups: NavGroup[] = [{ id: "g1", name: "Work", folders: ["Projects"] }];
+    // Root manual order: an ungrouped folder, then the group, then a loose note.
+    const getView = views({
+      "": { treeSort: { by: "manual", dir: "asc" }, manualOrder: ["folder:Inbox", "group:g1", "note:n1"] },
+    });
+    const rows = flattenWithGroups(tree, groups, new Set(), getView);
+    expect(label(rows)).toEqual(["F:Inbox@0", "G:Work(1)", "F:Projects@1", "N:loose"]);
+  });
+
+  it("in a field sort puts groups first, then the field-sorted ungrouped items", () => {
+    const tree: TreeNode[] = [
+      folder("Zebra", "Zebra", []),
+      folder("Alpha", "Alpha", []),
+      note("n1", "loose"),
+    ];
+    const groups: NavGroup[] = [{ id: "g1", name: "Work", folders: ["Zebra"] }];
+    const getView = views({ "": { treeSort: { by: "name", dir: "asc" } } });
+    const rows = flattenWithGroups(tree, groups, new Set(), getView);
+    expect(label(rows)).toEqual(["G:Work(1)", "F:Zebra@1", "F:Alpha@0", "N:loose"]);
+  });
 });
 
 describe("folderOfNotePath", () => {

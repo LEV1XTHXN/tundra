@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import type { Icon, TreeNode } from "@/services";
 import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
 import { useFolderGroups } from "@/store/folderGroups";
-import { flattenWithGroups, reorderKeys, type NavRow } from "./flatten";
+import { flattenWithGroups, groupKey, reorderKeys, type NavRow } from "./flatten";
 import { NoteIcon } from "./NoteIcon";
 import { IconPicker } from "./IconPicker";
 import { FolderSortMenu } from "./FolderSortMenu";
@@ -106,12 +106,46 @@ export function NavTree({
   const [editing, setEditing] = useState<EditingKey | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  /** The drag key ("note:x" / "folder:name") for a row's payload (folder/note only). */
+  /** The drag/manual-order key for a row's payload. */
   const rowKeyOf = (row: NavRow) =>
-    row.kind === "folder" ? folderKey(row.name) : row.kind === "note" ? noteKey(row.id) : "";
-  /** A parent folder's children keys in current display order (from the flattened rows). */
+    row.kind === "folder" ? folderKey(row.name) : row.kind === "note" ? noteKey(row.id) : groupKey(row.id);
+
+  /** The full set of top-level manual-order keys — every group, every root folder
+   *  (grouped or not, so their order survives even inside a collapsed group), and
+   *  every root note — in current display order. Built from `tree` + `groups`
+   *  (not `rows`, which omit collapsed-away folders) so a reorder never drops a
+   *  hidden key from `manualOrder`. */
+  const rootOrderedKeys = useCallback((): string[] => {
+    const all = [
+      ...groups.map((g) => groupKey(g.id)),
+      ...tree.map((n) => (n.kind === "Folder" ? folderKey(n.data.name) : noteKey(n.data.id))),
+    ];
+    const order = getView("").manualOrder ?? [];
+    const rank = (k: string) => {
+      const i = order.indexOf(k);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    return all
+      .map((k, i) => ({ k, i }))
+      .sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i)
+      .map((x) => x.k);
+  }, [groups, tree, getView]);
+
+  /** Sibling keys in current display order for reorder: the unified top-level set
+   *  at the root, or a folder's visible children otherwise. */
   const siblingKeysOf = (parent: string) =>
-    rows.filter((r) => (r.kind === "folder" || r.kind === "note") && r.parent === parent).map(rowKeyOf);
+    parent === ""
+      ? rootOrderedKeys()
+      : rows.filter((r) => (r.kind === "folder" || r.kind === "note") && r.parent === parent).map(rowKeyOf);
+
+  /** Whether the currently-dragged item is a top-level unit (group, root folder,
+   *  or root note) — the only things that reorder in the unified root order. */
+  const draggingIsTopLevel = (): boolean => {
+    if (!dragging) return false;
+    if (dragging.kind === "group") return true;
+    if (dragging.kind === "folder") return !dragging.path.includes("/");
+    return rows.some((r) => r.kind === "note" && r.id === dragging.id && r.parent === "");
+  };
 
   function startDrag(e: React.DragEvent, payload: DragPayload) {
     setDragging(payload);
@@ -127,23 +161,40 @@ export function NavTree({
   /** Same item as the one being dragged? (can't drop relative to yourself) */
   function isSelf(row: NavRow): boolean {
     if (!dragging) return true;
-    return dragging.kind === "note"
-      ? row.kind === "note" && row.id === dragging.id
-      : row.kind === "folder" && row.path === dragging.path;
+    if (dragging.kind === "group") return row.kind === "group" && row.id === dragging.id;
+    if (dragging.kind === "note") return row.kind === "note" && row.id === dragging.id;
+    return row.kind === "folder" && row.path === dragging.path;
   }
 
   function computeIntent(e: React.DragEvent, row: NavRow): DropIntent | null {
     if (!dragging || isSelf(row)) return null;
 
-    // Drop a top-level folder onto a group header → assign it to that group.
-    if (row.kind === "group") {
-      return dragging.kind === "folder" && isTopLevel(dragging.path)
-        ? { kind: "assign", groupId: row.id }
-        : null;
-    }
-
     const rect = e.currentTarget.getBoundingClientRect();
     const offset = (e.clientY - rect.top) / rect.height;
+
+    // Dragging a GROUP: it only reorders among the top-level units (groups +
+    // ungrouped root folders + root notes) — never into a folder.
+    if (dragging.kind === "group") {
+      const topLevelRow =
+        row.kind === "group" || ((row.kind === "folder" || row.kind === "note") && row.parent === "");
+      if (!topLevelRow) return null;
+      return { kind: "reorder", parent: "", targetKey: rowKeyOf(row), position: offset < 0.5 ? "before" : "after" };
+    }
+
+    // Dropping onto a GROUP header (dragging a folder/note).
+    if (row.kind === "group") {
+      if (dragging.kind === "folder" && isTopLevel(dragging.path)) {
+        // Edges reorder the group vs. the folder in the top-level order; the wide
+        // middle assigns the folder into the group.
+        if (offset < 0.25) return { kind: "reorder", parent: "", targetKey: groupKey(row.id), position: "before" };
+        if (offset > 0.75) return { kind: "reorder", parent: "", targetKey: groupKey(row.id), position: "after" };
+        return { kind: "assign", groupId: row.id };
+      }
+      // A root note reorders relative to the group; anything nested can't.
+      return draggingIsTopLevel()
+        ? { kind: "reorder", parent: "", targetKey: groupKey(row.id), position: offset < 0.5 ? "before" : "after" }
+        : null;
+    }
 
     if (row.kind === "folder") {
       // Top/bottom quarters reorder; the wide middle drops INTO the folder.
@@ -180,15 +231,22 @@ export function NavTree({
     payload: DragPayload,
   ) {
     const draggedKey =
-      payload.kind === "note" ? noteKey(payload.id) : folderKey(payload.path.split("/").pop()!);
-    // Is the dragged item already a direct child of `parent`?
-    const sameParent =
-      payload.kind === "folder"
-        ? payload.path.split("/").slice(0, -1).join("/") === parent
-        : rows.some((r) => r.kind === "note" && r.id === payload.id && r.parent === parent);
-    if (!sameParent) {
-      if (payload.kind === "note") onMoveNote(payload.id, parent);
-      else onMoveFolder(payload.path, parent);
+      payload.kind === "note"
+        ? noteKey(payload.id)
+        : payload.kind === "folder"
+          ? folderKey(payload.path.split("/").pop()!)
+          : groupKey(payload.id);
+    // A group has no on-disk home to move; folders/notes may need a move if they
+    // aren't already a direct child of `parent`.
+    if (payload.kind !== "group") {
+      const sameParent =
+        payload.kind === "folder"
+          ? payload.path.split("/").slice(0, -1).join("/") === parent
+          : rows.some((r) => r.kind === "note" && r.id === payload.id && r.parent === parent);
+      if (!sameParent) {
+        if (payload.kind === "note") onMoveNote(payload.id, parent);
+        else onMoveFolder(payload.path, parent);
+      }
     }
     const order = reorderKeys(siblingKeysOf(parent), draggedKey, targetKey, position);
     await patch(parent, { treeSort: { by: "manual", dir: "asc" }, manualOrder: order });
@@ -205,7 +263,7 @@ export function NavTree({
       if (payload.kind === "folder") void assignFolderToGroup(payload.path, intent.groupId);
     } else if (intent.kind === "into") {
       if (payload.kind === "note") onMoveNote(payload.id, intent.folderPath);
-      else onMoveFolder(payload.path, intent.folderPath);
+      else if (payload.kind === "folder") onMoveFolder(payload.path, intent.folderPath);
     } else {
       void applyReorder(intent.parent, intent.targetKey, intent.position, payload);
     }
@@ -216,7 +274,9 @@ export function NavTree({
     const payload = dragging;
     setDropIntent(null);
     setDragging(null);
-    if (!payload || !canDropOnFolder(payload, "")) return;
+    // Groups already live at the top level; the root target is only "move a
+    // note/folder to root (and ungroup a folder)".
+    if (!payload || payload.kind === "group" || !canDropOnFolder(payload, "")) return;
     if (payload.kind === "note") {
       onMoveNote(payload.id, "");
     } else {
@@ -288,10 +348,11 @@ export function NavTree({
                   (editing.kind === "note" && row.kind === "note" && editing.id === row.id) ||
                   (editing.kind === "group" && row.kind === "group" && editing.id === row.id));
 
+              // Group headers reorder at the root level (no `parent` field).
+              const rowParent = row.kind === "group" ? "" : row.parent;
               const intentHere =
                 dropIntent?.kind === "reorder" &&
-                (row.kind === "folder" || row.kind === "note") &&
-                dropIntent.parent === row.parent &&
+                dropIntent.parent === rowParent &&
                 dropIntent.targetKey === rowKeyOf(row)
                   ? dropIntent.position
                   : dropIntent?.kind === "into" && row.kind === "folder" && dropIntent.folderPath === row.path
@@ -325,10 +386,11 @@ export function NavTree({
                     height: item.size,
                     transform: `translateY(${item.start}px)`,
                   }}
-                  draggable={!isEditing && row.kind !== "group"}
+                  draggable={!isEditing}
                   onDragStart={(e) => {
                     if (row.kind === "folder") startDrag(e, { kind: "folder", path: row.path });
                     else if (row.kind === "note") startDrag(e, { kind: "note", id: row.id });
+                    else startDrag(e, { kind: "group", id: row.id });
                   }}
                   onDragEnd={endDrag}
                   onDragOver={(e) => dragOverRow(e, row)}

@@ -37,14 +37,26 @@ config as folder views / tag colors, no note-format or Rust change.
   `folders` is a *membership set* of top-level folder paths; display order still
   comes from the root folder's own sort. A folder belongs to at most one group
   (first-claimer wins in the layout).
-- **Layout:** `flattenWithGroups` (in `flatten.ts`) lays out the whole sidebar:
-  each group as a header row with its folders nested at depth 1, then everything
-  ungrouped (folders not in any group + root notes) at depth 0. It's the entry
-  point NavTree uses; `flattenTree` still flattens subtrees.
+- **Layout & ordering:** `flattenWithGroups` (in `flatten.ts`) lays out the whole
+  sidebar. Groups, ungrouped top-level folders, and root notes share **one manual
+  order** — the root folder view's `manualOrder`, which now also carries
+  `group:<id>` keys — so the user can arrange all three freely. Each group renders
+  as a header with its folders nested at depth 1; ungrouped items at depth 0. In a
+  *field* sort (name/date/size) groups render first (stored order) then the sorted
+  ungrouped items, since a group has no field to sort by. `flattenTree` still
+  flattens subtrees.
 - **Create:** "+ New group" in the sidebar actions (App's new-group dialog).
-- **Assign / unassign:** drag a top-level folder onto a group header to add it;
-  drag it to the "Vault root" target to ungroup it (`NavTree` drag handlers →
-  `useFolderGroups.assign`).
+- **Reorder (drag):** groups are draggable like folders/notes. Drag a group (or a
+  top-level folder/root note) onto another top-level row's top/bottom edge to
+  reorder them in the unified order; this switches the root to manual sort and
+  writes the new order (including `group:` keys) to `folderViews[""].manualOrder`.
+  `NavTree`'s `rootOrderedKeys` builds the full key set from `tree` + `groups` (not
+  the flattened rows, which omit collapsed-away folders) so a reorder never drops a
+  hidden key. A group only reorders among top-level units — it can't be dropped
+  into a folder (`canDropOnFolder` returns false for a group payload).
+- **Assign / unassign:** drag a top-level folder onto the *middle* of a group
+  header to add it (the edges reorder instead); drag it to the "Vault" root target
+  to ungroup it (`NavTree` drag handlers → `useFolderGroups.assign`).
 - **Header actions:** collapse (persisted in `collapsed`), set icon, inline
   rename, delete (via App's shared `AlertDialog`, `PendingDelete` kind `"group"`;
   deleting a group never deletes folders).
