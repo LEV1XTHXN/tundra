@@ -16,6 +16,8 @@ import { attachments, quickNote } from "@/services";
 import type { AttachmentKind, Note } from "@/services";
 import { toInitialContent } from "@/editor/blockContent";
 import { createDebouncedFlush, type DebouncedFlush } from "@/editor/debouncedFlush";
+import { useTheme } from "@/store/theme";
+import { ViewFrame } from "@/components/ViewFrame";
 import { quickNoteSchema } from "./quickNoteSchema";
 
 const DEBOUNCE_MS = 600;
@@ -52,7 +54,13 @@ export function QuickNoteView({
     };
   }, [onError]);
 
-  if (!note) return <div className="centered muted">Loading…</div>;
+  if (!note) {
+    return (
+      <ViewFrame title="Quick notes">
+        <div className="centered muted">Loading…</div>
+      </ViewFrame>
+    );
+  }
   return <LoadedQuickNote note={note} vaultPath={vaultPath} onError={onError} />;
 }
 
@@ -81,6 +89,9 @@ function LoadedQuickNote({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   // Preserves the scratchpad's id/created across saves.
   const noteRef = useRef(note);
+  // Follows the app-wide Appearance setting, like the main editor — this was
+  // hardcoded to "light" before, so quick notes stayed light even in dark mode.
+  const resolvedTheme = useTheme((s) => s.resolved);
 
   const flush = async () => {
     setSaveState("saving");
@@ -121,23 +132,23 @@ function LoadedQuickNote({
 
   return (
     <>
-    <div className="editor-pane quicknote">
-      <div className="quicknote-header">
-        <h1 className="quicknote-title">Quick notes</h1>
-        <p className="quicknote-hint muted">
-          A scratchpad for fast capture — jot ideas here, then move them into notes.
-        </p>
+    <ViewFrame
+      title="Quick notes"
+      subtitle="A scratchpad for fast capture — jot ideas here, then move them into notes."
+      fullBleed
+    >
+      <div className="editor-pane quicknote">
+        <BlockNoteView
+          editor={editor}
+          onChange={() => {
+            setSaveState("saving");
+            debouncedRef.current!.schedule();
+          }}
+          theme={resolvedTheme}
+        />
+        <div className="editor-tail-space" aria-hidden="true" />
       </div>
-      <BlockNoteView
-        editor={editor}
-        onChange={() => {
-          setSaveState("saving");
-          debouncedRef.current!.schedule();
-        }}
-        theme="light"
-      />
-      <div className="editor-tail-space" aria-hidden="true" />
-    </div>
+    </ViewFrame>
     {/* Anchored to the non-scrolling .main-pane — pinned to its bottom-left
         corner, matching NoteEditor (see .status). */}
     <div className="status" aria-live="polite">

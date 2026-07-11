@@ -58,7 +58,7 @@ export function NoteIcon({
 /** Rebuild an emoji string from its stored codepoint form (hyphen-joined for
  * multi-codepoint/ZWJ sequences), the same format the picker writes via
  * `twemoji.convert.toCodePoint`. */
-function codepointToEmoji(codepoint: string): string {
+export function codepointToEmoji(codepoint: string): string {
   return codepoint
     .split("-")
     .map((hex) => twemoji.convert.fromCodePoint(hex))

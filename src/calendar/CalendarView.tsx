@@ -32,6 +32,7 @@ import { calendar, notes } from "@/services";
 import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary } from "@/services";
 import { useTheme } from "@/store/theme";
 import { useViewState } from "@/store/viewState";
+import { ViewFrame } from "@/components/ViewFrame";
 import {
   Dialog,
   DialogContent,
@@ -176,34 +177,34 @@ export function CalendarView({
     [load, onError],
   );
 
-  return (
-    <div className="calendar">
-      <div className="calendar-header">
-        <h1 className="calendar-title">{heading}</h1>
-        <div className="calendar-controls">
-          <div className="calendar-modes">
-            <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>
-              Month
-            </button>
-            <button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>
-              Week
-            </button>
-          </div>
-          <button className="calendar-nav" onClick={() => shift(-1)} aria-label="Previous">
-            ‹
-          </button>
-          <button className="calendar-nav" onClick={() => setCursor(new Date())}>
-            Today
-          </button>
-          <button className="calendar-nav" onClick={() => shift(1)} aria-label="Next">
-            ›
-          </button>
-          <Button size="sm" onClick={() => setDialog({ kind: "event", day: cursor })}>
-            <Plus className="h-4 w-4" /> Event
-          </Button>
-        </div>
+  const calendarActions = (
+    <div className="calendar-controls">
+      <div className="calendar-modes">
+        <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>
+          Month
+        </button>
+        <button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>
+          Week
+        </button>
       </div>
+      <button className="calendar-nav" onClick={() => shift(-1)} aria-label="Previous">
+        ‹
+      </button>
+      <button className="calendar-nav" onClick={() => setCursor(new Date())}>
+        Today
+      </button>
+      <button className="calendar-nav" onClick={() => shift(1)} aria-label="Next">
+        ›
+      </button>
+      <Button size="sm" onClick={() => setDialog({ kind: "event", day: cursor })}>
+        <Plus className="h-4 w-4" /> Event
+      </Button>
+    </div>
+  );
 
+  return (
+    <ViewFrame title={heading} actions={calendarActions} fullBleed>
+    <div className="calendar">
       {mode === "month" && (
         <>
           <div className="calendar-weekdays">
@@ -301,6 +302,7 @@ export function CalendarView({
         />
       )}
     </div>
+    </ViewFrame>
   );
 }
 

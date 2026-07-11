@@ -20,9 +20,11 @@ interface GraphInfoPanelProps {
   showLabels: boolean;
   nodeSizeScale: number;
   edgeLength: number;
+  emojiNodes: boolean;
   onToggleLabels: (next: boolean) => void;
   onNodeSize: (scale: number) => void;
   onEdgeLength: (length: number) => void;
+  onToggleEmojiNodes: (next: boolean) => void;
   onClose: () => void;
 }
 
@@ -31,9 +33,11 @@ export function GraphInfoPanel({
   showLabels,
   nodeSizeScale,
   edgeLength,
+  emojiNodes,
   onToggleLabels,
   onNodeSize,
   onEdgeLength,
+  onToggleEmojiNodes,
   onClose,
 }: GraphInfoPanelProps) {
   return (
@@ -67,6 +71,15 @@ export function GraphInfoPanel({
             type="checkbox"
             checked={showLabels}
             onChange={(e) => onToggleLabels(e.target.checked)}
+          />
+        </label>
+
+        <label className="graph-setting graph-setting-row">
+          <span>Emoji nodes</span>
+          <input
+            type="checkbox"
+            checked={emojiNodes}
+            onChange={(e) => onToggleEmojiNodes(e.target.checked)}
           />
         </label>
 
