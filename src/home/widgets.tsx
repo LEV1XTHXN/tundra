@@ -26,9 +26,18 @@ import { calendar, notes, quickNote } from "@/services";
 import type { Block, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
+import { useTheme } from "@/store/theme";
 
 const WEEKDAYS_SHORT = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const WEEK_STARTS_ON = 1;
+
+function formatModified(iso: string): string {
+  try {
+    return `Edited ${format(parseISO(iso), "MMM d, yyyy, h:mm a")}`;
+  } catch {
+    return iso;
+  }
+}
 
 export interface WidgetProps {
   vaultPath: string;
@@ -49,11 +58,17 @@ function NoteList({
   onOpenNote: (id: string) => void;
   empty: string;
 }) {
+  const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   if (items.length === 0) return <p className="widget-empty muted">{empty}</p>;
   return (
     <div className="home-note-list">
       {items.map((n) => (
-        <button key={n.id} className="home-note-row" onClick={() => onOpenNote(n.id)}>
+        <button
+          key={n.id}
+          className="home-note-row"
+          onClick={() => onOpenNote(n.id)}
+          title={showModifiedOnHover ? formatModified(n.modified) : undefined}
+        >
           <NoteIcon icon={n.icon} vaultPath={vaultPath} className="h-4 w-4" />
           <span className="home-note-title">{n.title || "Untitled"}</span>
         </button>

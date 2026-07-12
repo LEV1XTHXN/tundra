@@ -99,6 +99,8 @@ function AppearanceSection() {
   const setTheme = useTheme((s) => s.setTheme);
   const timeFormat = useTheme((s) => s.timeFormat);
   const setTimeFormat = useTheme((s) => s.setTimeFormat);
+  const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
+  const setShowModifiedOnHover = useTheme((s) => s.setShowModifiedOnHover);
   const options: { id: ThemePref; label: string; desc: string }[] = [
     { id: "system", label: "System", desc: "Follow the operating system" },
     { id: "light", label: "Light", desc: "Always light" },
@@ -143,6 +145,16 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+
+      <h3 className="settings-section-title settings-section-title-spaced">Note hover</h3>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={showModifiedOnHover}
+          onChange={(e) => setShowModifiedOnHover(e.target.checked)}
+        />
+        Show last-modified date when hovering a note
+      </label>
     </div>
   );
 }

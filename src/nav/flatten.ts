@@ -46,6 +46,8 @@ export type NavRow =
       /** Containing folder path (`""` = root) — used for drag-reordering among siblings. */
       parent: string;
       depth: number;
+      /** ISO last-modified timestamp, for the optional hover tooltip. */
+      modified: string;
     };
 
 /**
@@ -204,6 +206,7 @@ export function flattenTree(
         icon: note.icon,
         parent: parentPath,
         depth,
+        modified: note.modified,
       });
     }
   }
@@ -271,7 +274,15 @@ export function flattenWithGroups(
     }
   };
   const emitNote = (note: Extract<TreeNode, { kind: "Note" }>["data"]) =>
-    rows.push({ kind: "note", id: note.id, title: note.title || "Untitled", icon: note.icon, parent: "", depth: 0 });
+    rows.push({
+      kind: "note",
+      id: note.id,
+      title: note.title || "Untitled",
+      icon: note.icon,
+      parent: "",
+      depth: 0,
+      modified: note.modified,
+    });
   const emitGroup = (g: NavGroup) => {
     // Grouped folders render in their manual-order position (via `ordered`).
     const groupFolders = ordered.filter(

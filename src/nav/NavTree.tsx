@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { format, parseISO } from "date-fns";
 import { ArrowUpDown, ChevronDown, ChevronRight, Pencil, Smile, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Icon, TreeNode } from "@/services";
 import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
 import { useFolderGroups } from "@/store/folderGroups";
+import { useTheme } from "@/store/theme";
 import { flattenWithGroups, groupKey, reorderKeys, type NavRow } from "./flatten";
 import { NoteIcon } from "./NoteIcon";
 import { IconPicker } from "./IconPicker";
@@ -12,6 +14,14 @@ import { FolderSortMenu } from "./FolderSortMenu";
 import { canDropOnFolder, DRAG_MIME, serializeDragPayload, type DragPayload } from "./dragDrop";
 
 const ROW_HEIGHT = 28;
+
+function formatModified(iso: string): string {
+  try {
+    return `Edited ${format(parseISO(iso), "MMM d, yyyy, h:mm a")}`;
+  } catch {
+    return iso;
+  }
+}
 
 interface NavTreeProps {
   tree: TreeNode[];
@@ -78,6 +88,7 @@ export function NavTree({
   onRequestDeleteGroup,
 }: NavTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   const views = useFolderViews((s) => s.views);
   const patch = useFolderViews((s) => s.patch);
   const groups = useFolderGroups((s) => s.groups);
@@ -458,6 +469,7 @@ export function NavTree({
                       className={cn("nav-row nav-row-note", row.id === openNoteId && "active")}
                       style={{ paddingLeft: row.depth * 16 + 28 }}
                       onClick={() => onSelectNote(row.id)}
+                      title={showModifiedOnHover ? formatModified(row.modified) : undefined}
                     >
                       <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
                       <span className="nav-row-label">{row.title}</span>

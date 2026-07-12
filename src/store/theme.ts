@@ -23,6 +23,9 @@ const SETTINGS_NAME = "appearance";
 interface AppearanceConfig {
   theme: ThemePref;
   timeFormat?: TimeFormatPref;
+  /** Show a note's last-modified date in a tooltip on hover, in the nav tree
+   *  and home dashboard note lists. Off by default. */
+  showModifiedOnHover?: boolean;
 }
 
 function systemDark(): boolean {
@@ -46,10 +49,14 @@ interface ThemeState {
   resolved: Resolved;
   /** 24h by default (the international/European convention); 12h AM/PM opt-in. */
   timeFormat: TimeFormatPref;
+  /** Off by default; when on, hovering a note shows its last-modified date. */
+  showModifiedOnHover: boolean;
   /** Change the preference, apply it, and persist it. */
   setTheme: (theme: ThemePref) => void;
   /** Change the clock format and persist it. */
   setTimeFormat: (timeFormat: TimeFormatPref) => void;
+  /** Toggle the hover tooltip and persist it. */
+  setShowModifiedOnHover: (show: boolean) => void;
   /** Load the persisted preference and start tracking the OS theme. */
   load: () => Promise<void>;
 }
@@ -60,17 +67,23 @@ export const useTheme = create<ThemeState>((set, get) => ({
   theme: "system",
   resolved: resolvePref("system"),
   timeFormat: "24h",
+  showModifiedOnHover: false,
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     set({ theme, resolved });
-    const { timeFormat } = get();
-    void appSettings.write(SETTINGS_NAME, { theme, timeFormat } satisfies AppearanceConfig).catch(() => {});
+    const { timeFormat, showModifiedOnHover } = get();
+    void appSettings.write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover } satisfies AppearanceConfig).catch(() => {});
   },
   setTimeFormat: (timeFormat) => {
     set({ timeFormat });
-    const { theme } = get();
-    void appSettings.write(SETTINGS_NAME, { theme, timeFormat } satisfies AppearanceConfig).catch(() => {});
+    const { theme, showModifiedOnHover } = get();
+    void appSettings.write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover } satisfies AppearanceConfig).catch(() => {});
+  },
+  setShowModifiedOnHover: (showModifiedOnHover) => {
+    set({ showModifiedOnHover });
+    const { theme, timeFormat } = get();
+    void appSettings.write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover } satisfies AppearanceConfig).catch(() => {});
   },
   load: async () => {
     // Track OS theme changes once, so "system" updates live without a restart.
@@ -87,8 +100,9 @@ export const useTheme = create<ThemeState>((set, get) => ({
     const cfg = await appSettings.read<AppearanceConfig>(SETTINGS_NAME).catch(() => null);
     const theme = cfg?.theme ?? "system";
     const timeFormat = cfg?.timeFormat ?? "24h";
+    const showModifiedOnHover = cfg?.showModifiedOnHover ?? false;
     const resolved = resolvePref(theme);
     applyToDom(resolved);
-    set({ theme, resolved, timeFormat });
+    set({ theme, resolved, timeFormat, showModifiedOnHover });
   },
 }));
