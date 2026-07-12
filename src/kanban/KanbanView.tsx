@@ -24,6 +24,7 @@ import {
 import { config, kanban, notes as notesService } from "@/services";
 import type { KanbanBoard, KanbanColumn, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
+import { ViewFrame } from "@/components/ViewFrame";
 import { TAG_PALETTE, tagChipStyle, useTagColors } from "@/store/tagColors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -361,48 +362,57 @@ export function KanbanView({
     [summaries, onBoard],
   );
 
-  if (loading) return <div className="centered muted">Loading kanban…</div>;
+  const boardTabs = (
+    <div className="kanban-tabs" role="tablist" aria-label="Kanban boards">
+      {boards.map((b) => (
+        <button
+          key={b.id}
+          role="tab"
+          aria-selected={b.id === activeId}
+          className={`kanban-tab${b.id === activeId ? " active" : ""}`}
+          onClick={() => setActiveId(b.id)}
+        >
+          {b.name}
+        </button>
+      ))}
+      <button className="kanban-tab-add" onClick={openCreateBoard} title="New board" aria-label="New board">
+        <Plus className="h-4 w-4" />
+      </button>
+      <div className="kanban-tabs-spacer" />
+      {board && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="kanban-board-menu" title="Board options" aria-label="Board options">
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="kanban-menu">
+            <button className="kanban-menu-item" onClick={openRenameBoard}>
+              <Pencil className="h-4 w-4" /> Rename board
+            </button>
+            <button
+              className="kanban-menu-item danger"
+              onClick={() => setPendingDelete({ kind: "board", boardId: board.id, name: board.name })}
+            >
+              <Trash2 className="h-4 w-4" /> Delete board
+            </button>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <ViewFrame title="Kanban" fullBleed>
+        <div className="centered muted">Loading kanban…</div>
+      </ViewFrame>
+    );
+  }
 
   return (
+    <ViewFrame title="Kanban" toolbar={boardTabs} fullBleed>
     <div className="kanban">
-      <div className="kanban-tabs" role="tablist" aria-label="Kanban boards">
-        {boards.map((b) => (
-          <button
-            key={b.id}
-            role="tab"
-            aria-selected={b.id === activeId}
-            className={`kanban-tab${b.id === activeId ? " active" : ""}`}
-            onClick={() => setActiveId(b.id)}
-          >
-            {b.name}
-          </button>
-        ))}
-        <button className="kanban-tab-add" onClick={openCreateBoard} title="New board" aria-label="New board">
-          <Plus className="h-4 w-4" />
-        </button>
-        <div className="kanban-tabs-spacer" />
-        {board && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button className="kanban-board-menu" title="Board options" aria-label="Board options">
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="kanban-menu">
-              <button className="kanban-menu-item" onClick={openRenameBoard}>
-                <Pencil className="h-4 w-4" /> Rename board
-              </button>
-              <button
-                className="kanban-menu-item danger"
-                onClick={() => setPendingDelete({ kind: "board", boardId: board.id, name: board.name })}
-              >
-                <Trash2 className="h-4 w-4" /> Delete board
-              </button>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-
       {!board ? (
         <div className="centered muted kanban-empty">
           <p>No boards yet.</p>
@@ -743,5 +753,6 @@ export function KanbanView({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </ViewFrame>
   );
 }

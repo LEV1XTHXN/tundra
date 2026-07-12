@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { config, type PropertyType } from "@/services";
+import { config, type Icon, type PropertyType } from "@/services";
 
 export type { PropertyType };
 
@@ -74,8 +74,9 @@ export function sameColumnKey(a: TableSortKey, b: TableSortKey): boolean {
 
 /** The persisted view config for a single folder. All fields optional (defaults applied on read). */
 export interface FolderView {
-  /** Whether this folder is pinned within its parent (folders have no note-meta, so pin lives here). */
-  pinned?: boolean;
+  /** This folder's icon (emoji or custom image), shown in the sidebar tree.
+   *  Folders have no note-meta file, so — like sort order — the icon lives here. */
+  icon?: Icon;
   /** Sidebar tree order for this folder's children. Defaults to `{ by: "manual" }`. */
   treeSort?: TreeSort;
   /**

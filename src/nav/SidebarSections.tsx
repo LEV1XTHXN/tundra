@@ -1,43 +1,30 @@
 /**
- * Dedicated sidebar sections shown ABOVE the folder/note tree:
- *
- *  - **Pinned** — quick access to every pinned note across the vault, gathered in
- *    one place (the note still lives in its folder in the tree below). Only shown
- *    when at least one note is pinned.
- *  - **Templates** — reusable note templates (stored outside `notes/`, so they
- *    never appear in the tree). Click to edit; "+" creates a new one.
+ * The **Templates** sidebar section, shown ABOVE the folder/note tree: reusable
+ * note templates (stored outside `notes/`, so they never appear in the tree).
+ * Click to edit; "+" creates a new one.
  *
  * Kept out of the virtualized `NavTree` (whose drag-and-drop/flatten machinery is
- * note/folder-specific) — these are small, flat, always-in-view lists. React only
+ * note/folder-specific) — it's a small, flat, always-in-view list. React only
  * renders; all data flows through props / the `services`-backed templates store.
  */
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Plus, PinOff, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { NoteSummary } from "@/services";
 import { useTemplates } from "@/store/templates";
 import { NoteIcon } from "./NoteIcon";
 
 interface SidebarSectionsProps {
-  pinnedNotes: NoteSummary[];
   vaultPath: string;
-  openNoteId: string | null;
   /** The template currently open in the editor (highlighted), if any. */
   activeTemplateId: string | null;
-  onSelectNote: (id: string) => void;
-  onUnpinNote: (id: string) => void;
   onOpenTemplate: (id: string) => void;
   onNewTemplate: () => void;
   onRequestDeleteTemplate: (id: string, title: string) => void;
 }
 
 export function SidebarSections({
-  pinnedNotes,
   vaultPath,
-  openNoteId,
   activeTemplateId,
-  onSelectNote,
-  onUnpinNote,
   onOpenTemplate,
   onNewTemplate,
   onRequestDeleteTemplate,
@@ -46,35 +33,6 @@ export function SidebarSections({
 
   return (
     <div className="sidebar-sections">
-      {pinnedNotes.length > 0 && (
-        <Section title="Pinned" count={pinnedNotes.length} defaultOpen>
-          {pinnedNotes.map((n) => (
-            <div className="sidebar-section-row-wrap" key={n.id}>
-              <button
-                className={cn("sidebar-section-row", n.id === openNoteId && "active")}
-                onClick={() => onSelectNote(n.id)}
-              >
-                <NoteIcon icon={n.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
-                <span className="nav-row-label">{n.title || "Untitled"}</span>
-              </button>
-              <div className="sidebar-section-row-actions">
-                <button
-                  className="nav-row-action"
-                  title="Unpin"
-                  aria-label={`Unpin ${n.title}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUnpinNote(n.id);
-                  }}
-                >
-                  <PinOff size={12} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </Section>
-      )}
-
       <Section
         title="Templates"
         count={templates.length}

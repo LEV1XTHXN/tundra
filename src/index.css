@@ -160,6 +160,11 @@
    for the plain browser default. Applied to the shell (body) and the editor. */
 :root {
   --ui-text-weight: 450;
+  /* Shared horizontal padding for every top-level view (ViewFrame + the
+     editor's .editor-pane), so content starts at the same x position
+     regardless of which view is showing — the one number that makes the
+     shell feel like a single consistent frame instead of six different ones. */
+  --view-padding-x: clamp(1.5rem, 8vw, 6rem);
   /* Single UI font stack (shell + editor). 'Inter' is our self-hosted variable
      font (src/styles/inter-variable.css) and, unlike BlockNote's bundled latin-
      only static "Inter", ships Latin, Latin-ext, Cyrillic(-ext), Greek(-ext) and
@@ -259,35 +264,51 @@ body,
   text-overflow: ellipsis;
 }
 
-/* Top-level view switcher (Phase 2 step 4) — a compact segmented control at the
-   top of the sidebar; Home / Notes / Graph / Quick. */
+/* Top-level view switcher — a vertical icon+label list (Home / Notes / Graph /
+   Calendar / Kanban / Quick). A horizontal segmented control stopped fitting
+   once the view count grew past four, silently truncating the last tabs; a
+   vertical list has effectively unlimited room and matches the rest of the
+   sidebar's stacked layout (nav tree, templates section). */
 .view-switcher {
   display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--secondary);
-  border-radius: var(--radius-md);
+  flex-direction: column;
+  gap: 1px;
 }
 
 .view-switcher-tab {
-  flex: 1;
-  padding: 0.3rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--muted-foreground);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  text-align: left;
   cursor: pointer;
+}
+.view-switcher-tab svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
 }
 
 .view-switcher-tab:hover {
-  color: var(--foreground);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.view-switcher-tab:hover svg {
+  color: var(--accent-foreground);
 }
 
 .view-switcher-tab.active {
-  background: var(--card);
+  background: var(--secondary);
   color: var(--foreground);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  font-weight: 600;
+}
+.view-switcher-tab.active svg {
+  color: var(--foreground);
 }
 
 .sidebar-actions {
@@ -307,7 +328,7 @@ body,
   flex: 0 0 auto;
   max-height: 45%;
   overflow-y: auto;
-  margin: 0.25rem -0.75rem 0;
+  margin: 0 -0.75rem;
   display: flex;
   flex-direction: column;
 }
@@ -506,9 +527,19 @@ body,
 .nav-root-target {
   padding: 0.35rem 0.5rem;
   margin: 0 -0.75rem;
-  font-size: 0.8rem;
+  /* Same type as the tree rows/folders (Inter, 0.9rem) so it reads as part of
+     the hierarchy rather than a smaller muted caption. */
+  font-size: 0.9rem;
   color: var(--muted-foreground);
   border-bottom: 1px dashed var(--border);
+}
+
+/* Full-bleed separator between the tree and the bottom-anchored Templates section. */
+.sidebar-divider {
+  height: 1px;
+  margin: 0 -0.75rem;
+  background: var(--border);
+  flex: 0 0 auto;
 }
 
 .drag-over {
@@ -531,27 +562,68 @@ body,
   overflow: hidden;
 }
 
-/* Home dashboard (Phase 2 step 6) — configurable widgets, the landing view. */
-.home {
+/* Shared shell every top-level view renders into (ViewFrame.tsx) — a
+   consistent title+actions header and a body with uniform padding/scroll, so
+   Home/Graph/Calendar/Kanban/Quick notes all feel like one frame instead of
+   each inventing its own layout. */
+.view-frame {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  padding: 2rem clamp(1.5rem, 6vw, 4rem);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
-
-.home-header {
+.view-frame-header {
+  flex-shrink: 0;
+  padding: 1.75rem var(--view-padding-x) 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.view-frame-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1.5rem;
 }
-.home-title {
+.view-frame-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.view-frame-title {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
+  line-height: 1.2;
 }
+.view-frame-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.view-frame-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.view-frame-toolbar {
+  margin-top: 1rem;
+}
+.view-frame-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.5rem var(--view-padding-x) 2.5rem;
+}
+.view-frame-body.full-bleed {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Home dashboard (Phase 2 step 6) — configurable widgets, the landing view.
+   Title/header now come from ViewFrame; these are just the widget-grid bits. */
 .home-add {
   display: flex;
   align-items: center;
@@ -773,19 +845,8 @@ body,
 }
 
 /* Quick-note scratchpad (Phase 2 step 5) — a single trimmed capture surface.
-   Reuses `.editor-pane` for consistent editor chrome, plus a header. */
-.quicknote-header {
-  margin-bottom: 0.5rem;
-}
-.quicknote-title {
-  margin: 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-.quicknote-hint {
-  margin: 0.15rem 0 0;
-  font-size: 0.85rem;
-}
+   Reuses `.editor-pane` for consistent editor chrome; title/subtitle now come
+   from ViewFrame. */
 
 /* Graph view — sigma owns the canvas; give it the whole pane. */
 .graph-view {
@@ -956,7 +1017,7 @@ body,
 }
 
 .editor-pane {
-  padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
+  padding: 2.5rem var(--view-padding-x);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1447,11 +1508,8 @@ body,
 }
 
 /* --- Graph info & settings panel ----------------------------------------- */
+/* Sits in ViewFrame's header actions now (was a floating corner button). */
 .graph-panel-toggle {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  z-index: 10;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1578,21 +1636,9 @@ body,
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 1.25rem clamp(1rem, 3vw, 2rem) 0;
+  padding: 1.25rem var(--view-padding-x) 0;
 }
-.calendar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-.calendar-title {
-  margin: 0;
-  font-size: 1.4rem;
-  font-weight: 700;
-}
+/* Header/title now come from ViewFrame; .calendar-controls sits in its actions. */
 .calendar-controls {
   display: flex;
   align-items: center;
@@ -2248,16 +2294,13 @@ body,
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 1rem clamp(0.75rem, 2.5vw, 1.5rem) 0;
+  padding: 1rem var(--view-padding-x) 0;
   overflow: hidden;
 }
 .kanban-tabs {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.5rem;
-  margin-bottom: 0.75rem;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
@@ -2750,9 +2793,24 @@ body,
   flex-shrink: 0;
 }
 
+/* Left-click opens the icon picker directly — same trigger pattern as the
+   group icon button below, no separate "set icon" action for folders. */
+.nav-folder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .nav-folder-label {
   display: flex;
   align-items: center;
+  gap: 0.4rem;
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -2769,11 +2827,42 @@ body,
   text-decoration: underline;
 }
 
-.nav-pin-indicator {
-  flex-shrink: 0;
-  margin-left: 4px;
+/* Folder group header row (collapsible section holding top-level folders). */
+.nav-row-group {
+  font-weight: 600;
   color: var(--muted-foreground);
-  opacity: 0.7;
+}
+.nav-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nav-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.nav-group-count {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.6;
 }
 
 .nav-row-action.active {

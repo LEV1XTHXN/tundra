@@ -7,7 +7,10 @@
  */
 export const DRAG_MIME = "application/x-tundra-nav-drag";
 
-export type DragPayload = { kind: "note"; id: string } | { kind: "folder"; path: string };
+export type DragPayload =
+  | { kind: "note"; id: string }
+  | { kind: "folder"; path: string }
+  | { kind: "group"; id: string };
 
 export function serializeDragPayload(payload: DragPayload): string {
   return JSON.stringify(payload);
@@ -23,6 +26,9 @@ export function parseDragPayload(data: string): DragPayload | null {
     if (parsed && parsed.kind === "folder" && typeof parsed.path === "string") {
       return { kind: "folder", path: parsed.path };
     }
+    if (parsed && parsed.kind === "group" && typeof parsed.id === "string") {
+      return { kind: "group", id: parsed.id };
+    }
   } catch {
     // Not our payload — ignore.
   }
@@ -30,13 +36,15 @@ export function parseDragPayload(data: string): DragPayload | null {
 }
 
 /**
- * Whether dropping `dragged` onto `targetFolder` (relative to the notes
- * root, `""` for root) is a valid, meaningful move: rejects dropping a
- * folder onto itself or into its own subtree (the same guard `vault.rs`
- * enforces server-side; checking here avoids a pointless round-trip and a
- * confusing error).
+ * Whether dropping `dragged` INTO `targetFolder` (relative to the notes root,
+ * `""` for root) is a valid, meaningful move: rejects dropping a folder onto
+ * itself or into its own subtree (the same guard `vault.rs` enforces
+ * server-side; checking here avoids a pointless round-trip and a confusing
+ * error). A **group** never drops *into* a folder — it only reorders among the
+ * top-level items — so this is always false for a group payload.
  */
 export function canDropOnFolder(dragged: DragPayload, targetFolder: string): boolean {
+  if (dragged.kind === "group") return false;
   if (dragged.kind === "folder") {
     if (dragged.path === targetFolder) return false;
     if (targetFolder.startsWith(`${dragged.path}/`)) return false;

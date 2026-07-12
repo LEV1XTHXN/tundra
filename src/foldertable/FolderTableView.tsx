@@ -4,7 +4,7 @@ import { format, parseISO } from "date-fns";
 import { Folder as FolderIcon, Pin } from "lucide-react";
 import { notes, type PropertyValue, type TreeNode } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
-import { useFolderViews, type ColumnKey, type TableSort, type TableSortKey } from "@/store/folderViews";
+import { type ColumnKey, type TableSort, type TableSortKey } from "@/store/folderViews";
 import { cn } from "@/lib/utils";
 import { columnKeyStr, orderRows, propertyValue, type TableRow } from "./ordering";
 import { ColumnHeader } from "./ColumnHeader";
@@ -82,7 +82,6 @@ export function FolderTableView({
 }: FolderTableViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const headScrollRef = useRef<HTMLDivElement>(null);
-  const views = useFolderViews((s) => s.views);
   const schema = useFolderSchema(folderPath);
   const { columns, tableSort, propsById } = schema;
 
@@ -90,12 +89,14 @@ export function FolderTableView({
     const children = childrenOf(tree, folderPath);
     const mapped: TableRow[] = children.map((n) =>
       n.kind === "Folder"
-        ? { kind: "folder", name: n.data.name, path: n.data.path, pinned: views[n.data.path]?.pinned === true }
+        ? // Folders can no longer be pinned (tree pinning was removed); only notes
+          // carry a pinned flag now (via Home's "Pin to Home").
+          { kind: "folder", name: n.data.name, path: n.data.path, pinned: false }
         : { kind: "note", summary: n.data, pinned: n.data.pinned === true },
     );
     const sort: TableSort[] = tableSort.length ? tableSort : [{ key: "name", dir: "asc" }];
     return orderRows(mapped, sort, propsById);
-  }, [tree, folderPath, views, tableSort, propsById]);
+  }, [tree, folderPath, tableSort, propsById]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,

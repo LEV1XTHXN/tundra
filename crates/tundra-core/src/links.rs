@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 
-use crate::document::{Block, Note, NoteSummary};
+use crate::document::{Block, Icon, Note, NoteSummary};
 use crate::error::Result;
 use crate::vault::Vault;
 
@@ -37,6 +37,11 @@ pub const LINK_INLINE_TYPE: &str = "noteLink";
 pub struct GraphNode {
     pub id: String,
     pub title: String,
+    /// The note's own icon (set via the same picker as the nav tree) — carried
+    /// through so the graph view can optionally render it in place of the
+    /// default dot instead of re-deriving anything from the title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
 }
 
 /// A directed graph edge — note `source` links to note `target`. Only emitted
@@ -257,6 +262,7 @@ impl LinkIndex {
             .map(|s| GraphNode {
                 id: s.id.clone(),
                 title: s.title.clone(),
+                icon: s.icon.clone(),
             })
             .collect();
 

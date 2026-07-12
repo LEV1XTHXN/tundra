@@ -58,7 +58,7 @@ describe("NavTree virtualization", () => {
         onRequestDeleteNote={() => {}}
         onRequestDeleteFolder={() => {}}
         onSetNoteIcon={() => {}}
-        onToggleNotePin={() => {}}
+        onRequestDeleteGroup={() => {}}
       />,
     );
 
