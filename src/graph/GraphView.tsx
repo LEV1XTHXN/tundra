@@ -1,9 +1,8 @@
 /**
  * Graph view (Phase 2 step 4) — the whole vault's link structure as an
- * Obsidian-style node/edge graph. Notes are nodes (dots + labels, optionally a
- * note's own emoji icon instead of the dot — see the "Emoji nodes" setting);
- * resolved `[[links]]` are directed edges. Data comes entirely through
- * `services` (the `links` module derives it in Rust); React never touches IPC.
+ * Obsidian-style node/edge graph. Notes are nodes (dots + labels); resolved
+ * `[[links]]` are directed edges. Data comes entirely through `services` (the
+ * `links` module derives it in Rust); React never touches IPC.
  *
  * Rendered with `sigma` + `graphology` (LOCKED, chosen for scale — CLAUDE.md §8.4)
  * driven IMPERATIVELY inside this effect via a ref, NOT a React wrapper: sigma
@@ -19,7 +18,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import Graph from "graphology";
 import Sigma from "sigma";
-import { NodeImageProgram } from "@sigma/node-image";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
 import { inferSettings } from "graphology-layout-forceatlas2";
 
@@ -29,7 +27,6 @@ import { useTheme } from "../store/theme";
 import { ViewFrame } from "@/components/ViewFrame";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
 import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
-import { iconEmoji, rasterizeEmoji } from "./emojiNodes";
 
 /** Vault-scoped file the graph persists its view settings to (through Rust). */
 const GRAPH_VIEW_CONFIG = "graph-view.json";
@@ -57,7 +54,6 @@ const NODE_DEGREE_SCALE = 2.5;
 const DEFAULT_SHOW_LABELS = true;
 const DEFAULT_NODE_SIZE_SCALE = 1;
 const DEFAULT_EDGE_LENGTH = 1;
-const DEFAULT_EMOJI_NODES = false;
 
 /** Persisted graph view state (CLAUDE.md §5.2: `.vault/config/graph-view.json`).
  *  Camera + the panel's display settings; filters/pinned positions are future
@@ -67,7 +63,6 @@ interface GraphViewSettings {
   showLabels?: boolean;
   nodeSizeScale?: number;
   edgeLength?: number;
-  emojiNodes?: boolean;
 }
 
 type Status = "loading" | "ready" | "empty" | "error";
@@ -86,16 +81,10 @@ export function GraphView() {
   const [showLabels, setShowLabels] = useState(DEFAULT_SHOW_LABELS);
   const [nodeSizeScale, setNodeSizeScale] = useState(DEFAULT_NODE_SIZE_SCALE);
   const [edgeLength, setEdgeLength] = useState(DEFAULT_EDGE_LENGTH);
-  const [emojiNodes, setEmojiNodes] = useState(DEFAULT_EMOJI_NODES);
 
   // Live instances, reachable by the panel's handlers without rebuilding them.
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
-  // nodeId -> rasterized emoji bitmap (data URL), populated once per graph build
-  // for every node whose title has an emoji. Populated regardless of whether the
-  // setting is on, so toggling it doesn't need to re-detect or re-rasterize —
-  // `applyEmojiNodes` below just flips already-cached attributes.
-  const emojiImagesRef = useRef<Map<string, string>>(new Map());
   // Current label colour, kept in a ref so the (theme-independent) build effect
   // can read the live value at construction without re-running on theme change.
   const labelColorRef = useRef(resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT);
@@ -198,41 +187,6 @@ export function GraphView() {
     [applyEdgeLength, scheduleSave],
   );
 
-  /** Flip nodes with a cached emoji bitmap between the image program and the
-   *  default circle — one batched attribute pass, never a rebuild of sigma or
-   *  the atlas. Safe to call before rasterization finishes: nodes without a
-   *  cached entry yet are simply left alone until it does. */
-  const applyEmojiNodes = useCallback((enabled: boolean) => {
-    const graph = graphRef.current;
-    if (!graph) return;
-    const images = emojiImagesRef.current;
-    graph.updateEachNodeAttributes(
-      (node, attr) => {
-        const image = images.get(node);
-        if (!image) return attr;
-        if (enabled) {
-          attr.type = "image";
-          attr.image = image;
-        } else {
-          delete attr.type;
-          delete attr.image;
-        }
-        return attr;
-      },
-      { attributes: ["type", "image"] },
-    );
-  }, []);
-
-  const onToggleEmojiNodes = useCallback(
-    (next: boolean) => {
-      setEmojiNodes(next);
-      settingsRef.current.emojiNodes = next;
-      applyEmojiNodes(next);
-      scheduleSave();
-    },
-    [applyEmojiNodes, scheduleSave],
-  );
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -260,27 +214,20 @@ export function GraphView() {
         const initShowLabels = saved?.showLabels ?? DEFAULT_SHOW_LABELS;
         const initNodeScale = saved?.nodeSizeScale ?? DEFAULT_NODE_SIZE_SCALE;
         const initEdgeLength = saved?.edgeLength ?? DEFAULT_EDGE_LENGTH;
-        const initEmojiNodes = saved?.emojiNodes ?? DEFAULT_EMOJI_NODES;
         settingsRef.current = {
           camera: saved?.camera,
           showLabels: initShowLabels,
           nodeSizeScale: initNodeScale,
           edgeLength: initEdgeLength,
-          emojiNodes: initEmojiNodes,
         };
         setShowLabels(initShowLabels);
         setNodeSizeScale(initNodeScale);
         setEdgeLength(initEdgeLength);
-        setEmojiNodes(initEmojiNodes);
 
         // Build the graphology model. Seed random positions so ForceAtlas2 has
         // something to relax from (it needs x/y on every node).
         const graph = new Graph();
         graphRef.current = graph;
-        // Node id -> emoji, read up front from each note's OWN icon (the same
-        // one set via the nav tree's picker) so the atlas can be built from the
-        // DISTINCT set below rather than per node.
-        const nodeEmoji = new Map<string, string>();
         for (const node of data.nodes) {
           graph.addNode(node.id, {
             label: node.title || "Untitled",
@@ -290,8 +237,6 @@ export function GraphView() {
             baseSize: NODE_BASE_SIZE,
             color: NODE_COLOR,
           });
-          const emoji = iconEmoji(node.icon);
-          if (emoji) nodeEmoji.set(node.id, emoji);
         }
         for (const edge of data.edges) {
           // Guard against a stale cache referencing a node that isn't in this
@@ -318,28 +263,6 @@ export function GraphView() {
         });
         setStats({ nodes: graph.order, links: graph.size, leaves });
 
-        // Rasterize the DISTINCT emoji set (never per node) off the critical
-        // path — the graph renders and lays out immediately with plain circles;
-        // once bitmaps are ready, `applyEmojiNodes` flips the setting on in one
-        // batched pass if it was already enabled. Memoized in `rasterizeEmoji`,
-        // so reopening the graph view never re-draws an emoji it already has.
-        const distinctEmoji = new Set(nodeEmoji.values());
-        if (distinctEmoji.size > 0) {
-          void Promise.all(
-            [...distinctEmoji].map(async (emoji) => [emoji, await rasterizeEmoji(emoji)] as const),
-          ).then((entries) => {
-            if (cancelled) return;
-            const bitmaps = new Map(entries);
-            const images = emojiImagesRef.current;
-            images.clear();
-            for (const [id, emoji] of nodeEmoji) {
-              const bitmap = bitmaps.get(emoji);
-              if (bitmap) images.set(id, bitmap);
-            }
-            applyEmojiNodes(settingsRef.current.emojiNodes ?? DEFAULT_EMOJI_NODES);
-          });
-        }
-
         sigma = new Sigma(graph, container, {
           allowInvalidContainer: true,
           labelDensity: 0.6,
@@ -350,9 +273,6 @@ export function GraphView() {
           // Draw the note title centered directly under the node.
           defaultDrawNodeLabel: drawNodeLabelBelow,
           defaultDrawNodeHover: drawNodeHoverBelow,
-          // Registered unconditionally (cheap — it's just a program class) so
-          // toggling "emoji nodes" on later never needs a sigma rebuild.
-          nodeProgramClasses: { image: NodeImageProgram },
         });
         sigmaRef.current = sigma;
 
@@ -549,7 +469,7 @@ export function GraphView() {
       sigmaRef.current = null;
       graphRef.current = null;
     };
-  }, [openNote, runLayout, scheduleSave, applyEmojiNodes]);
+  }, [openNote, runLayout, scheduleSave]);
 
   // Keep label colour in step with the theme without rebuilding sigma. Updates
   // the ref (read by the build effect on first mount) and, if sigma is already
@@ -601,11 +521,9 @@ export function GraphView() {
             showLabels={showLabels}
             nodeSizeScale={nodeSizeScale}
             edgeLength={edgeLength}
-            emojiNodes={emojiNodes}
             onToggleLabels={onToggleLabels}
             onNodeSize={onNodeSize}
             onEdgeLength={onEdgeLength}
-            onToggleEmojiNodes={onToggleEmojiNodes}
             onClose={() => setPanelOpen(false)}
           />
         )}
