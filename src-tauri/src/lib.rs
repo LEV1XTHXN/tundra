@@ -73,6 +73,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::move_folder,
             commands::delete_folder,
             commands::import_icon,
+            commands::import_banner,
             commands::import_attachment,
             commands::search_query,
             commands::search_by_tag,

@@ -36,6 +36,22 @@ pub enum Icon {
     Custom(String),
 }
 
+/// A note's top-of-page banner (cover): either a built-in gradient preset or a
+/// user-supplied image stored in the vault. Rendered above the title/icon in the
+/// editor. The gradient variant carries only a preset id — the actual CSS lives
+/// in the frontend, so no colours are stored in the vault; the image variant
+/// carries a vault-relative path under `attachments/images/` (portable across
+/// vault moves/sync), resolved to a displayable URL at render time like custom
+/// note icons and editor image embeds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", content = "value", rename_all = "lowercase")]
+pub enum Banner {
+    /// A built-in gradient preset id, e.g. `"blush"`. No vault file.
+    Gradient(String),
+    /// Vault-relative path of a user image under `attachments/images/`.
+    Image(String),
+}
+
 /// Note-level metadata that is cheap to read and useful for listings.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 pub struct NoteMeta {
@@ -43,6 +59,13 @@ pub struct NoteMeta {
     pub pinned: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Optional top-of-page banner (cover). `#[serde(default)]` + skip-if-none, so
+    /// notes without a banner load and save exactly as before — no `SCHEMA_VERSION`
+    /// bump. Not mirrored into `NoteSummary`: the banner is only rendered in the
+    /// open editor, never in listings, so it never needs to be read without the
+    /// note body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub banner: Option<Banner>,
     /// Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
     /// note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
     /// into `NoteSummary` + the in-memory index (like `pinned`) so calendar range

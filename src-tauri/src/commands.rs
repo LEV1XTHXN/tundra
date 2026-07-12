@@ -355,6 +355,15 @@ pub fn import_icon(state: State<AppState>, src_path: String) -> Result<String, C
     current(&state)?.import_icon(std::path::Path::new(&src_path))
 }
 
+/// Copy `src_path` (chosen via the native file dialog in `services`) into the
+/// vault's `attachments/images/` library for use as a note banner, returning its
+/// vault-relative path for `Banner::Image`.
+#[tauri::command]
+#[specta::specta]
+pub fn import_banner(state: State<AppState>, src_path: String) -> Result<String, CoreError> {
+    current(&state)?.import_banner(std::path::Path::new(&src_path))
+}
+
 /// Import an attachment by content (Phase 2 step 1): the frontend reads a
 /// browser `File`'s bytes and forwards them here; the core hashes them (blake3),
 /// stores them content-addressed under `attachments/<kind>/`, and returns the

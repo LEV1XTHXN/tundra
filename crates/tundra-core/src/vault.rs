@@ -965,6 +965,21 @@ impl Vault {
         Ok(self.rel_to_root(&dest))
     }
 
+    /// Import a user-chosen image from disk (e.g. the Pictures folder, via the
+    /// native dialog in `services`) for use as a note **banner**, returning its
+    /// vault-relative path under `attachments/images/`. Reads the file here so all
+    /// FS access stays in the core, then delegates to the content-addressed
+    /// `import_attachment` — so banner images dedupe and land in the same image
+    /// library as editor embeds, rather than a banner-specific folder.
+    pub fn import_banner(&self, src_path: &Path) -> Result<String> {
+        let bytes = fs::read(src_path)?;
+        let file_name = src_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "banner".to_string());
+        self.import_attachment(AttachmentKind::Image, &file_name, &bytes)
+    }
+
     /// Import an attachment by **content** (Phase 2 step 1): hash the bytes with
     /// blake3, store them at `attachments/<kind>/<aa>/<hash>.<ext>` — sharded by
     /// the first two hex chars of the hash — and return the path relative to the
@@ -1883,6 +1898,31 @@ mod tests {
         assert_eq!(rel2, "attachments/icons/sprout-2.png");
         assert!(dir.join(&rel).exists());
         assert!(dir.join(&rel2).exists());
+
+        std::fs::remove_dir_all(&src_dir).ok();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_banner_reads_from_disk_into_content_addressed_images() {
+        let (vault, dir) = temp_vault();
+
+        let src_dir = std::env::temp_dir().join(format!("tundra-banner-src-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("cover.jpg");
+        fs::write(&src, b"pretend jpeg bytes").unwrap();
+
+        // Lands in the shared image library (content-addressed), not a
+        // banner-specific folder — same store as editor image embeds.
+        let rel = vault.import_banner(&src).unwrap();
+        assert!(rel.starts_with("attachments/images/"));
+        assert!(rel.ends_with(".jpg"));
+        assert!(dir.join(&rel).exists());
+        assert_eq!(fs::read(dir.join(&rel)).unwrap(), b"pretend jpeg bytes");
+
+        // Identical bytes dedupe to the same path (content addressing).
+        let rel2 = vault.import_banner(&src).unwrap();
+        assert_eq!(rel, rel2);
 
         std::fs::remove_dir_all(&src_dir).ok();
         std::fs::remove_dir_all(&dir).ok();

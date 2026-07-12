@@ -19,7 +19,7 @@ pub mod watcher;
 pub use calendar::{range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry};
 pub use kanban::{KanbanBoard, KanbanColumn, KanbanStore};
 pub use spellcheck::{Misspelling, SpellChecker};
-pub use document::{Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};
+pub use document::{Banner, Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};
 pub use error::{CoreError, Result};
 pub use index::{extract_text, SearchHit, SearchIndex};
 pub use links::{extract_link_ids, GraphData, GraphEdge, GraphNode, LinkIndex, LINK_INLINE_TYPE};

@@ -8,7 +8,7 @@
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkPlus, LayoutTemplate, Pin } from "lucide-react";
+import { BookmarkPlus, ImageIcon, LayoutTemplate, Pin } from "lucide-react";
 import {
   useCreateBlockNote,
   FormattingToolbar,
@@ -20,7 +20,8 @@ import "@blocknote/shadcn/style.css";
 import { FileOpenButton } from "./FileOpenButton";
 
 import { attachments, notes, spellcheck, templates, watcher } from "@/services";
-import type { AttachmentKind, Icon, Note, NoteSummary } from "@/services";
+import type { AttachmentKind, Banner, Icon, Note, NoteSummary } from "@/services";
+import { NoteBanner, BannerPicker, DEFAULT_BANNER } from "./NoteBanner";
 import { TemplatePicker } from "@/templates/TemplatePicker";
 import { SaveAsTemplateDialog } from "@/templates/SaveAsTemplateDialog";
 import { isEmptyDocument, stripBlockIds, type RawBlock } from "@/templates/applyTemplate";
@@ -419,6 +420,7 @@ function LoadedNoteEditor({
   const [title, setTitle] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
   const [pinned, setPinned] = useState<boolean>(note.meta?.pinned ?? false);
+  const [banner, setBannerState] = useState<Banner | null | undefined>(note.meta?.banner);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [reconcile, setReconcile] = useState<ReturnType<typeof decideReconciliation>>({ kind: "none" });
 
@@ -524,6 +526,29 @@ function LoadedNoteEditor({
       await persistence.save(updated);
       noteRef.current = updated;
       setPinned(next);
+      setSaveState("saved");
+      onSaved?.();
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
+  // Banner/cover set/change/remove: a discrete meta change, saved immediately
+  // like the icon and pin. `null` clears it (serialized as absent, so notes
+  // without a banner keep their old on-disk shape).
+  async function setBanner(newBanner: Banner | null) {
+    setSaveState("saving");
+    try {
+      const current = noteRef.current;
+      const updated: Note = {
+        ...current,
+        title: titleRef.current,
+        blocks: editor.document as unknown as Note["blocks"],
+        meta: { ...(current.meta ?? { pinned: false, tags: [] }), banner: newBanner ?? undefined },
+      };
+      await persistence.save(updated);
+      noteRef.current = updated;
+      setBannerState(newBanner);
       setSaveState("saved");
       onSaved?.();
     } catch (e) {
@@ -663,6 +688,9 @@ function LoadedNoteEditor({
           </div>
         </div>
       )}
+      {!isTemplateMode && banner && (
+        <NoteBanner banner={banner} vaultPath={vaultPath} onChange={(b) => void setBanner(b)} />
+      )}
       <div className="editor-header">
         <IconPicker
           onChange={setIcon}
@@ -682,6 +710,18 @@ function LoadedNoteEditor({
             scheduleSave();
           }}
         />
+        {/* Add-banner entry point — only when there's no cover yet; once a
+            banner exists it's changed/removed from the strip's own controls. */}
+        {!isTemplateMode && !banner && (
+          <BannerPicker
+            onChange={(b) => void setBanner(b ?? DEFAULT_BANNER)}
+            trigger={
+              <button className="editor-icon-button" title="Add banner" aria-label="Add banner">
+                <ImageIcon className="h-5 w-5" />
+              </button>
+            }
+          />
+        )}
         {/* Template actions — note mode only (a template doesn't use/save
             templates of itself). */}
         {!isTemplateMode && (

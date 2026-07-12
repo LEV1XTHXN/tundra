@@ -17,6 +17,7 @@ export type {
   NoteMeta,
   Block,
   Icon,
+  Banner,
   VaultInfo,
   TreeNode,
   FolderNode,
@@ -535,6 +536,32 @@ export const icons = {
   /** Copy `srcPath` into `attachments/icons/`, returning its vault-relative path. */
   import: (srcPath: string): Promise<string> => unwrap(commands.importIcon(srcPath)),
   /** A displayable URL for a custom icon's vault-relative path. */
+  assetUrl: (vaultPath: string, relPath: string): string =>
+    convertFileSrc(`${vaultPath}/${relPath}`),
+};
+
+/**
+ * Per-note banners (covers). A banner is either a built-in gradient preset
+ * (rendered entirely client-side from `bannerGradients`, so no FS work) or a
+ * user image copied into the vault's `attachments/images/` library by the core.
+ * Custom images always render via an `<img>` element, which reads the Tauri
+ * `asset://` URL on every platform — so, unlike editor video/file previews, no
+ * blob fallback is needed on the Linux webview (see `attachments.resolveUrl`).
+ */
+export const banners = {
+  /** Native image picker for choosing a custom banner image. */
+  async pickFile(): Promise<string | null> {
+    const selected = await openFolderDialog({
+      directory: false,
+      multiple: false,
+      title: "Choose a banner image",
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "avif"] }],
+    });
+    return typeof selected === "string" ? selected : null;
+  },
+  /** Copy `srcPath` into `attachments/images/`, returning its vault-relative path. */
+  import: (srcPath: string): Promise<string> => unwrap(commands.importBanner(srcPath)),
+  /** A displayable URL for a custom banner's vault-relative path. */
   assetUrl: (vaultPath: string, relPath: string): string =>
     convertFileSrc(`${vaultPath}/${relPath}`),
 };

@@ -76,6 +76,12 @@ export const commands = {
 	 */
 	importIcon: (srcPath: string) => typedError<string, CoreError>(__TAURI_INVOKE("import_icon", { srcPath })),
 	/**
+	 *  Copy `src_path` (chosen via the native file dialog in `services`) into the
+	 *  vault's `attachments/images/` library for use as a note banner, returning its
+	 *  vault-relative path for `Banner::Image`.
+	 */
+	importBanner: (srcPath: string) => typedError<string, CoreError>(__TAURI_INVOKE("import_banner", { srcPath })),
+	/**
 	 *  Import an attachment by content (Phase 2 step 1): the frontend reads a
 	 *  browser `File`'s bytes and forwards them here; the core hashes them (blake3),
 	 *  stores them content-addressed under `attachments/<kind>/`, and returns the
@@ -258,6 +264,21 @@ export const events = {
  *  serialized; the frontend maps a file's MIME type onto one of these.
  */
 export type AttachmentKind = "image" | "video" | "file";
+
+/**
+ *  A note's top-of-page banner (cover): either a built-in gradient preset or a
+ *  user-supplied image stored in the vault. Rendered above the title/icon in the
+ *  editor. The gradient variant carries only a preset id — the actual CSS lives
+ *  in the frontend, so no colours are stored in the vault; the image variant
+ *  carries a vault-relative path under `attachments/images/` (portable across
+ *  vault moves/sync), resolved to a displayable URL at render time like custom
+ *  note icons and editor image embeds.
+ */
+export type Banner = 
+/**  A built-in gradient preset id, e.g. `"blush"`. No vault file. */
+{ type: "gradient"; value: string } | 
+/**  Vault-relative path of a user image under `attachments/images/`. */
+{ type: "image"; value: string };
 
 /**
  *  A single typed block in the note tree.
@@ -638,6 +659,14 @@ export type NoteMeta_Deserialize = {
 	pinned?: boolean,
 	tags?: string[],
 	/**
+	 *  Optional top-of-page banner (cover). `#[serde(default)]` + skip-if-none, so
+	 *  notes without a banner load and save exactly as before — no `SCHEMA_VERSION`
+	 *  bump. Not mirrored into `NoteSummary`: the banner is only rendered in the
+	 *  open editor, never in listings, so it never needs to be read without the
+	 *  note body.
+	 */
+	banner?: Banner | null,
+	/**
 	 *  Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
 	 *  note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
 	 *  into `NoteSummary` + the in-memory index (like `pinned`) so calendar range
@@ -661,6 +690,14 @@ export type NoteMeta_Deserialize = {
 export type NoteMeta_Serialize = {
 	pinned: boolean,
 	tags: string[],
+	/**
+	 *  Optional top-of-page banner (cover). `#[serde(default)]` + skip-if-none, so
+	 *  notes without a banner load and save exactly as before — no `SCHEMA_VERSION`
+	 *  bump. Not mirrored into `NoteSummary`: the banner is only rendered in the
+	 *  open editor, never in listings, so it never needs to be read without the
+	 *  note body.
+	 */
+	banner?: Banner | null,
 	/**
 	 *  Note→date links (Phase 3 step 1). Optional and `#[serde(default)]`, so old
 	 *  note files without it load unchanged — no `SCHEMA_VERSION` bump. Mirrored
