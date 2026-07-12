@@ -695,13 +695,13 @@ function LoadedNoteEditor({
         <IconPicker
           onChange={setIcon}
           trigger={
-            <button className="editor-icon-button" title="Set icon">
-              <NoteIcon icon={icon} vaultPath={vaultPath} className="h-6 w-6" />
+            <button className="editor-title-icon-button" title="Set icon">
+              <NoteIcon icon={icon} vaultPath={vaultPath} className="h-14 w-14" />
             </button>
           }
         />
         <Input
-          className="h-auto border-none bg-transparent px-0 text-3xl font-bold shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="h-auto border-none bg-transparent px-0 text-4xl md:text-4xl font-bold leading-tight shadow-none focus-visible:ring-0 dark:bg-transparent"
           value={title}
           placeholder="Untitled"
           onChange={(e) => {

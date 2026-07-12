@@ -47,7 +47,7 @@ export function NoteIcon({
       <img
         src={iconsService.assetUrl(vaultPath, icon.value)}
         alt=""
-        className={className ?? "h-4 w-4 rounded-sm object-cover"}
+        className={cn("rounded-sm object-cover", className ?? "h-4 w-4")}
       />
     );
   }
@@ -65,10 +65,12 @@ export function codepointToEmoji(codepoint: string): string {
     .join("");
 }
 
-/** Pixel size for the icon box, read from the caller's Tailwind size class
- * (`h-4`/`h-5`/`h-6`). Callers only ever pass square sizes; default to 16px. */
+/** Pixel size for the icon box, read from the caller's Tailwind height class
+ * (`h-4`, `h-10`, …). Tailwind's spacing scale is 0.25rem per step (`h-N` =
+ * N×4px), so parse the number generically instead of enumerating sizes — that
+ * kept large emoji (h-10+) rendering at the 16px fallback. Callers only ever
+ * pass square sizes; default to 16px when no `h-N` class is present. */
 function iconSizePx(className?: string): number {
-  if (className?.includes("h-6")) return 24;
-  if (className?.includes("h-5")) return 20;
-  return 16;
+  const match = className?.match(/(?:^|\s)h-(\d+)(?:\s|$)/);
+  return match ? Number(match[1]) * 4 : 16;
 }

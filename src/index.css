@@ -1034,6 +1034,26 @@ body,
   background: var(--accent);
 }
 
+/* The note's own icon sits next to the H1-sized title, so it needs to be far
+   larger than the toolbar action buttons — a fixed 36px box (`.editor-icon-button`)
+   would clamp it. This one wraps its content and keeps a hover affordance. */
+.editor-title-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.editor-title-icon-button:hover {
+  background: var(--accent);
+}
+
 /* Pinned state of the editor's pin button (Phase 2 step 6). */
 .editor-icon-button.pinned {
   color: var(--primary);
