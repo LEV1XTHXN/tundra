@@ -441,8 +441,15 @@ export function NavTree({
                       >
                         {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
+                      <IconPicker
+                        onChange={(icon) => void patch(row.path, { icon: icon ?? undefined })}
+                        trigger={
+                          <button className="nav-folder-icon" title="Set folder icon" onClick={(e) => e.stopPropagation()}>
+                            <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
+                          </button>
+                        }
+                      />
                       <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
-                        <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
                         <span className="nav-row-label">{row.name}</span>
                       </button>
                     </div>
@@ -469,13 +476,9 @@ export function NavTree({
                           }
                         />
                       )}
-                      {(row.kind === "folder" || row.kind === "note") && (
+                      {row.kind === "note" && (
                         <IconPicker
-                          onChange={(icon) =>
-                            row.kind === "folder"
-                              ? void patch(row.path, { icon: icon ?? undefined })
-                              : onSetNoteIcon(row.id, icon)
-                          }
+                          onChange={(icon) => onSetNoteIcon(row.id, icon)}
                           trigger={
                             <button className="nav-row-action" title="Set icon" onClick={(e) => e.stopPropagation()}>
                               <Smile size={12} />

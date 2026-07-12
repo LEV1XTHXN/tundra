@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 
 import { config } from "@/services";
+import { ViewFrame } from "@/components/ViewFrame";
 import { CalendarWidget, PinnedWidget, QuickCaptureWidget, RecentWidget, type WidgetProps } from "./widgets";
 
 type WidgetId = "pinned" | "recent" | "quickCapture" | "calendar";
@@ -82,7 +83,13 @@ export function Home({
     [onError],
   );
 
-  if (widgets === null) return <div className="centered muted">Loading…</div>;
+  if (widgets === null) {
+    return (
+      <ViewFrame title="Home">
+        <div className="centered muted">Loading…</div>
+      </ViewFrame>
+    );
+  }
 
   const move = (index: number, delta: number) => {
     const target = index + delta;
@@ -97,23 +104,20 @@ export function Home({
 
   const widgetProps: WidgetProps = { vaultPath, refreshKey, onOpenNote, onError };
 
-  return (
-    <div className="home">
-      <div className="home-header">
-        <h1 className="home-title">Home</h1>
-        {available.length > 0 && (
-          <div className="home-add">
-            <span className="muted">Add widget:</span>
-            {available.map((w) => (
-              <button key={w.id} className="home-add-btn" onClick={() => add(w.id)}>
-                <Plus className="h-3.5 w-3.5" />
-                {w.title}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+  const addWidgetActions = available.length > 0 && (
+    <div className="home-add">
+      <span className="muted">Add widget:</span>
+      {available.map((w) => (
+        <button key={w.id} className="home-add-btn" onClick={() => add(w.id)}>
+          <Plus className="h-3.5 w-3.5" />
+          {w.title}
+        </button>
+      ))}
+    </div>
+  );
 
+  return (
+    <ViewFrame title="Home" actions={addWidgetActions || undefined}>
       {widgets.length === 0 ? (
         <div className="centered muted">No widgets — add one above.</div>
       ) : (
@@ -144,6 +148,6 @@ export function Home({
           ))}
         </div>
       )}
-    </div>
+    </ViewFrame>
   );
 }

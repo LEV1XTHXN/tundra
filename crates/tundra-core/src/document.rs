@@ -27,7 +27,7 @@ use crate::error::{CoreError, Result};
 pub const SCHEMA_VERSION: u32 = 2;
 
 /// A per-note icon: a Twemoji codepoint or a custom vector/image in the vault.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", content = "value", rename_all = "lowercase")]
 pub enum Icon {
     /// Twemoji codepoint string, e.g. `"1f331"`.

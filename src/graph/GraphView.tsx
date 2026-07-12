@@ -1,8 +1,8 @@
 /**
  * Graph view (Phase 2 step 4) — the whole vault's link structure as an
- * Obsidian-style node/edge graph. Notes are nodes (dots + labels, no per-note
- * icons); resolved `[[links]]` are directed edges. Data comes entirely through
- * `services` (the `links` module derives it in Rust); React never touches IPC.
+ * Obsidian-style node/edge graph. Notes are nodes (dots + labels); resolved
+ * `[[links]]` are directed edges. Data comes entirely through `services` (the
+ * `links` module derives it in Rust); React never touches IPC.
  *
  * Rendered with `sigma` + `graphology` (LOCKED, chosen for scale — CLAUDE.md §8.4)
  * driven IMPERATIVELY inside this effect via a ref, NOT a React wrapper: sigma
@@ -24,6 +24,7 @@ import { inferSettings } from "graphology-layout-forceatlas2";
 import { config, links } from "../services";
 import { useViewState } from "../store/viewState";
 import { useTheme } from "../store/theme";
+import { ViewFrame } from "@/components/ViewFrame";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
 import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
 
@@ -484,42 +485,49 @@ export function GraphView() {
   }, [resolvedTheme]);
 
   return (
-    <div className="graph-view">
-      {status === "empty" && (
-        <div className="centered muted">
-          No links yet — connect notes with <code>[[links]]</code> to see them here.
-        </div>
-      )}
-      {status === "error" && <div className="centered error">Couldn't load the graph: {error}</div>}
-      <div
-        ref={containerRef}
-        className="graph-canvas"
-        style={{ visibility: status === "ready" ? "visible" : "hidden" }}
-      />
-
-      {status === "ready" && !panelOpen && (
-        <button
-          className="graph-panel-toggle"
-          onClick={togglePanel}
-          title="Graph info & settings (Alt+I)"
-          aria-label="Open graph info panel"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </button>
-      )}
-
-      {status === "ready" && panelOpen && (
-        <GraphInfoPanel
-          stats={stats}
-          showLabels={showLabels}
-          nodeSizeScale={nodeSizeScale}
-          edgeLength={edgeLength}
-          onToggleLabels={onToggleLabels}
-          onNodeSize={onNodeSize}
-          onEdgeLength={onEdgeLength}
-          onClose={() => setPanelOpen(false)}
+    <ViewFrame
+      title="Graph"
+      fullBleed
+      actions={
+        status === "ready" &&
+        !panelOpen && (
+          <button
+            className="graph-panel-toggle"
+            onClick={togglePanel}
+            title="Graph info & settings (Alt+I)"
+            aria-label="Open graph info panel"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+        )
+      }
+    >
+      <div className="graph-view">
+        {status === "empty" && (
+          <div className="centered muted">
+            No links yet — connect notes with <code>[[links]]</code> to see them here.
+          </div>
+        )}
+        {status === "error" && <div className="centered error">Couldn't load the graph: {error}</div>}
+        <div
+          ref={containerRef}
+          className="graph-canvas"
+          style={{ visibility: status === "ready" ? "visible" : "hidden" }}
         />
-      )}
-    </div>
+
+        {status === "ready" && panelOpen && (
+          <GraphInfoPanel
+            stats={stats}
+            showLabels={showLabels}
+            nodeSizeScale={nodeSizeScale}
+            edgeLength={edgeLength}
+            onToggleLabels={onToggleLabels}
+            onNodeSize={onNodeSize}
+            onEdgeLength={onEdgeLength}
+            onClose={() => setPanelOpen(false)}
+          />
+        )}
+      </div>
+    </ViewFrame>
   );
 }

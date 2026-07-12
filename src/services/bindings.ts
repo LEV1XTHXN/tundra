@@ -104,7 +104,7 @@ export const commands = {
 	 *  The whole directed link graph (nodes = notes, edges = resolved links) for
 	 *  the graph view (Phase 2 step 2/4). Broken links are excluded.
 	 */
-	graphData: () => typedError<GraphData, CoreError>(__TAURI_INVOKE("graph_data")),
+	graphData: () => typedError<GraphData_Serialize, CoreError>(__TAURI_INVOKE("graph_data")),
 	/**
 	 *  Resolve note ids to their CURRENT summaries (title/icon) — for live link
 	 *  labels; ids that no longer resolve are omitted (the caller uses the stored
@@ -401,8 +401,23 @@ export type FolderNode_Serialize = {
  *  The whole link graph for the vault: every note as a node, resolved links as
  *  directed edges.
  */
-export type GraphData = {
-	nodes: GraphNode[],
+export type GraphData = GraphData_Serialize | GraphData_Deserialize;
+
+/**
+ *  The whole link graph for the vault: every note as a node, resolved links as
+ *  directed edges.
+ */
+export type GraphData_Deserialize = {
+	nodes: GraphNode_Deserialize[],
+	edges: GraphEdge[],
+};
+
+/**
+ *  The whole link graph for the vault: every note as a node, resolved links as
+ *  directed edges.
+ */
+export type GraphData_Serialize = {
+	nodes: GraphNode_Serialize[],
 	edges: GraphEdge[],
 };
 
@@ -416,9 +431,30 @@ export type GraphEdge = {
 };
 
 /**  A graph node — one note. */
-export type GraphNode = {
+export type GraphNode = GraphNode_Serialize | GraphNode_Deserialize;
+
+/**  A graph node — one note. */
+export type GraphNode_Deserialize = {
 	id: string,
 	title: string,
+	/**
+	 *  The note's own icon (set via the same picker as the nav tree) — carried
+	 *  through so the graph view can optionally render it in place of the
+	 *  default dot instead of re-deriving anything from the title.
+	 */
+	icon?: Icon | null,
+};
+
+/**  A graph node — one note. */
+export type GraphNode_Serialize = {
+	id: string,
+	title: string,
+	/**
+	 *  The note's own icon (set via the same picker as the nav tree) — carried
+	 *  through so the graph view can optionally render it in place of the
+	 *  default dot instead of re-deriving anything from the title.
+	 */
+	icon?: Icon | null,
 };
 
 /**  A per-note icon: a Twemoji codepoint or a custom vector/image in the vault. */
