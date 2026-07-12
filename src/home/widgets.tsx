@@ -5,7 +5,7 @@
  * `refreshKey` changes (the vault's notes changed). React renders; data via
  * services only.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -170,6 +170,31 @@ export function CalendarWidget({}: WidgetProps) {
     () => eachDayOfInterval({ start: gridStart, end: gridEnd }),
     [gridStartKey, gridEndKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const weeks = gridDays.length / 7;
+
+  // Size day cells to a square that fits BOTH the available width and height —
+  // whichever is the limiting dimension — so cells stay square yet the whole
+  // month is always visible without scrolling, at any widget size.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [cell, setCell] = useState(0);
+  const weeksRef = useRef(weeks);
+  weeksRef.current = weeks;
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const size = Math.min(el.clientWidth / 7, el.clientHeight / weeksRef.current);
+      setCell(Math.max(0, Math.floor(size)));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (el) setCell(Math.max(0, Math.floor(Math.min(el.clientWidth / 7, el.clientHeight / weeks))));
+  }, [weeks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,12 +228,16 @@ export function CalendarWidget({}: WidgetProps) {
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="mini-calendar-weekdays">
+      <div className="mini-calendar-weekdays" style={{ gridTemplateColumns: `repeat(7, ${cell}px)` }}>
         {WEEKDAYS_SHORT.map((w) => (
           <span key={w}>{w}</span>
         ))}
       </div>
-      <div className="mini-calendar-grid">
+      <div
+        className="mini-calendar-grid"
+        ref={gridRef}
+        style={{ gridTemplateColumns: `repeat(7, ${cell}px)`, gridAutoRows: `${cell}px` }}
+      >
         {gridDays.map((day) => {
           const key = format(day, "yyyy-MM-dd");
           const dim = !isSameMonth(day, cursor);
@@ -219,7 +248,7 @@ export function CalendarWidget({}: WidgetProps) {
               onClick={() => openCalendarOn(day)}
               title={format(day, "EEEE, MMM d, yyyy")}
             >
-              {format(day, "d")}
+              <span className="mini-calendar-daynum">{format(day, "d")}</span>
             </button>
           );
         })}

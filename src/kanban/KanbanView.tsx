@@ -25,7 +25,13 @@ import { config, kanban, notes as notesService } from "@/services";
 import type { KanbanBoard, KanbanColumn, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { ViewFrame } from "@/components/ViewFrame";
-import { TAG_PALETTE, tagChipStyle, useTagColors } from "@/store/tagColors";
+import {
+  TAG_PALETTE,
+  kanbanTagChipStyle,
+  tagChipStyle,
+  useKanbanTags,
+  useTagColors,
+} from "@/store/tagColors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -168,6 +174,20 @@ export function KanbanView({
   }, []);
 
   const board = useMemo(() => boards.find((b) => b.id === activeId) ?? null, [boards, activeId]);
+
+  // The Kanban view holds the authoritative board list, so it keeps the global
+  // Kanban-tag set live (columns/tags can change here). Chips elsewhere (the
+  // inspector) read that set to render Kanban tags distinctly.
+  useEffect(() => {
+    useKanbanTags.getState().setFromBoards(boards);
+  }, [boards]);
+
+  // Tags owned by *any* column on *any* board — a card's tag list mixes these
+  // (Kanban-managed) with plain tags, and only the former get the outline style.
+  const kanbanTagSet = useMemo(
+    () => new Set(boards.flatMap((b) => b.columns.map((c) => c.tag).filter((t): t is string => !!t))),
+    [boards],
+  );
 
   /** Apply a mutation's returned board list, keeping the active tab valid.
    *  `select: "last"` switches to the newest board (used after create). */
@@ -561,7 +581,11 @@ export function KanbanView({
                                       <span
                                         key={t}
                                         className="kanban-tag-chip small"
-                                        style={tagChipStyle(tagColors[t])}
+                                        style={
+                                          kanbanTagSet.has(t)
+                                            ? kanbanTagChipStyle(tagColors[t])
+                                            : tagChipStyle(tagColors[t])
+                                        }
                                       >
                                         #{t}
                                       </span>

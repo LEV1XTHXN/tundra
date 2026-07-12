@@ -18,9 +18,16 @@ import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
-import { appSettings, backup, notes, pickDirectory, spellcheck, templates } from "@/services";
+import { appSettings, backup, notes, pickDirectory, spellcheck, tags as tagsService, templates } from "@/services";
 import type { SpellLanguages } from "@/services";
 import { useTemplates } from "@/store/templates";
+import {
+  kanbanTagChipStyle,
+  tagChipStyle,
+  useKanbanTags,
+  useTagColors,
+  useVaultTags,
+} from "@/store/tagColors";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -31,19 +38,23 @@ interface SettingsDialogProps {
   /** Open a template for editing in the main pane (closes the dialog); the
    *  Templates section calls this for "New template" and "Edit". */
   onEditTemplate?: (id: string) => void;
+  /** Called after a tag is deleted vault-wide, so the app can refresh the note
+   *  tree/summaries (the open note's chips, nav, etc. reflect the removal). */
+  onTagsChanged?: () => void;
 }
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "keybindings", label: "Keybindings" },
   { id: "templates", label: "Templates" },
+  { id: "tags", label: "Tags" },
   { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
   { id: "maintenance", label: "Maintenance" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate, onTagsChanged }: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("keybindings");
 
   return (
@@ -69,6 +80,7 @@ export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate }
             {section === "appearance" && <AppearanceSection />}
             {section === "keybindings" && <KeybindingsSection />}
             {section === "templates" && <TemplatesSection onEditTemplate={onEditTemplate} />}
+            {section === "tags" && <TagsSection onChanged={onTagsChanged} />}
             {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
             {section === "maintenance" && <MaintenanceSection onCleaned={onCleaned} />}
@@ -131,6 +143,85 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Tags section: manage the vault's tags as first-class things (not per-note).
+ * Lists every tag in use; deleting one removes it from *every* note it's on
+ * (permanent, via `tags.delete`) and clears its color. Kanban-column tags are
+ * shown but not deletable here — they're owned by their board column.
+ */
+function TagsSection({ onChanged }: { onChanged?: () => void }) {
+  const vaultTags = useVaultTags((s) => s.tags);
+  const reloadVaultTags = useVaultTags((s) => s.load);
+  const tagColors = useTagColors((s) => s.colors);
+  const setTagColor = useTagColors((s) => s.setColor);
+  const kanbanTags = useKanbanTags((s) => s.tags);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const deleteTag = async (tag: string) => {
+    setError(null);
+    try {
+      await tagsService.delete(tag);
+      await setTagColor(tag, null); // the tag no longer exists — drop its color
+      await reloadVaultTags();
+      onChanged?.();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Tags</h3>
+      <p className="muted settings-section-desc">
+        Every tag in the vault. Deleting a tag removes it from all notes and can’t be undone.
+      </p>
+
+      {vaultTags.length === 0 ? (
+        <p className="muted">No tags yet — add tags to a note from its info panel.</p>
+      ) : (
+        <ul className="settings-taglist">
+          {vaultTags.map((t) => {
+            const isKanban = kanbanTags.has(t);
+            return (
+              <li key={t}>
+                <span
+                  className="settings-tag-chip"
+                  style={isKanban ? kanbanTagChipStyle(tagColors[t]) : tagChipStyle(tagColors[t])}
+                >
+                  #{t}
+                </span>
+                {isKanban ? (
+                  <span className="muted settings-tag-managed">Managed by a Kanban column</span>
+                ) : pending === t ? (
+                  <span className="settings-tag-confirm">
+                    <button className="settings-tag-danger" onClick={() => void deleteTag(t)}>
+                      Delete
+                    </button>
+                    <button onClick={() => setPending(null)}>Cancel</button>
+                  </span>
+                ) : (
+                  <button
+                    className="settings-tag-delete"
+                    onClick={() => setPending(t)}
+                    title={`Delete #${t} from all notes`}
+                    aria-label={`Delete tag ${t}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && <p className="error">{error}</p>}
     </div>
   );
 }

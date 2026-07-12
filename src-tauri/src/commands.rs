@@ -700,6 +700,48 @@ pub fn remove_note_tag(state: State<AppState>, id: String, tag: String) -> Resul
     reindex_tags(&state, &id)
 }
 
+/// Rename a tag everywhere it appears in the vault (`from` → `to`). Every note
+/// carrying the old tag is rewritten and reindexed so the `#tag` search + all
+/// chips reflect the new name immediately. A no-op if `to` is blank or unchanged.
+#[tauri::command]
+#[specta::specta]
+pub fn rename_tag(state: State<AppState>, from: String, to: String) -> Result<(), CoreError> {
+    let vault = current(&state)?;
+    let changed = vault.rename_tag(&from, &to)?;
+    let search = current_search(&state)?;
+    for id in changed {
+        if let Ok(note) = vault.read_note(&id) {
+            reindex_after_write(&vault, search.as_ref(), &note);
+        }
+    }
+    Ok(())
+}
+
+/// Every distinct tag used in the vault, sorted — the pool for tag suggestions
+/// and the settings tag manager.
+#[tauri::command]
+#[specta::specta]
+pub fn list_tags(state: State<AppState>) -> Result<Vec<String>, CoreError> {
+    Ok(current(&state)?.list_tags())
+}
+
+/// Delete a tag from the whole vault (permanent — removes it from every note that
+/// carries it, unlike `remove_note_tag` which only touches one note). Every
+/// affected note is reindexed so search + chips drop it immediately.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_tag(state: State<AppState>, tag: String) -> Result<(), CoreError> {
+    let vault = current(&state)?;
+    let changed = vault.delete_tag(&tag)?;
+    let search = current_search(&state)?;
+    for id in changed {
+        if let Ok(note) = vault.read_note(&id) {
+            reindex_after_write(&vault, search.as_ref(), &note);
+        }
+    }
+    Ok(())
+}
+
 // --- kanban (Phase 3+) --------------------------------------------------
 //
 // Every mutation returns the full, freshly-persisted board list so the frontend
@@ -1105,6 +1147,67 @@ mod tests {
         // Removing it clears the last tag hit.
         remove_note_tag(state.clone(), note.id.clone(), "chemistry".into()).expect("remove_note_tag");
         assert!(search_by_tag(state.clone(), "chemistry".into(), 10).unwrap().is_empty());
+    }
+
+    /// Renaming a tag must apply to *every* note carrying it (a global rename),
+    /// not fork a copy on one note — and the new name is searchable at once while
+    /// the old one stops matching everywhere.
+    #[test]
+    fn rename_tag_applies_across_all_notes() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        let a = create_note(state.clone(), "Leaf".into()).expect("create_note a");
+        let b = create_note(state.clone(), "Root".into()).expect("create_note b");
+        add_note_tag(state.clone(), a.id.clone(), "biology".into()).expect("tag a");
+        add_note_tag(state.clone(), b.id.clone(), "biology".into()).expect("tag b");
+        // b also carries the target name already — the rename must collapse the dup.
+        add_note_tag(state.clone(), b.id.clone(), "science".into()).expect("tag b science");
+
+        rename_tag(state.clone(), "biology".into(), "science".into()).expect("rename_tag");
+
+        // Old name gone everywhere; new name matches both notes.
+        assert!(search_by_tag(state.clone(), "biology".into(), 10).unwrap().is_empty());
+        let hits = search_by_tag(state.clone(), "science".into(), 10).unwrap();
+        assert_eq!(hits.len(), 2, "both notes should carry the renamed tag");
+
+        // No duplicate on b, and a now reads back with the new tag.
+        let vault = current(&state).unwrap();
+        assert_eq!(vault.read_note(&a.id).unwrap().meta.tags, vec!["science"]);
+        assert_eq!(vault.read_note(&b.id).unwrap().meta.tags, vec!["science"]);
+    }
+
+    /// `list_tags` reports every distinct tag in the vault; `delete_tag` drops a
+    /// tag from every note that carries it (permanent, vault-wide) and it stops
+    /// being listed or searchable.
+    #[test]
+    fn list_and_delete_tags_span_the_vault() {
+        let app = tauri::test::mock_builder()
+            .manage(temp_vault_state())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("failed to build mock app");
+        let state: State<AppState> = app.state();
+
+        let a = create_note(state.clone(), "Leaf".into()).expect("create a");
+        let b = create_note(state.clone(), "Root".into()).expect("create b");
+        add_note_tag(state.clone(), a.id.clone(), "biology".into()).expect("tag a");
+        add_note_tag(state.clone(), a.id.clone(), "science".into()).expect("tag a2");
+        add_note_tag(state.clone(), b.id.clone(), "biology".into()).expect("tag b");
+
+        // Distinct, sorted union across both notes.
+        assert_eq!(list_tags(state.clone()).unwrap(), vec!["biology", "science"]);
+
+        delete_tag(state.clone(), "biology".into()).expect("delete_tag");
+
+        // Gone from the listing and from both notes; search no longer matches it.
+        assert_eq!(list_tags(state.clone()).unwrap(), vec!["science"]);
+        assert!(search_by_tag(state.clone(), "biology".into(), 10).unwrap().is_empty());
+        let vault = current(&state).unwrap();
+        assert_eq!(vault.read_note(&a.id).unwrap().meta.tags, vec!["science"]);
+        assert!(vault.read_note(&b.id).unwrap().meta.tags.is_empty());
     }
 
     /// Phase 2 step 1 acceptance at the command boundary: importing an image

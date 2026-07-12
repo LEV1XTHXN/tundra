@@ -647,18 +647,36 @@ body,
   border-color: var(--primary);
 }
 
+/* Invisible resize grid: fixed columns/rows (set inline from JS) that stay
+   hidden until you drag a widget's bottom-right corner. */
 .home-widgets {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
+}
+/* Faint cell guides appear only while a resize drag is in progress. */
+.home-widgets.resizing {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: calc((100% + 1rem) / var(--home-cols, 1)) calc(var(--home-row, 200px) + 1rem);
+  background-position: -0.5rem -0.5rem;
+  opacity: 1;
 }
 
 .widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--card);
   overflow: hidden;
+}
+.widget.is-resizing {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
 }
 .widget-header {
   display: flex;
@@ -700,11 +718,48 @@ body,
   cursor: default;
 }
 .widget-body {
+  flex: 1;
+  min-height: 0;
   padding: 0.6rem;
+  overflow: auto;
+  /* Flex column so a widget can fill the body's height via flex-grow — more
+     reliable than percentage height on WebKitGTK (Tauri's Linux engine). */
+  display: flex;
+  flex-direction: column;
 }
 .widget-empty {
   font-size: 0.85rem;
   padding: 0.25rem;
+}
+
+/* Bottom-right corner grabber — the only visible bit of the invisible grid. */
+.widget-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 45%,
+      var(--muted-foreground) 45%,
+      var(--muted-foreground) 55%,
+      transparent 55%,
+      transparent 70%,
+      var(--muted-foreground) 70%,
+      var(--muted-foreground) 80%,
+      transparent 80%
+    );
+}
+.widget:hover .widget-resize,
+.widget.is-resizing .widget-resize {
+  opacity: 0.7;
 }
 
 .home-note-list {
@@ -773,6 +828,8 @@ body,
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  flex: 1;
+  min-height: 0;
 }
 .mini-calendar-header {
   display: flex;
@@ -801,6 +858,20 @@ body,
   display: grid;
   grid-template-columns: repeat(7, 1fr);
 }
+.mini-calendar-weekdays {
+  width: 100%;
+  justify-content: center;
+}
+/* The day grid fills the widget's remaining height; its square cells (sized in
+   JS to fit both width and height) are centred within it, so the whole month is
+   always visible without scrolling, whatever the widget's size. */
+.mini-calendar-grid {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  justify-content: center;
+  align-content: start;
+}
 .mini-calendar-weekdays span {
   text-align: center;
   font-size: 0.68rem;
@@ -810,7 +881,8 @@ body,
 }
 .mini-calendar-day {
   position: relative;
-  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -819,7 +891,7 @@ body,
   background: transparent;
   color: var(--foreground);
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
 }
 .mini-calendar-day:hover {
   background: var(--accent);
@@ -829,9 +901,27 @@ body,
   opacity: 0.55;
 }
 .mini-calendar-day.today {
-  background: var(--primary);
-  color: var(--primary-foreground);
   font-weight: 700;
+  color: var(--background);
+}
+/* Today is marked by a filled circle around just the number, not the whole
+   cell. The number (`.mini-calendar-daynum`) sits above the circle. */
+.mini-calendar-day.today::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 72%;
+  max-width: 2.2rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--foreground);
+  pointer-events: none;
+}
+.mini-calendar-daynum {
+  position: relative;
+  z-index: 1;
 }
 .mini-calendar-day.has-events::after {
   content: "";
@@ -2253,6 +2343,71 @@ body,
   color: var(--destructive);
 }
 
+/* Tags management list (reuses .settings-wordlist layout). */
+.settings-taglist {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.settings-taglist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+.settings-taglist li:hover {
+  background: var(--accent);
+}
+.settings-tag-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+.settings-tag-managed {
+  font-size: 0.75rem;
+}
+.settings-tag-delete {
+  display: inline-flex;
+  padding: 0.1rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.settings-tag-delete:hover {
+  color: var(--destructive);
+}
+.settings-tag-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.settings-tag-confirm button {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+}
+.settings-tag-confirm .settings-tag-danger {
+  background: var(--destructive);
+  border-color: var(--destructive);
+  color: var(--destructive-foreground, #fff);
+}
+
 /* Templates management list (reuses .settings-wordlist layout). */
 .settings-templatelist {
   max-height: 20rem;
@@ -2634,8 +2789,26 @@ body,
 .inspector-tag-remove:hover {
   color: var(--destructive);
 }
-.inspector-tag-add {
+.inspector-tag-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   margin-top: 0.15rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.inspector-tag-add-btn:hover {
+  color: var(--foreground);
+  border-color: var(--ring);
+}
+.inspector-tag-popover {
+  width: 15rem;
 }
 .inspector-tag-input {
   width: 100%;
@@ -2649,6 +2822,45 @@ body,
 .inspector-tag-input:focus {
   outline: none;
   border-color: var(--ring);
+}
+.inspector-tag-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  max-width: 13rem;
+}
+.inspector-tag-suggestions {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.inspector-tag-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+  color: var(--foreground);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.inspector-tag-suggestion:hover {
+  background: var(--accent);
+}
+.inspector-tag-suggestion-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  flex: 0 0 auto;
 }
 
 /* --- Kanban tag colors + column/tag editor (Phase 3+) ------------------ */
@@ -2723,6 +2935,12 @@ body,
 .inspector-color-popover {
   width: auto;
   padding: 0.6rem;
+}
+.inspector-tag-rename {
+  margin-bottom: 0.5rem;
+}
+.inspector-tag-rename .inspector-tag-input {
+  min-width: 11rem;
 }
 
 /* --- Kanban column reorder (Phase 3+) ---------------------------------- */

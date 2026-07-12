@@ -33,7 +33,7 @@ import { ViewFrame } from "./components/ViewFrame";
 import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
 import { useTheme } from "./store/theme";
-import { useTagColors } from "./store/tagColors";
+import { useTagColors, useKanbanTags, useVaultTags } from "./store/tagColors";
 import { useFolderViews } from "./store/folderViews";
 import { matchCommand, formatBinding } from "./keybindings/binding";
 import { SettingsDialog } from "./settings/SettingsDialog";
@@ -206,6 +206,19 @@ export default function App() {
   // Vault-scoped config, so it re-reads on switch rather than only on boot.
   useEffect(() => {
     if (vaultInfo) void useTagColors.getState().load();
+  }, [vaultInfo]);
+
+  // Load the set of Kanban-owned tags on vault change, so tag chips can render
+  // Kanban tags distinctly (pastel + colored outline) even before the Kanban
+  // view is opened. The Kanban view keeps this live as columns/tags change.
+  useEffect(() => {
+    if (vaultInfo) void useKanbanTags.getState().load();
+  }, [vaultInfo]);
+
+  // Load the full vault tag list on vault change — the pool for tag suggestions
+  // and the settings tag manager. Kept live by tag mutations (add/rename/delete).
+  useEffect(() => {
+    if (vaultInfo) void useVaultTags.getState().load();
   }, [vaultInfo]);
 
   // Load the per-folder view config (sorting + table schema) on vault change —
@@ -742,6 +755,7 @@ export default function App() {
         onOpenChange={setSettingsOpen}
         onCleaned={onVaultCleaned}
         onEditTemplate={onEditTemplateFromSettings}
+        onTagsChanged={() => void refreshTree()}
       />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>

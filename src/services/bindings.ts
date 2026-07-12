@@ -179,6 +179,23 @@ export const commands = {
 	addNoteTag: (id: string, tag: string) => typedError<null, CoreError>(__TAURI_INVOKE("add_note_tag", { id, tag })),
 	/**  Remove one tag from a note (exact match). */
 	removeNoteTag: (id: string, tag: string) => typedError<null, CoreError>(__TAURI_INVOKE("remove_note_tag", { id, tag })),
+	/**
+	 *  Rename a tag everywhere it appears in the vault (`from` → `to`). Every note
+	 *  carrying the old tag is rewritten and reindexed so the `#tag` search + all
+	 *  chips reflect the new name immediately. A no-op if `to` is blank or unchanged.
+	 */
+	renameTag: (from: string, to: string) => typedError<null, CoreError>(__TAURI_INVOKE("rename_tag", { from, to })),
+	/**
+	 *  Every distinct tag used in the vault, sorted — the pool for tag suggestions
+	 *  and the settings tag manager.
+	 */
+	listTags: () => typedError<string[], CoreError>(__TAURI_INVOKE("list_tags")),
+	/**
+	 *  Delete a tag from the whole vault (permanent — removes it from every note that
+	 *  carries it, unlike `remove_note_tag` which only touches one note). Every
+	 *  affected note is reindexed so search + chips drop it immediately.
+	 */
+	deleteTag: (tag: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_tag", { tag })),
 	/**  All Kanban boards (tab order). */
 	kanbanBoards: () => typedError<KanbanBoard_Serialize[], CoreError>(__TAURI_INVOKE("kanban_boards")),
 	/**  Create a board (seeded with To do / Doing / Done columns); returns all boards. */

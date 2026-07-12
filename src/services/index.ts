@@ -230,6 +230,12 @@ export const tags = {
   add: (id: string, tag: string): Promise<null> => unwrap(commands.addNoteTag(id, tag)),
   /** Remove one tag from a note (exact match). */
   remove: (id: string, tag: string): Promise<null> => unwrap(commands.removeNoteTag(id, tag)),
+  /** Rename a tag across the whole vault (every note carrying `from` gets `to`). */
+  rename: (from: string, to: string): Promise<null> => unwrap(commands.renameTag(from, to)),
+  /** Every distinct tag used in the vault, sorted. */
+  list: (): Promise<string[]> => unwrap(commands.listTags()),
+  /** Delete a tag from the whole vault (permanent — removed from every note). */
+  delete: (tag: string): Promise<null> => unwrap(commands.deleteTag(tag)),
 };
 
 /**
