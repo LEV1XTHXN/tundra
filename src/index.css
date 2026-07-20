@@ -11,6 +11,9 @@
    text). Placed after Inter so its face is registered; it slots in LAST in the
    font stack so only emoji fall through to it. See styles/twemoji.css. */
 @import "./styles/twemoji.css";
+/* OpenDyslexic — opt-in editor-content font for the Appearance > dyslexia
+   setting (Settings). See styles/open-dyslexic.css. */
+@import "./styles/open-dyslexic.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -1311,6 +1314,20 @@ body,
      bigger than the surrounding text WITHOUT enlarging the text. Everything else
      falls through to --app-font ('Inter'-first), so text is unchanged. */
   font-family: 'TwemojiText', var(--app-font);
+  /* Appearance > Font size (theme.ts applyEditorFontSize). BlockNote's own
+     default is 16px; the fallback here matches it so content looks right
+     before the store's `load()` sets the variable on <html>. Headings scale
+     off this via BlockNote's own em-based --level variables, so this single
+     property proportionally resizes all editor content, not just body text. */
+  font-size: var(--editor-font-size, 16px);
+}
+
+/* Appearance > Dyslexia-friendly font (theme.ts applyDyslexiaFont). Scoped to
+   editor CONTENT only (not app chrome), per the same compound-selector rule
+   as above — swaps in OpenDyslexic ahead of the normal text stack, emoji
+   still resolve to TwemojiText/Twemoji since neither name changes. */
+.dyslexia-font .editor-pane .bn-editor.bn-default-styles {
+  font-family: 'TwemojiText', 'OpenDyslexic', var(--app-font);
 }
 
 /* A note icon rendered as a Twemoji font glyph (NoteIcon.tsx). Box size + glyph

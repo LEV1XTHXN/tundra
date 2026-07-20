@@ -17,6 +17,7 @@ import type { AttachmentKind, Note } from "@/services";
 import { toInitialContent } from "@/editor/blockContent";
 import { createDebouncedFlush, type DebouncedFlush } from "@/editor/debouncedFlush";
 import { useTheme } from "@/store/theme";
+import { useActivity } from "@/store/activity";
 import { ViewFrame } from "@/components/ViewFrame";
 import { quickNoteSchema } from "./quickNoteSchema";
 
@@ -103,6 +104,7 @@ function LoadedQuickNote({
       await quickNote.save(updated);
       noteRef.current = updated;
       setSaveState("saved");
+      useActivity.getState().recordActivity();
     } catch (e) {
       onError(String(e));
     }

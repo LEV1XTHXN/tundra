@@ -20,13 +20,19 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
+import Graph from "graphology";
+import Sigma from "sigma";
+import FA2Layout from "graphology-layout-forceatlas2/worker";
+import { inferSettings } from "graphology-layout-forceatlas2";
 
-import { calendar, notes, quickNote } from "@/services";
+import { calendar, links, notes, quickNote, tags as tagsService } from "@/services";
 import type { Block, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
+import { useActivity } from "@/store/activity";
+import { useFolderGroups } from "@/store/folderGroups";
 
 const WEEKDAYS_SHORT = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const WEEK_STARTS_ON = 1;

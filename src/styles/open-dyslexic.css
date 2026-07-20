@@ -1,0 +1,32 @@
+/* Self-hosted OpenDyslexic (OFL-1.1, via @fontsource/opendyslexic). Files
+   copied verbatim into public/fonts/ so Vite serves them in dev and build
+   alike — see src/styles/inter-variable.css for why bare node_modules
+   specifiers don't work here. */
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('/fonts/open-dyslexic/opendyslexic-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 400;
+  src: url('/fonts/open-dyslexic/opendyslexic-latin-400-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('/fonts/open-dyslexic/opendyslexic-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 700;
+  src: url('/fonts/open-dyslexic/opendyslexic-latin-700-italic.woff2') format('woff2');
+}
