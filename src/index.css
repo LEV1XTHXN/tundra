@@ -937,6 +937,85 @@ body,
   opacity: 0.7;
 }
 
+/* Home dashboard's Storage widget — note/tag/group counts at a glance. */
+.storage-stats {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-around;
+  gap: 0.5rem;
+  text-align: center;
+}
+.storage-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.storage-stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.storage-stat-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Home dashboard's Streak widget — consecutive days logged in and editing. */
+.streak-widget {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+.streak-icon {
+  color: #f97316;
+}
+.streak-count {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.streak-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* Home dashboard's mini Graph widget — a small, non-interactive-camera preview
+ * of the vault link graph (graph/GraphView.tsx's full editor). */
+.mini-graph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.mini-graph-canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+.mini-graph-open {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+.mini-graph-open:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+
 /* Quick-note scratchpad (Phase 2 step 5) — a single trimmed capture surface.
    Reuses `.editor-pane` for consistent editor chrome; title/subtitle now come
    from ViewFrame. */

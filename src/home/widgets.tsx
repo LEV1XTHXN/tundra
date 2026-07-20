@@ -21,12 +21,8 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
-import Graph from "graphology";
-import Sigma from "sigma";
-import FA2Layout from "graphology-layout-forceatlas2/worker";
-import { inferSettings } from "graphology-layout-forceatlas2";
 
-import { calendar, links, notes, quickNote, tags as tagsService } from "@/services";
+import { calendar, notes, quickNote, tags as tagsService } from "@/services";
 import type { Block, NoteSummary } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
@@ -277,3 +273,64 @@ export function CalendarWidget({}: WidgetProps) {
     </div>
   );
 }
+
+/** Vault size at a glance: note/tag/group counts. Groups (sidebar folder
+ *  groupings, `store/folderGroups.ts`) are frontend-only UI state, so their
+ *  count comes straight from that store rather than a service call. */
+export function StorageWidget({ refreshKey }: WidgetProps) {
+  const [noteCount, setNoteCount] = useState<number | null>(null);
+  const [tagCount, setTagCount] = useState<number | null>(null);
+  const groupCount = useFolderGroups((s) => s.groups.length);
+
+  useEffect(() => {
+    let cancelled = false;
+    notes
+      .list()
+      .then((l) => {
+        if (!cancelled) setNoteCount(l.length);
+      })
+      .catch(() => {});
+    tagsService
+      .list()
+      .then((l) => {
+        if (!cancelled) setTagCount(l.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  return (
+    <div className="storage-stats">
+      <div className="storage-stat">
+        <span className="storage-stat-value">{noteCount ?? "–"}</span>
+        <span className="storage-stat-label">Notes</span>
+      </div>
+      <div className="storage-stat">
+        <span className="storage-stat-value">{tagCount ?? "–"}</span>
+        <span className="storage-stat-label">Tags</span>
+      </div>
+      <div className="storage-stat">
+        <span className="storage-stat-value">{groupCount}</span>
+        <span className="storage-stat-label">Groups</span>
+      </div>
+    </div>
+  );
+}
+
+/** Consecutive-day usage streak (`store/activity.ts`) — extended on every note
+ *  / quick-note save, so it reflects both "the app was open" and "a note was
+ *  edited" that day. Loaded once at app boot; this widget only reads it. */
+export function StreakWidget({}: WidgetProps) {
+  const currentStreak = useActivity((s) => s.currentStreak);
+  const loaded = useActivity((s) => s.loaded);
+  return (
+    <div className="streak-widget">
+      <Flame className="streak-icon h-8 w-8" />
+      <span className="streak-count">{loaded ? currentStreak : "–"}</span>
+      <span className="streak-label">day{currentStreak === 1 ? "" : "s"} in a row</span>
+    </div>
+  );
+}
+
