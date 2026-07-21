@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
-import { useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
+import { useTheme, type EditorFontSizePref, type ThemePref, type TimeFormatPref } from "@/store/theme";
 import { appSettings, backup, notes, pickDirectory, spellcheck, tags as tagsService, templates } from "@/services";
 import type { SpellLanguages } from "@/services";
 import { useTemplates } from "@/store/templates";
@@ -101,6 +101,10 @@ function AppearanceSection() {
   const setTimeFormat = useTheme((s) => s.setTimeFormat);
   const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   const setShowModifiedOnHover = useTheme((s) => s.setShowModifiedOnHover);
+  const editorFontSize = useTheme((s) => s.editorFontSize);
+  const setEditorFontSize = useTheme((s) => s.setEditorFontSize);
+  const dyslexiaFont = useTheme((s) => s.dyslexiaFont);
+  const setDyslexiaFont = useTheme((s) => s.setDyslexiaFont);
   const options: { id: ThemePref; label: string; desc: string }[] = [
     { id: "system", label: "System", desc: "Follow the operating system" },
     { id: "light", label: "Light", desc: "Always light" },
@@ -109,6 +113,12 @@ function AppearanceSection() {
   const timeOptions: { id: TimeFormatPref; label: string; desc: string }[] = [
     { id: "24h", label: "24-hour", desc: "13:00" },
     { id: "12h", label: "12-hour", desc: "1:00 PM" },
+  ];
+  const fontSizeOptions: { id: EditorFontSizePref; label: string; desc: string }[] = [
+    { id: "small", label: "Small", desc: "14px" },
+    { id: "medium", label: "Medium", desc: "16px" },
+    { id: "large", label: "Large", desc: "18px" },
+    { id: "xlarge", label: "Extra large", desc: "20px" },
   ];
   return (
     <div className="settings-section">
@@ -145,6 +155,33 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+
+      <h3 className="settings-section-title settings-section-title-spaced">Font size</h3>
+      <p className="muted settings-section-desc">Applies to note and quick-note content in the editor.</p>
+      <div className="settings-theme-options" role="radiogroup" aria-label="Font size">
+        {fontSizeOptions.map((o) => (
+          <button
+            key={o.id}
+            role="radio"
+            aria-checked={editorFontSize === o.id}
+            className={`settings-theme-option${editorFontSize === o.id ? " active" : ""}`}
+            onClick={() => setEditorFontSize(o.id)}
+          >
+            <span className="settings-theme-option-label">{o.label}</span>
+            <span className="muted settings-theme-option-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <h3 className="settings-section-title settings-section-title-spaced">Accessibility</h3>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={dyslexiaFont}
+          onChange={(e) => setDyslexiaFont(e.target.checked)}
+        />
+        Use a dyslexia-friendly font (OpenDyslexic) in the editor
+      </label>
 
       <h3 className="settings-section-title settings-section-title-spaced">Note hover</h3>
       <label className="settings-check">

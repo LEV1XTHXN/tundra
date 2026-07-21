@@ -7,14 +7,28 @@
  * `.vault/config/home.json` THROUGH RUST (`services.config`) — never
  * localStorage. React renders; all data + persistence go through `services`.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 
 import { config } from "@/services";
 import { ViewFrame } from "@/components/ViewFrame";
-import { CalendarWidget, PinnedWidget, QuickCaptureWidget, RecentWidget, type WidgetProps } from "./widgets";
+import {
+  CalendarWidget,
+  PinnedWidget,
+  QuickCaptureWidget,
+  RecentWidget,
+  StorageWidget,
+  StreakWidget,
+  type WidgetProps,
+} from "./widgets";
 
-type WidgetId = "pinned" | "recent" | "quickCapture" | "calendar";
+// Split out (like App.tsx's own `GraphView`) so `sigma`/`graphology` — a heavy
+// WebGL lib — aren't eagerly bundled into Home's landing-view chunk.
+const MiniGraphWidget = lazy(() =>
+  import("./MiniGraphWidget").then((m) => ({ default: m.MiniGraphWidget })),
+);
+
+type WidgetId = "pinned" | "recent" | "quickCapture" | "calendar" | "storage" | "streak" | "miniGraph";
 
 /** Widget span on the invisible grid, in whole cells. */
 interface WidgetSize {
@@ -48,9 +62,28 @@ const WIDGET_META: { id: WidgetId; title: string; render: (p: WidgetProps) => Re
   { id: "recent", title: "Recent", render: (p) => <RecentWidget {...p} /> },
   { id: "quickCapture", title: "Quick capture", render: (p) => <QuickCaptureWidget {...p} /> },
   { id: "calendar", title: "Calendar", render: (p) => <CalendarWidget {...p} /> },
+  { id: "storage", title: "Storage", render: (p) => <StorageWidget {...p} /> },
+  { id: "streak", title: "Streak", render: (p) => <StreakWidget {...p} /> },
+  {
+    id: "miniGraph",
+    title: "Graph",
+    render: (p) => (
+      <Suspense fallback={<div className="centered muted">Loading…</div>}>
+        <MiniGraphWidget {...p} />
+      </Suspense>
+    ),
+  },
 ];
 
-const DEFAULT_WIDGETS: WidgetId[] = ["pinned", "recent", "quickCapture", "calendar"];
+const DEFAULT_WIDGETS: WidgetId[] = [
+  "pinned",
+  "recent",
+  "quickCapture",
+  "calendar",
+  "storage",
+  "streak",
+  "miniGraph",
+];
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));

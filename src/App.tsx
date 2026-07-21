@@ -33,6 +33,7 @@ import { ViewFrame } from "./components/ViewFrame";
 import { useViewState, type AppView } from "./store/viewState";
 import { useKeybindings } from "./store/keybindings";
 import { useTheme } from "./store/theme";
+import { useActivity } from "./store/activity";
 import { useTagColors, useKanbanTags, useVaultTags } from "./store/tagColors";
 import { useFolderViews } from "./store/folderViews";
 import { matchCommand, formatBinding } from "./keybindings/binding";
@@ -200,6 +201,12 @@ export default function App() {
   // (not vault-scoped); toggles the `.dark` class on <html>.
   useEffect(() => {
     void useTheme.getState().load();
+  }, []);
+
+  // Load the persisted usage streak once on boot (Home dashboard's Streak
+  // widget). App-scoped, like keybindings/theme — see store/activity.ts.
+  useEffect(() => {
+    void useActivity.getState().load();
   }, []);
 
   // Load the vault's tag → color map whenever the open vault changes (Phase 3+).

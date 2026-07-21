@@ -20,6 +20,7 @@ import "@blocknote/shadcn/style.css";
 import { FileOpenButton } from "./FileOpenButton";
 
 import { attachments, notes, spellcheck, templates, watcher } from "@/services";
+import { useActivity } from "@/store/activity";
 import type { AttachmentKind, Banner, Icon, Note, NoteSummary } from "@/services";
 import { NoteBanner, BannerPicker, DEFAULT_BANNER } from "./NoteBanner";
 import { TemplatePicker } from "@/templates/TemplatePicker";
@@ -448,6 +449,8 @@ function LoadedNoteEditor({
       noteRef.current = updated;
       isDirtyRef.current = false;
       setSaveState("saved");
+      // Only real notes count toward the usage streak — not template edits.
+      if (persistence === NOTE_PERSISTENCE) useActivity.getState().recordActivity();
       onSaved?.();
     } catch (e) {
       onError(String(e));
