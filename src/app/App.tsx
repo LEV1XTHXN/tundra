@@ -28,7 +28,7 @@ import { useAppShortcuts } from "./hooks/useAppShortcuts";
 
 export default function App() {
   const { treeData, noteSummaries, refreshTree } = useVaultTree();
-  const { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault } =
+  const { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault } =
     useVaultSession(refreshTree);
   useAppStores(vaultInfo);
 
@@ -66,6 +66,8 @@ export default function App() {
         templateActions={templateActions}
         onSearch={() => setSearchOpen(true)}
         onSettings={() => setSettingsOpen(true)}
+        onSwitchVault={switchVault}
+        onError={setError}
       />
 
       <MainPane

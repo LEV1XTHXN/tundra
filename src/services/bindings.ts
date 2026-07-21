@@ -21,6 +21,19 @@ export const commands = {
 	/**  Absolute path to the vault root. */
 	path: string,
 } | null, CoreError>(__TAURI_INVOKE("current_vault")),
+	/**
+	 *  Every vault the user has opened or created, most-recently-opened first —
+	 *  the known-vaults registry (CLAUDE.md §5.1) backing the Settings vault
+	 *  switcher. Switching to one of these is just `open_vault` with its path.
+	 */
+	listKnownVaults: () => typedError<VaultInfo[], CoreError>(__TAURI_INVOKE("list_known_vaults")),
+	/**
+	 *  Remove `path` from the known-vaults registry ONLY — the vault's files on
+	 *  disk are never touched. Use this to declutter the switcher after moving a
+	 *  vault or abandoning one; to actually delete a vault, remove its folder
+	 *  outside the app first.
+	 */
+	forgetVault: (path: string) => typedError<null, CoreError>(__TAURI_INVOKE("forget_vault", { path })),
 	listNotes: () => typedError<NoteSummary_Serialize[], CoreError>(__TAURI_INVOKE("list_notes")),
 	createNote: (title: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("create_note", { title })),
 	/**

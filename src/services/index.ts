@@ -91,10 +91,17 @@ export const vault = {
   defaultPath: (): Promise<string> => unwrap(commands.defaultVaultPath()),
   /** The last opened vault path, or `null` if the user must onboard. */
   last: (): Promise<string | null> => unwrap(commands.lastVault()),
-  /** Open or create a vault at `path`, and remember it. */
+  /** Open or create a vault at `path`, and remember it. Also how you SWITCH
+   *  vaults — there's no separate "switch" command, just open a different path. */
   open: (path: string): Promise<VaultInfo> => unwrap(commands.openVault(path)),
   /** The currently open vault, or `null`. */
   current: (): Promise<VaultInfo | null> => unwrap(commands.currentVault()),
+  /** Every vault ever opened/created, most-recently-opened first (CLAUDE.md
+   *  §5.1's known-vaults registry) — backs the Settings vault switcher. */
+  listKnown: (): Promise<VaultInfo[]> => unwrap(commands.listKnownVaults()),
+  /** Remove a vault from the known-vaults list ONLY — its files on disk are
+   *  never touched. */
+  forget: (path: string): Promise<null> => unwrap(commands.forgetVault(path)),
 };
 
 /** Note CRUD against the open vault. */
@@ -507,12 +514,15 @@ export const backup = {
   run: (destDir: string): Promise<string> => unwrap(commands.backupVault(destDir)),
 };
 
-/** Native folder picker for onboarding — OS access via the Tauri dialog plugin. */
-export async function pickVaultFolder(): Promise<string | null> {
+/** Native folder picker for onboarding AND the vault switcher (open an
+ *  existing vault elsewhere, or pick/create the folder for a new one — the
+ *  OS picker's own "new folder" action covers "create", so both flows share
+ *  this one dialog, distinguished only by `title`). */
+export async function pickVaultFolder(title = "Choose a vault folder"): Promise<string | null> {
   const selected = await openFolderDialog({
     directory: true,
     multiple: false,
-    title: "Choose a vault folder",
+    title,
   });
   return typeof selected === "string" ? selected : null;
 }

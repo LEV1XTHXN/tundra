@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { pickVaultFolder, vault } from "@/services";
 import type { NoteSummary, VaultInfo } from "@/services";
 import { errorMessage } from "@/lib/errorMessage";
+import { useViewState } from "@/store/viewState";
+import { useKnownVaults } from "@/store/knownVaults";
 
 export interface VaultSession {
   vaultInfo: VaultInfo | null;
@@ -10,6 +12,10 @@ export interface VaultSession {
   setError: (msg: string | null) => void;
   onChooseFolder: () => Promise<void>;
   onUseDefault: () => Promise<void>;
+  /** Open (or create) the vault at `path` and make it the active one — used
+   *  by onboarding AND by the vault switcher to switch to a known/new vault.
+   *  There's no separate "switch" command: `open_vault` already does it. */
+  switchVault: (path: string) => Promise<void>;
 }
 
 /**
@@ -26,13 +32,21 @@ export function useVaultSession(
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const openVaultAt = useCallback(
+  const switchVault = useCallback(
     async (path: string) => {
       setError(null);
       try {
         const info = await vault.open(path);
         setVaultInfo(info);
+        // A different vault's notes/folders/templates have nothing to do with
+        // whatever the previous vault had open — land back on Home rather
+        // than pointing at now-meaningless ids.
+        useViewState.getState().resetForVaultSwitch();
         await refreshTree();
+        // This vault just moved to the front of the known-vaults registry
+        // (open_vault does that server-side) — refresh so the switcher/
+        // Settings list reflects it immediately.
+        void useKnownVaults.getState().refresh();
       } catch (e) {
         setError(errorMessage(e));
       }
@@ -55,6 +69,7 @@ export function useVaultSession(
           const info = await vault.open(last);
           setVaultInfo(info);
           await refreshTree();
+          void useKnownVaults.getState().refresh();
         }
       } catch (e) {
         setError(errorMessage(e));
@@ -66,16 +81,16 @@ export function useVaultSession(
 
   const onChooseFolder = useCallback(async () => {
     const path = await pickVaultFolder();
-    if (path) await openVaultAt(path);
-  }, [openVaultAt]);
+    if (path) await switchVault(path);
+  }, [switchVault]);
 
   const onUseDefault = useCallback(async () => {
     try {
-      await openVaultAt(await vault.defaultPath());
+      await switchVault(await vault.defaultPath());
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [openVaultAt]);
+  }, [switchVault]);
 
-  return { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault };
+  return { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault };
 }

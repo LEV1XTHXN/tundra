@@ -260,11 +260,135 @@ body,
 }
 
 .vault-name {
+  display: block;
+  width: 100%;
+  font: inherit;
   font-weight: 600;
+  text-align: left;
+  border: none;
+  background: none;
+  color: var(--foreground);
   padding: 0.25rem 0.4rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.vault-name:hover {
+  background: var(--accent);
+}
+
+/* Vault switcher popover (VaultSwitcher.tsx), anchored to the sidebar's
+   vault-name button. Lists every known vault; switching is just re-opening a
+   different path, so this doubles as "open elsewhere" / "create new". */
+.vault-switcher-popover {
+  width: 20rem;
+}
+.vault-switcher-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  padding: 0 0.2rem;
+}
+.vault-switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.vault-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  border-radius: var(--radius-sm);
+}
+.vault-switcher-item:hover {
+  background: var(--accent);
+}
+.vault-switcher-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 0.35rem 0.3rem;
+  cursor: pointer;
+  color: var(--foreground);
+}
+.vault-switcher-item-check {
+  display: inline-flex;
+  width: 1rem;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.vault-switcher-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vault-switcher-item-name {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-switcher-item-path {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-switcher-item-forget {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-right: 0.2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.vault-switcher-item-forget:hover {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+.vault-switcher-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+.vault-switcher-actions button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  padding: 0.35rem 0.3rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.vault-switcher-actions button:hover:not(:disabled) {
+  background: var(--accent);
+}
+.vault-switcher-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Top-level view switcher — a vertical icon+label list (Home / Notes / Graph /

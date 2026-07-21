@@ -106,12 +106,9 @@ pub fn open_vault(
     *state.calendar.lock().unwrap() = Some(calendar);
     *state.kanban.lock().unwrap() = Some(kanban);
     *state.spellcheck.lock().unwrap() = Some(spellcheck);
-    save_config(
-        &app,
-        &AppConfig {
-            last_vault: Some(info.path.clone()),
-        },
-    )?;
+    let mut cfg = load_config(&app);
+    apply_remember(&mut cfg, &info);
+    save_config(&app, &cfg)?;
     Ok(info)
 }
 
@@ -120,4 +117,25 @@ pub fn open_vault(
 #[specta::specta]
 pub fn current_vault(state: State<AppState>) -> Result<Option<VaultInfo>, CoreError> {
     Ok(state.vault.lock().unwrap().as_ref().map(|v| v.info()))
+}
+
+/// Every vault the user has opened or created, most-recently-opened first —
+/// the known-vaults registry (CLAUDE.md §5.1) backing the Settings vault
+/// switcher. Switching to one of these is just `open_vault` with its path.
+#[tauri::command]
+#[specta::specta]
+pub fn list_known_vaults(app: AppHandle) -> Result<Vec<VaultInfo>, CoreError> {
+    Ok(load_config(&app).known_vaults)
+}
+
+/// Remove `path` from the known-vaults registry ONLY — the vault's files on
+/// disk are never touched. Use this to declutter the switcher after moving a
+/// vault or abandoning one; to actually delete a vault, remove its folder
+/// outside the app first.
+#[tauri::command]
+#[specta::specta]
+pub fn forget_vault(app: AppHandle, path: String) -> Result<(), CoreError> {
+    let mut cfg = load_config(&app);
+    apply_forget(&mut cfg, &path);
+    save_config(&app, &cfg)
 }

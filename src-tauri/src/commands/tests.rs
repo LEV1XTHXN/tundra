@@ -308,3 +308,50 @@ fn links_backlinks_graph_and_rename_through_commands() {
     let resolved = resolve_titles(state.clone(), vec![target.id.clone()]).expect("resolve");
     assert_eq!(resolved[0].title, "Renamed Target");
 }
+
+/// `apply_remember` is the pure list-manipulation core of `open_vault`'s
+/// known-vaults bookkeeping (kept IO-free so it's testable without touching
+/// the real app-config dir). A never-seen vault is prepended; re-opening an
+/// already-known one (even under a refreshed name, e.g. the folder was
+/// renamed on disk) moves it to the front instead of duplicating it.
+#[test]
+fn remember_vault_dedupes_by_path_and_moves_to_front() {
+    let mut cfg = AppConfig::default();
+    let a = VaultInfo { name: "Alpha".into(), path: "/vaults/a".into() };
+    let b = VaultInfo { name: "Beta".into(), path: "/vaults/b".into() };
+
+    apply_remember(&mut cfg, &a);
+    apply_remember(&mut cfg, &b);
+    assert_eq!(cfg.known_vaults.iter().map(|v| v.path.clone()).collect::<Vec<_>>(),
+        vec!["/vaults/b", "/vaults/a"]);
+    assert_eq!(cfg.last_vault.as_deref(), Some("/vaults/b"));
+
+    // Re-opening `a` (renamed on disk) moves it to the front and updates its
+    // stored name, without duplicating the entry.
+    let a_renamed = VaultInfo { name: "Alpha2".into(), path: "/vaults/a".into() };
+    apply_remember(&mut cfg, &a_renamed);
+    assert_eq!(cfg.known_vaults.len(), 2);
+    assert_eq!(cfg.known_vaults[0].path, "/vaults/a");
+    assert_eq!(cfg.known_vaults[0].name, "Alpha2");
+    assert_eq!(cfg.last_vault.as_deref(), Some("/vaults/a"));
+}
+
+/// `apply_forget` drops a vault from the registry and clears `last_vault`
+/// only when it pointed at the forgotten path — forgetting a vault that
+/// isn't the last-open one must leave `last_vault` alone.
+#[test]
+fn forget_vault_clears_last_vault_only_when_it_matches() {
+    let mut cfg = AppConfig::default();
+    let a = VaultInfo { name: "Alpha".into(), path: "/vaults/a".into() };
+    let b = VaultInfo { name: "Beta".into(), path: "/vaults/b".into() };
+    apply_remember(&mut cfg, &a);
+    apply_remember(&mut cfg, &b); // last_vault is now "/vaults/b"
+
+    apply_forget(&mut cfg, "/vaults/a");
+    assert_eq!(cfg.known_vaults.iter().map(|v| v.path.clone()).collect::<Vec<_>>(), vec!["/vaults/b"]);
+    assert_eq!(cfg.last_vault.as_deref(), Some("/vaults/b"), "forgetting a non-last vault keeps last_vault");
+
+    apply_forget(&mut cfg, "/vaults/b");
+    assert!(cfg.known_vaults.is_empty());
+    assert_eq!(cfg.last_vault, None, "forgetting the last-open vault clears last_vault");
+}

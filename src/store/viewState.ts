@@ -66,6 +66,12 @@ interface ViewState {
   setCalendarTarget: (date: Date | null) => void;
   /** Set the target day and switch to the Calendar view in one step. */
   openCalendarOn: (date: Date) => void;
+
+  /** Clear every reference to the PREVIOUS vault's notes/folders (open note,
+   *  expanded folders, folder-table path, template-edit id, calendar target)
+   *  and land back on Home — called when switching to a different vault, so
+   *  none of those now-meaningless ids linger into the new one. */
+  resetForVaultSwitch: () => void;
 }
 
 export const useViewState = create<ViewState>((set) => ({
@@ -106,4 +112,14 @@ export const useViewState = create<ViewState>((set) => ({
   calendarTarget: null,
   setCalendarTarget: (date) => set({ calendarTarget: date }),
   openCalendarOn: (date) => set({ calendarTarget: date, view: "calendar" }),
+
+  resetForVaultSwitch: () =>
+    set({
+      view: "home",
+      openNoteId: null,
+      folderViewPath: null,
+      templateEditId: null,
+      expandedFolders: new Set(),
+      calendarTarget: null,
+    }),
 }));

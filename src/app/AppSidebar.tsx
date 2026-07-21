@@ -4,6 +4,7 @@ import { SidebarSections } from "@/nav/SidebarSections";
 import { useViewState } from "@/store/viewState";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { SidebarActions } from "./SidebarActions";
+import { VaultSwitcher } from "./VaultSwitcher";
 import type { NoteActions } from "./hooks/useNoteActions";
 import type { Deletion } from "./hooks/useDeletion";
 import type { CreationDialogs } from "./hooks/useCreationDialogs";
@@ -18,6 +19,10 @@ interface AppSidebarProps {
   templateActions: TemplateActions;
   onSearch: () => void;
   onSettings: () => void;
+  /** Switch to a different (known, opened-elsewhere, or brand-new) vault —
+   *  from `useVaultSession`; the vault-name switcher's only entry point. */
+  onSwitchVault: (path: string) => Promise<void>;
+  onError: (message: string) => void;
 }
 
 /**
@@ -35,6 +40,8 @@ export function AppSidebar({
   templateActions,
   onSearch,
   onSettings,
+  onSwitchVault,
+  onError,
 }: AppSidebarProps) {
   const openNoteId = useViewState((s) => s.openNoteId);
   const expandedFolders = useViewState((s) => s.expandedFolders);
@@ -46,9 +53,7 @@ export function AppSidebar({
 
   return (
     <aside className="sidebar">
-      <div className="vault-name" title={vaultInfo.path}>
-        {vaultInfo.name}
-      </div>
+      <VaultSwitcher vaultInfo={vaultInfo} onSwitch={onSwitchVault} onError={onError} />
       <ViewSwitcher />
       <SidebarActions
         onSearch={onSearch}

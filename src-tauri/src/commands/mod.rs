@@ -26,6 +26,31 @@ use crate::AppState;
 #[serde(rename_all = "camelCase")]
 struct AppConfig {
     last_vault: Option<String>,
+    /// Every vault the user has opened or created, across launches — the
+    /// "list of known vaults" (CLAUDE.md §5.1) backing the Settings vault
+    /// switcher. Most-recently-opened first; deduped by path.
+    #[serde(default)]
+    known_vaults: Vec<VaultInfo>,
+}
+
+/// Record `info` as the last-open vault and move it to the front of the
+/// known-vaults list, deduped by path (re-opening an already-known vault
+/// refreshes its stored name too, in case the folder was renamed on disk).
+/// Pure — no IO — so it's unit-testable without touching the app-config dir.
+fn apply_remember(cfg: &mut AppConfig, info: &VaultInfo) {
+    cfg.known_vaults.retain(|v| v.path != info.path);
+    cfg.known_vaults.insert(0, info.clone());
+    cfg.last_vault = Some(info.path.clone());
+}
+
+/// Drop `path` from the known-vaults list ONLY — never touches the vault's
+/// files on disk. Also clears `last_vault` if it pointed at the forgotten
+/// vault, so a relaunch doesn't try to reopen it. Pure — no IO.
+fn apply_forget(cfg: &mut AppConfig, path: &str) {
+    cfg.known_vaults.retain(|v| v.path != path);
+    if cfg.last_vault.as_deref() == Some(path) {
+        cfg.last_vault = None;
+    }
 }
 
 fn config_path(app: &AppHandle) -> Result<std::path::PathBuf, CoreError> {

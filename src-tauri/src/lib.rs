@@ -52,6 +52,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::last_vault,
             commands::open_vault,
             commands::current_vault,
+            commands::list_known_vaults,
+            commands::forget_vault,
             commands::list_notes,
             commands::create_note,
             commands::create_note_in,
