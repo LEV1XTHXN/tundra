@@ -35,6 +35,21 @@ impl Vault {
         self.import_attachment(AttachmentKind::Image, &file_name, &bytes)
     }
 
+    /// Copy an attachment from an arbitrary path on disk — the vault-import
+    /// pipeline's source folder, not a browser `File` — into the
+    /// content-addressed library, by caller-chosen `kind`. Same "read here so
+    /// FS access stays in the core" shape as `import_banner`, generalized past
+    /// a hardcoded `Image` kind so the import pipeline can copy images, videos,
+    /// and other files alike.
+    pub fn import_attachment_from_path(&self, kind: AttachmentKind, src_path: &Path) -> Result<String> {
+        let bytes = fs::read(src_path)?;
+        let file_name = src_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "file".to_string());
+        self.import_attachment(kind, &file_name, &bytes)
+    }
+
     /// Import an attachment by **content** (Phase 2 step 1): hash the bytes with
     /// blake3, store them at `attachments/<kind>/<aa>/<hash>.<ext>` — sharded by
     /// the first two hex chars of the hash — and return the path relative to the

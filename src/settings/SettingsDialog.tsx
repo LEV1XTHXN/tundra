@@ -41,6 +41,9 @@ interface SettingsDialogProps {
   /** Called after a tag is deleted vault-wide, so the app can refresh the note
    *  tree/summaries (the open note's chips, nav, etc. reflect the removal). */
   onTagsChanged?: () => void;
+  /** Open the "Import from Obsidian" flow (closes this dialog first — it
+   *  needs the full window, same pattern as `onEditTemplate`). */
+  onOpenImport?: () => void;
 }
 
 const SECTIONS = [
@@ -50,11 +53,19 @@ const SECTIONS = [
   { id: "tags", label: "Tags" },
   { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
+  { id: "import", label: "Import" },
   { id: "maintenance", label: "Maintenance" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate, onTagsChanged }: SettingsDialogProps) {
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  onCleaned,
+  onEditTemplate,
+  onTagsChanged,
+  onOpenImport,
+}: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("keybindings");
 
   return (
@@ -83,6 +94,7 @@ export function SettingsDialog({ open, onOpenChange, onCleaned, onEditTemplate, 
             {section === "tags" && <TagsSection onChanged={onTagsChanged} />}
             {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
+            {section === "import" && <ImportSection onOpenImport={onOpenImport} />}
             {section === "maintenance" && <MaintenanceSection onCleaned={onCleaned} />}
           </div>
         </div>
@@ -434,6 +446,28 @@ function BackupSection() {
         </p>
       )}
       {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Import section (step 1 of the multi-app import feature): the entry point
+ * for `import/ImportDialog.tsx`. Always imports into a NEW, empty vault —
+ * the dialog itself owns that flow; this section is just the launch button.
+ */
+function ImportSection({ onOpenImport }: { onOpenImport?: () => void }) {
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">Import</h3>
+      <p className="muted settings-section-desc">
+        Bring notes in from another app. Always imports into a new, empty vault — your
+        currently open vault is never touched or merged into.
+      </p>
+      <div className="settings-actions">
+        <Button size="sm" onClick={() => onOpenImport?.()}>
+          Import from Obsidian…
+        </Button>
+      </div>
     </div>
   );
 }

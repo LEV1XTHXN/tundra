@@ -567,6 +567,30 @@ fn import_banner_reads_from_disk_into_content_addressed_images() {
 }
 
 #[test]
+fn import_attachment_from_path_reads_disk_bytes_by_kind() {
+    let (vault, dir) = temp_vault();
+
+    let src_dir = std::env::temp_dir().join(format!("tundra-import-attach-src-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&src_dir).unwrap();
+    let src = src_dir.join("diagram.png");
+    fs::write(&src, b"pretend png bytes").unwrap();
+
+    let rel = vault.import_attachment_from_path(AttachmentKind::Image, &src).unwrap();
+    assert!(rel.starts_with("attachments/images/"));
+    assert!(rel.ends_with(".png"));
+    assert!(dir.join(&rel).exists());
+    assert_eq!(fs::read(dir.join(&rel)).unwrap(), b"pretend png bytes");
+
+    // Same content-addressing guarantee as import_attachment: re-copying the
+    // same source file dedupes to the identical path.
+    let rel2 = vault.import_attachment_from_path(AttachmentKind::Image, &src).unwrap();
+    assert_eq!(rel, rel2);
+
+    std::fs::remove_dir_all(&src_dir).ok();
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn import_attachment_is_content_addressed_sharded_and_dedupes() {
     let (vault, dir) = temp_vault();
 

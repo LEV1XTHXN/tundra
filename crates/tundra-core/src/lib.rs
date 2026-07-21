@@ -9,6 +9,7 @@ pub mod backup;
 pub mod calendar;
 pub mod document;
 pub mod error;
+pub mod import;
 pub mod index;
 pub mod kanban;
 pub mod links;
@@ -17,6 +18,7 @@ pub mod vault;
 pub mod watcher;
 
 pub use calendar::{range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry};
+pub use import::SourceFile;
 pub use kanban::{KanbanBoard, KanbanColumn, KanbanStore};
 pub use spellcheck::{Misspelling, SpellChecker};
 pub use document::{Banner, Block, Icon, Note, NoteMeta, NoteSummary, SCHEMA_VERSION};

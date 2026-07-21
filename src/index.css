@@ -2508,6 +2508,34 @@ body,
   word-break: break-all;
 }
 
+/* Import report (import/ImportDialog.tsx) — the final tally after an
+   Obsidian import: counts up top, expandable detail lists below. */
+.import-report-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+.import-report details {
+  margin-top: 0.5rem;
+}
+.import-report summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+.import-report-detail {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
 /* --- Spellcheck (Phase 3 step 5) ------------------------------------- */
 .spellcheck-error {
   text-decoration: underline wavy var(--destructive);

@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { SearchPalette } from "@/search/SearchPalette";
 import { SettingsDialog } from "@/settings/SettingsDialog";
+import { ImportDialog } from "@/import/ImportDialog";
 import { useViewState } from "@/store/viewState";
 import { Onboarding } from "./Onboarding";
 import { AppSidebar } from "./AppSidebar";
@@ -36,6 +37,7 @@ export default function App() {
   const [editorRefreshToken, bumpEditor] = useEditorRefresh();
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const noteActions = useNoteActions({ refreshTree, setError, bumpEditor });
   const creation = useCreationDialogs({ refreshTree, setError });
@@ -91,6 +93,17 @@ export default function App() {
         onCleaned={noteActions.onVaultCleaned}
         onEditTemplate={templateActions.onEditTemplateFromSettings}
         onTagsChanged={() => void refreshTree()}
+        onOpenImport={() => {
+          setSettingsOpen(false);
+          setImportOpen(true);
+        }}
+      />
+
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onSwitchVault={switchVault}
+        onImported={() => void refreshTree()}
       />
 
       <DeleteConfirmDialog

@@ -32,8 +32,9 @@ export type {
   CalendarRange,
   Misspelling,
   SpellLanguages,
+  SourceFile,
 } from "./bindings";
-import type { AttachmentKind } from "./bindings";
+import type { AttachmentKind, SourceFile } from "./bindings";
 import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 import type { Event, NoteDate, CalendarRange } from "./bindings";
@@ -102,6 +103,25 @@ export const vault = {
   /** Remove a vault from the known-vaults list ONLY — its files on disk are
    *  never touched. */
   forget: (path: string): Promise<null> => unwrap(commands.forgetVault(path)),
+};
+
+/**
+ * Import-source filesystem primitives (the `import` pipeline's Rust half —
+ * see `src/import/pipeline.ts`). Reads an arbitrary folder the user picked
+ * (e.g. an Obsidian vault) — never the currently open Tundra vault. No
+ * Markdown parsing happens here or in Rust; that's BlockNote's job on the
+ * frontend (CLAUDE.md's locked rule).
+ */
+export const sourceImport = {
+  /** Every file under `path`, recursively (dotfiles/dot-dirs excluded) —
+   *  the adapter classifies each into note/attachment/skip. */
+  scanFolder: (path: string): Promise<SourceFile[]> => unwrap(commands.importScanFolder(path)),
+  /** A source file's raw text, by absolute path. */
+  readTextFile: (path: string): Promise<string> => unwrap(commands.importReadTextFile(path)),
+  /** Copy one attachment from the source into the currently open (destination)
+   *  vault's content-addressed library, returning its new vault-relative path. */
+  copyAttachment: (kind: AttachmentKind, srcPath: string): Promise<string> =>
+    unwrap(commands.importCopyAttachment(kind, srcPath)),
 };
 
 /** Note CRUD against the open vault. */

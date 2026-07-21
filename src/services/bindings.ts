@@ -34,6 +34,26 @@ export const commands = {
 	 *  outside the app first.
 	 */
 	forgetVault: (path: string) => typedError<null, CoreError>(__TAURI_INVOKE("forget_vault", { path })),
+	/**
+	 *  List every file under an arbitrary source folder (e.g. an Obsidian vault
+	 *  the user picked via the native folder dialog) — pure FS read, no vault
+	 *  involved. The frontend adapter classifies each entry into note/attachment/
+	 *  skip; this command only ever enumerates.
+	 */
+	importScanFolder: (path: string) => typedError<SourceFile[], CoreError>(__TAURI_INVOKE("import_scan_folder", { path })),
+	/**
+	 *  Read one source file's raw text (a note's Markdown, before any conversion)
+	 *  by absolute path. Never parses Markdown — that's BlockNote's job on the
+	 *  frontend (CLAUDE.md's locked rule).
+	 */
+	importReadTextFile: (path: string) => typedError<string, CoreError>(__TAURI_INVOKE("import_read_text_file", { path })),
+	/**
+	 *  Copy one attachment from the import source into the currently open vault
+	 *  (the import pipeline's destination — always a fresh vault opened via the
+	 *  existing multi-vault flow before import runs), returning its new
+	 *  vault-relative path for the note block that will embed it.
+	 */
+	importCopyAttachment: (kind: AttachmentKind, srcPath: string) => typedError<string, CoreError>(__TAURI_INVOKE("import_copy_attachment", { kind, srcPath })),
 	listNotes: () => typedError<NoteSummary_Serialize[], CoreError>(__TAURI_INVOKE("list_notes")),
 	createNote: (title: string) => typedError<Note_Serialize, CoreError>(__TAURI_INVOKE("create_note", { title })),
 	/**
@@ -859,6 +879,16 @@ export type SearchHit = {
 	id: string,
 	title: string,
 	snippet: string,
+};
+
+/**  One file found under a scanned source folder. */
+export type SourceFile = {
+	/**
+	 *  Path relative to the scanned root, forward-slash separated (portable
+	 *  across platforms) — what an adapter classifies and later re-joins
+	 *  under the destination vault's `notes/` root to preserve nesting.
+	 */
+	rel_path: string,
 };
 
 /**  The available (bundled) vs. currently-enabled spellcheck languages. */
