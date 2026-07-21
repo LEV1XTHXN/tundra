@@ -1,72 +1,41 @@
 /**
- * Phase 1 step 4: the real BlockNote editor, replacing the Phase 0 textarea
- * skeleton. Step 8 adds external-change reconciliation: clean editor -> file
- * changed externally -> reload silently; dirty editor -> file changed ->
- * banner (keep mine / take theirs), never auto-overwrite; file deleted ->
- * keep the buffer, offer to recreate. React renders only — every read/write
- * goes through the `services` layer; this module never imports
+ * The note editor: loads a note, then mounts `LoadedNoteEditor` (keyed by id) as
+ * a thin orchestrator that builds the BlockNote editor and composes the editor
+ * hooks — persistence + reconciliation, typed links, templates, clipboard,
+ * context menus, shortcuts — around the render. React renders only; every
+ * read/write goes through the `services` layer, and this module never imports
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkPlus, ImageIcon, LayoutTemplate, Pin } from "lucide-react";
 import {
-  useCreateBlockNote,
   FormattingToolbar,
   getFormattingToolbarItems,
   type FormattingToolbarProps,
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
-import { FileOpenButton } from "./FileOpenButton";
 
-import { attachments, notes, spellcheck, templates, watcher } from "@/services";
-import { useActivity } from "@/store/activity";
-import type { AttachmentKind, Banner, Icon, Note, NoteSummary } from "@/services";
-import { NoteBanner, BannerPicker, DEFAULT_BANNER } from "./NoteBanner";
+import type { Note, NoteSummary } from "@/services";
+import { useTheme } from "@/store/theme";
+import { FileOpenButton } from "./FileOpenButton";
+import { NoteBanner } from "./NoteBanner";
 import { TemplatePicker } from "@/templates/TemplatePicker";
 import { SaveAsTemplateDialog } from "@/templates/SaveAsTemplateDialog";
-import { isEmptyDocument, stripBlockIds, type RawBlock } from "@/templates/applyTemplate";
-import { attachSpellcheckPlugin, type SpellContext, type SpellcheckController } from "./spellcheckPlugin";
-import { Input } from "@/components/ui/input";
-import { NoteIcon } from "@/nav/NoteIcon";
-import { IconPicker } from "@/nav/IconPicker";
-import { toInitialContent } from "./blockContent";
-import { createDebouncedFlush, type DebouncedFlush } from "./debouncedFlush";
-import { decideReconciliation } from "./reconcile";
-import { editorSchema } from "./schema";
 import { NOTE_LINK_TYPE } from "./NoteLink";
-import { convertTypedLinks, type Inline, type LinkTarget } from "./typedLinks";
 import { NoteLinkPicker } from "./NoteLinkPicker";
 import { FindBar } from "./FindBar";
-import { useKeybindings } from "@/store/keybindings";
-import { useTheme } from "@/store/theme";
-import { useTemplates } from "@/store/templates";
-import { matchCommand } from "@/keybindings/binding";
+import { NOTE_PERSISTENCE, type NotePersistence } from "./persistence";
+import { useNoteBlockEditor } from "./useNoteBlockEditor";
+import { useNoteEditorPersistence } from "./useNoteEditorPersistence";
+import { useTypedLinks } from "./useTypedLinks";
+import { useEditorTemplates } from "./useEditorTemplates";
+import { useEditorClipboard } from "./useEditorClipboard";
+import { useEditorContextMenus } from "./useEditorContextMenus";
+import { useEditorShortcuts } from "./useEditorShortcuts";
+import { EditorHeader } from "./EditorHeader";
+import { EditorContextMenu, SpellcheckMenu } from "./EditorMenus";
 
-const DEBOUNCE_MS = 600;
-const MAX_WAIT_MS = 2500;
-
-/** Map a browser File's MIME type onto an attachment library (CLAUDE.md §5.2). */
-function attachmentKindFromMime(mime: string): AttachmentKind {
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  return "file";
-}
-
-/**
- * How the editor loads and persists its document. Notes go through `notes`;
- * templates through `templates` — same `Note` shape and editor, different files
- * (templates live outside `notes/`). Everything else in the editor is identical,
- * so a single component drives both, parameterized by this and `mode`.
- */
-export interface NotePersistence {
-  read: (id: string) => Promise<Note>;
-  save: (note: Note) => Promise<null>;
-}
-
-const NOTE_PERSISTENCE: NotePersistence = { read: notes.read, save: notes.save };
-/** Persistence for editing a template document (Templates manager). */
-export const TEMPLATE_PERSISTENCE: NotePersistence = { read: templates.read, save: templates.save };
+export { TEMPLATE_PERSISTENCE, type NotePersistence } from "./persistence";
 
 interface NoteEditorProps {
   noteId: string;
@@ -158,201 +127,42 @@ function LoadedNoteEditor({
   onNeedsReload?: () => void;
 }) {
   const isTemplateMode = mode === "template";
-  // BlockNote's own document JSON, loaded verbatim (no transformation) — the
-  // core treats blocks as opaque, validated-but-unmodeled JSON (Phase 1
-  // preamble), so this is the one place the shape actually matters.
-  const editor = useCreateBlockNote({
-    // Shared schema with the custom `noteLink` inline node (Phase 2 step 3).
-    schema: editorSchema,
-    // Opaque block JSON from the core; the editor's exact PartialBlock type for
-    // the custom schema isn't worth reconstructing here (blocks are validated
-    // but unmodeled by the core — Phase 1 preamble).
-    initialContent: toInitialContent(note.blocks) as never,
-    // Attachments (Phase 2 step 1): BlockNote's built-in image/video/file blocks
-    // upload through here. We route the bytes through Rust's content-addressed
-    // store and store the returned vault-RELATIVE path in the block (portable —
-    // survives moving/syncing the vault). No attachment bytes are written from
-    // the frontend; the core owns all FS work.
-    uploadFile: async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
-    },
-    // Turn the stored vault-relative path into a displayable asset URL at render
-    // time (like note icons). Anything else (e.g. a pasted external URL) is left
-    // untouched.
-    resolveFileUrl: async (url: string) =>
-      url.startsWith("attachments/") ? attachments.resolveUrl(vaultPath, url) : url,
-    // Web links: use BlockNote's built-in behaviour — select text and paste a
-    // URL over it (or Ctrl+K) to create a link. BlockNote's default paste
-    // already parses Markdown, so no custom pasteHandler is needed. (We tried a
-    // `[text](url)` typing input rule, but it didn't fire reliably in the
-    // WebKitGTK webview, so we dropped it in favour of the built-in path.)
-  });
-
-  // Word → note linking (Phase 2 step 3): select text, run the `link.create`
-  // shortcut (default Ctrl+Shift+K), pick a note; the selected word becomes a
-  // link whose display text is kept.
-  // `display` = text the link renders as (the selected word for Ctrl+Shift+K, ""
-  // for the `[[` trigger which renders the target's live title). `trailingSpace`
-  // is set for the `[[` path so a space is inserted after the atomic link node,
-  // giving the caret editable text to land in — the old inline menu did this.
-  const [linkPicker, setLinkPicker] = useState<{
-    open: boolean;
-    display: string;
-    trailingSpace: boolean;
-  }>({
-    open: false,
-    display: "",
-    trailingSpace: false,
-  });
-  // Find-in-note bar (default Ctrl+F), opened by the `search.inNote` keybinding.
-  const [findOpen, setFindOpen] = useState(false);
-  // Templates (note mode only): the "Use template" picker and the "Save as
-  // template" name prompt.
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
-  // Editor theme follows the app-wide Appearance setting (Phase 3 step 6) — no
-  // longer hardcoded to light; BlockNote re-styles when the resolved theme flips.
+  const editor = useNoteBlockEditor({ note, vaultPath });
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  // Editor theme follows the app-wide Appearance setting (Phase 3 step 6);
+  // BlockNote re-styles when the resolved theme flips.
   const resolvedTheme = useTheme((s) => s.resolved);
 
-  // In-editor spellcheck (Phase 3 step 5): attach the ProseMirror decoration
-  // plugin to BlockNote's live view once it exists. Squiggles come from the Rust
-  // service (inert until a dictionary is bundled). The context menu is React,
-  // opened from the plugin with the misspelling + screen coords.
-  const [spellMenu, setSpellMenu] = useState<SpellContext | null>(null);
-  const spellCtl = useRef<SpellcheckController | null>(null);
-  useEffect(() => {
-    const view = editor.prosemirrorView;
-    if (!view) return;
-    // Wrap onContext so a right-clicked misspelling's menu takes priority over
-    // the block/formatting context menu below (which checks defaultPrevented).
-    const ctl = attachSpellcheckPlugin(view, (text) => spellcheck.check(text), setSpellMenu);
-    spellCtl.current = ctl;
-    return () => {
-      ctl.detach();
-      spellCtl.current = null;
-    };
-  }, [editor]);
+  const save = useNoteEditorPersistence({
+    note,
+    editor,
+    persistence,
+    // Only real notes count toward the usage streak — not template edits.
+    countsTowardActivity: persistence === NOTE_PERSISTENCE,
+    onError,
+    onSaved,
+    onNeedsReload,
+  });
 
-  // Windows Explorer's "copy" on a file puts BOTH a file entry and a
-  // text/plain path onto the clipboard. BlockNote's own paste handler picks
-  // among clipboard types by a fixed priority list that ranks text/plain
-  // ahead of "Files" (see @blocknote/core's fromClipboard), so it silently
-  // pastes the path as text instead of the actual image. Intercept in the
-  // capture phase — which runs before ProseMirror's own paste listener,
-  // bound directly to the editor's DOM node — and prefer the real file
-  // whenever the clipboard actually carries one.
-  const editorPaneRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const container = editorPaneRef.current;
-    if (!container) return;
-    function onPasteCapture(event: ClipboardEvent) {
-      const files = event.clipboardData?.files;
-      if (!files || files.length === 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void (async () => {
-        let ref = editor.getTextCursorPosition().block;
-        for (const file of Array.from(files)) {
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          const url = await attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
-          // BlockNote's own upload flow (drag-and-drop) sets props.name from the
-          // File object up front; this paste path bypasses that flow entirely; so
-          // without this, pasted files show a blank name next to the icon.
-          const [inserted] = editor.insertBlocks(
-            [{ type: attachmentKindFromMime(file.type), props: { url, name: "_" } } as never],
-            ref,
-            "after",
-          );
-          ref = inserted;
-        }
-      })();
-    }
-    container.addEventListener("paste", onPasteCapture, true);
-    return () => container.removeEventListener("paste", onPasteCapture, true);
-  }, [editor]);
+  const links = useTypedLinks({ editor, note, noteSummaries });
+  const templates = useEditorTemplates({
+    editor,
+    icon: save.icon,
+    scheduleSave: save.scheduleSave,
+    markSaved: save.markSaved,
+    onError,
+  });
 
-  // Clicking a "file" block opens it directly (image/video blocks already
-  // render inline, so an unexpected external-open on click there would be
-  // surprising — this is scoped to plain file attachments only, which
-  // otherwise show just an icon + name with no built-in interaction).
-  useEffect(() => {
-    const container = editorPaneRef.current;
-    if (!container) return;
-    function onClick(event: MouseEvent) {
-      const target = event.target as HTMLElement;
-      const wrapper = target.closest(".bn-file-block-content-wrapper");
-      if (!wrapper) return;
-      const blockEl = wrapper.closest("[data-id]");
-      const blockId = blockEl?.getAttribute("data-id");
-      if (!blockId) return;
-      const block = editor.getBlock(blockId);
-      if (block?.type !== "file" || !block.props.url) return;
-      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(String(e)));
-    }
-    container.addEventListener("click", onClick);
-    return () => container.removeEventListener("click", onClick);
-  }, [editor, vaultPath, onError]);
+  useEditorClipboard({ editor, editorPaneRef, vaultPath, onError });
+  const menus = useEditorContextMenus({ editor, editorPaneRef, onError });
 
-  // App-specific in-app context menu, replacing the system one: right-clicking
-  // anywhere in the note body opens the formatting/block menu (the same one
-  // BlockNote used to auto-pop on text selection — that auto-popup is now off,
-  // see `formattingToolbar={false}` below) at the click point instead. Scoped
-  // to `.bn-editor` so right-clicking the title input or other chrome keeps its
-  // normal native menu. Registered on the BUBBLE phase on an ANCESTOR of
-  // ProseMirror's view.dom, so it always runs after spellcheckPlugin's own
-  // `handleDOMEvents.contextmenu` (attached directly to view.dom, a nearer
-  // ancestor of the click target) — checking `defaultPrevented` lets a
-  // right-clicked misspelling's suggestion menu take priority over this one.
-  const [formatMenu, setFormatMenu] = useState<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    const container = editorPaneRef.current;
-    if (!container) return;
-    function onContextMenu(event: MouseEvent) {
-      if (event.defaultPrevented) return;
-      if (!(event.target as HTMLElement).closest(".bn-editor")) return;
-      event.preventDefault();
-      setFormatMenu({ x: event.clientX, y: event.clientY });
-    }
-    container.addEventListener("contextmenu", onContextMenu);
-    return () => container.removeEventListener("contextmenu", onContextMenu);
-  }, []);
-
-  // The two editor-scoped shortcuts read their combos from the shared keybinding
-  // store (rebindable in Settings); App owns the global ones. Both listeners use
-  // the same `matchCommand` matcher and act only on their own command ids.
-  const bindings = useKeybindings((s) => s.bindings);
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const cmd = matchCommand(e, bindings);
-      if (cmd === "link.create") {
-        e.preventDefault();
-        setLinkPicker({ open: true, display: editor.getSelectedText(), trailingSpace: false });
-      } else if (cmd === "search.inNote") {
-        e.preventDefault();
-        setFindOpen(true);
-      } else if (cmd === "template.use" && !isTemplateMode) {
-        // Insert a saved template — meaningless while editing a template itself.
-        e.preventDefault();
-        setTemplatePickerOpen(true);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, bindings, isTemplateMode]);
-
-  // Manually typed / pasted `[[Title]]` → link node (bug fix). A title→target
-  // lookup over the current summaries (case-insensitive, self excluded), so the
-  // converter captures the target's id + real title once, exactly like the menu.
-  const titleToTarget = useMemo(() => {
-    const map = new Map<string, LinkTarget>();
-    noteSummaries.forEach((s) => {
-      if (s.id === note.id) return; // no self-links
-      const key = s.title.trim().toLowerCase();
-      if (key && !map.has(key)) map.set(key, { id: s.id, title: s.title });
-    });
-    return map;
-  }, [noteSummaries, note.id]);
+  const [findOpen, setFindOpen] = useState(false);
+  useEditorShortcuts({
+    isTemplateMode,
+    onCreateLink: links.openFromSelection,
+    onFind: () => setFindOpen(true),
+    onUseTemplate: () => templates.setTemplatePickerOpen(true),
+  });
 
   // Swap out BlockNote's built-in file-download button (see FileOpenButton.tsx
   // for why) while keeping every other default toolbar item as-is. Memoized so
@@ -373,551 +183,114 @@ function LoadedNoteEditor({
     };
   }, [vaultPath, onError]);
 
-  // Guards against the re-entrant onChange that `updateBlock` itself fires while
-  // we're mid-conversion (which would otherwise recurse before converging).
-  const convertingRef = useRef(false);
-
-  function maybeConvertTypedLinks() {
-    if (convertingRef.current) return;
-    const block = editor.getTextCursorPosition().block;
-    const content = block.content;
-    // Only inline-content blocks (paragraph/heading/list item…); table content
-    // and the like isn't a flat inline array — skip it.
-    if (!Array.isArray(content)) return;
-    const { changed, content: next } = convertTypedLinks(
-      content as unknown as Inline[],
-      (t) => titleToTarget.get(t.toLowerCase()),
-      NOTE_LINK_TYPE,
-    );
-    if (!changed) return;
-    convertingRef.current = true;
-    try {
-      editor.updateBlock(block, { content: next as never });
-      // Keep typing flowing after the atomic link (and its trailing space).
-      editor.setTextCursorPosition(block, "end");
-    } finally {
-      convertingRef.current = false;
-    }
-  }
-
-  // Typing `[[` opens the note picker — the SAME cmdk palette as Ctrl+Shift+K and
-  // global search, so arrow-key navigation + Enter work reliably. It replaces
-  // BlockNote's inline suggestion menu, whose two-character trigger and keyboard
-  // handling are unreliable on WebKitGTK (see typedLinks.ts). We spot the two
-  // brackets at a collapsed cursor, delete them, and open the picker; on pick the
-  // link is inserted at that spot (ProseMirror keeps the collapsed selection over
-  // the modal, exactly like the Ctrl+Shift+K path).
-  function maybeOpenLinkPicker() {
-    if (linkPicker.open) return;
-    const view = editor.prosemirrorView;
-    if (!view) return;
-    const { from, empty } = view.state.selection;
-    if (!empty || from < 2) return;
-    if (view.state.doc.textBetween(from - 2, from) !== "[[") return;
-    view.dispatch(view.state.tr.delete(from - 2, from));
-    setLinkPicker({ open: true, display: "", trailingSpace: true });
-  }
-
-  const [title, setTitle] = useState(note.title);
-  const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
-  const [pinned, setPinned] = useState<boolean>(note.meta?.pinned ?? false);
-  const [banner, setBannerState] = useState<Banner | null | undefined>(note.meta?.banner);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [reconcile, setReconcile] = useState<ReturnType<typeof decideReconciliation>>({ kind: "none" });
-
-  // Kept current on every keystroke so whichever timer fires (debounce or
-  // max-wait) always flushes the latest values, never a stale closure.
-  const titleRef = useRef(note.title);
-  const noteRef = useRef(note);
-  // True from the first edit after load/save until the next successful save
-  // — drives the step-8 clean-vs-dirty reconciliation branch.
-  const isDirtyRef = useRef(false);
-  // Set just before an intentional remount that must discard (not flush) any
-  // pending edit — "take theirs" — so the unmount cleanup's safety-net flush
-  // doesn't silently undo the discard.
-  const discardOnUnmountRef = useRef(false);
-
-  const flush = async () => {
-    setSaveState("saving");
-    try {
-      const updated: Note = {
-        ...noteRef.current,
-        title: titleRef.current,
-        blocks: editor.document as unknown as Note["blocks"],
-      };
-      await persistence.save(updated);
-      noteRef.current = updated;
-      isDirtyRef.current = false;
-      setSaveState("saved");
-      // Only real notes count toward the usage streak — not template edits.
-      if (persistence === NOTE_PERSISTENCE) useActivity.getState().recordActivity();
-      onSaved?.();
-    } catch (e) {
-      onError(String(e));
-    }
-  };
-
-  // Ref-indirected so the debounced-flush instance (created once) always
-  // calls the latest `flush` closure rather than the one from first render.
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
-
-  const debouncedRef = useRef<DebouncedFlush | null>(null);
-  if (debouncedRef.current === null) {
-    debouncedRef.current = createDebouncedFlush(() => void flushRef.current(), {
-      debounceMs: DEBOUNCE_MS,
-      maxWaitMs: MAX_WAIT_MS,
-    });
-  }
-
-  // Never rename the file: title edits and body edits both flow through the
-  // same `notes.save`, which writes back to the id-matched path (vault.rs).
-  useEffect(() => {
-    const debounced = debouncedRef.current!;
-    return () => {
-      if (discardOnUnmountRef.current) return; // "take theirs": discard, don't flush.
-      // Switching notes (or unmounting) with unsaved edits pending: flush
-      // immediately rather than discarding them, so at most a crash — never
-      // a normal note switch — can lose the last debounce window.
-      if (debounced.isPending()) {
-        debounced.cancel();
-        flushRef.current();
-      }
-    };
-  }, []);
-
-  const scheduleSave = () => {
-    isDirtyRef.current = true;
-    setSaveState("saving");
-    debouncedRef.current!.schedule();
-  };
-
-  // Icon changes are discrete (not continuous typing like body/title), so
-  // they save immediately rather than going through the debounce.
-  async function setIcon(newIcon: Icon | null) {
-    setSaveState("saving");
-    try {
-      const updated: Note = {
-        ...noteRef.current,
-        title: titleRef.current,
-        blocks: editor.document as unknown as Note["blocks"],
-        icon: newIcon ?? undefined,
-      };
-      await persistence.save(updated);
-      noteRef.current = updated;
-      setIconState(newIcon);
-      setSaveState("saved");
-      onSaved?.();
-    } catch (e) {
-      onError(String(e));
-    }
-  }
-
-  // Pin/unpin (Phase 2 step 6): a discrete meta change, saved immediately like
-  // the icon. Drives the Home dashboard's Pinned widget.
-  async function togglePin() {
-    const next = !pinned;
-    setSaveState("saving");
-    try {
-      const current = noteRef.current;
-      const updated: Note = {
-        ...current,
-        title: titleRef.current,
-        blocks: editor.document as unknown as Note["blocks"],
-        meta: { ...(current.meta ?? { pinned: false, tags: [] }), pinned: next },
-      };
-      await persistence.save(updated);
-      noteRef.current = updated;
-      setPinned(next);
-      setSaveState("saved");
-      onSaved?.();
-    } catch (e) {
-      onError(String(e));
-    }
-  }
-
-  // Banner/cover set/change/remove: a discrete meta change, saved immediately
-  // like the icon and pin. `null` clears it (serialized as absent, so notes
-  // without a banner keep their old on-disk shape).
-  async function setBanner(newBanner: Banner | null) {
-    setSaveState("saving");
-    try {
-      const current = noteRef.current;
-      const updated: Note = {
-        ...current,
-        title: titleRef.current,
-        blocks: editor.document as unknown as Note["blocks"],
-        meta: { ...(current.meta ?? { pinned: false, tags: [] }), banner: newBanner ?? undefined },
-      };
-      await persistence.save(updated);
-      noteRef.current = updated;
-      setBannerState(newBanner);
-      setSaveState("saved");
-      onSaved?.();
-    } catch (e) {
-      onError(String(e));
-    }
-  }
-
-  // Step 8: react to this specific note changing on disk for a reason other
-  // than our own save (the self-write filter already excludes those).
-  useEffect(() => {
-    const unsubscribe = watcher.onNoteChangedExternally((changedId) => {
-      if (changedId !== note.id) return;
-      void (async () => {
-        const stillExists = await notes
-          .read(note.id)
-          .then(() => true)
-          .catch(() => false);
-
-        const decision = decideReconciliation({ stillExists, isDirty: isDirtyRef.current });
-        if (decision.kind === "none") {
-          // Clean editor, file still exists: reload silently.
-          discardOnUnmountRef.current = true;
-          onNeedsReload?.();
-          return;
-        }
-        setReconcile(decision);
-      })();
-    });
-    return unsubscribe;
-  }, [note.id, onNeedsReload]);
-
-  function takeTheirs() {
-    discardOnUnmountRef.current = true;
-    debouncedRef.current?.cancel();
-    setReconcile({ kind: "none" });
-    onNeedsReload?.();
-  }
-
-  function keepMine() {
-    debouncedRef.current?.cancel();
-    setReconcile({ kind: "none" });
-    void flush(); // overwrite what's now on disk with the current buffer.
-  }
-
-  function recreate() {
-    setReconcile({ kind: "none" });
-    void flush(); // save_note falls back to a fresh path when the id isn't in the index.
-  }
-
-  // --- spellcheck context-menu actions (Phase 3 step 5) ------------------
-  function replaceMisspelling(ctx: SpellContext, replacement: string) {
-    const view = editor.prosemirrorView;
-    if (view) view.dispatch(view.state.tr.insertText(replacement, ctx.from, ctx.to));
-    setSpellMenu(null);
-    spellCtl.current?.recheckAll();
-  }
-  function addMisspellingToDictionary(ctx: SpellContext) {
-    setSpellMenu(null);
-    spellcheck
-      .addWord(ctx.word)
-      .then(() => spellCtl.current?.recheckAll())
-      .catch((e) => onError(String(e)));
-  }
-
-  // --- templates ---------------------------------------------------------
-
-  // Insert a saved template into this note. Smart apply: a blank note has its
-  // body REPLACED by the template; a note that already has content gets the
-  // template's blocks inserted after the cursor, so existing writing is never
-  // lost. Block ids are stripped first so BlockNote assigns fresh, unique ones
-  // (inserting the same template twice must not collide ids — `Note::validate`
-  // would reject the save). BlockNote doesn't reliably fire onChange for these
-  // programmatic edits, so we schedule the save ourselves.
-  async function useTemplate(templateId: string) {
-    try {
-      const tpl = await templates.read(templateId);
-      const blocks = stripBlockIds(tpl.blocks as unknown as RawBlock[]);
-      if (blocks.length === 0) return;
-      if (isEmptyDocument(editor.document as unknown as RawBlock[])) {
-        editor.replaceBlocks(editor.document, blocks as never);
-      } else {
-        const ref = editor.getTextCursorPosition().block;
-        editor.insertBlocks(blocks as never, ref, "after");
-      }
-      scheduleSave();
-    } catch (e) {
-      onError(String(e));
-    }
-  }
-
-  // Save this note's current content as a reusable template. Creates a blank
-  // template (fresh id/file under templates/), then persists it with the note's
-  // live blocks and icon — two round trips, but reuses the create + validated
-  // save path with no special-case command.
-  async function saveAsTemplate(name: string) {
-    try {
-      const created = await templates.create(name);
-      await templates.save({
-        ...created,
-        icon: icon ?? undefined,
-        blocks: editor.document as unknown as Note["blocks"],
-      });
-      // Keep the sidebar Templates section + Settings manager in sync.
-      await useTemplates.getState().refresh();
-      setSaveState("saved");
-    } catch (e) {
-      onError(String(e));
-    }
-  }
+  const { spellMenu, formatMenu } = menus;
+  const { linkPicker } = links;
 
   return (
     <>
-    <div className="editor-pane" ref={editorPaneRef}>
-      {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
-      {spellMenu && (
-        <SpellcheckMenu
-          ctx={spellMenu}
-          onReplace={(word) => replaceMisspelling(spellMenu, word)}
-          onAddToDictionary={() => addMisspellingToDictionary(spellMenu)}
-          onClose={() => setSpellMenu(null)}
-        />
-      )}
-      {reconcile.kind === "dirty-conflict" && (
-        <div className="reconcile-banner">
-          <span>This note changed on disk while you had unsaved edits.</span>
-          <div className="reconcile-banner-actions">
-            <button onClick={keepMine}>Keep mine</button>
-            <button onClick={takeTheirs}>Take theirs</button>
-          </div>
-        </div>
-      )}
-      {reconcile.kind === "deleted" && (
-        <div className="reconcile-banner">
-          <span>This note was deleted outside the app.</span>
-          <div className="reconcile-banner-actions">
-            <button onClick={recreate}>Recreate</button>
-          </div>
-        </div>
-      )}
-      {!isTemplateMode && banner && (
-        <NoteBanner banner={banner} vaultPath={vaultPath} onChange={(b) => void setBanner(b)} />
-      )}
-      <div className="editor-header">
-        <IconPicker
-          onChange={setIcon}
-          trigger={
-            <button className="editor-title-icon-button" title="Set icon">
-              <NoteIcon icon={icon} vaultPath={vaultPath} className="h-14 w-14" />
-            </button>
-          }
-        />
-        <Input
-          className="h-auto border-none bg-transparent px-0 text-4xl md:text-4xl font-bold leading-tight shadow-none focus-visible:ring-0 dark:bg-transparent"
-          value={title}
-          placeholder="Untitled"
-          onChange={(e) => {
-            setTitle(e.target.value);
-            titleRef.current = e.target.value;
-            scheduleSave();
-          }}
-        />
-        {/* Add-banner entry point — only when there's no cover yet; once a
-            banner exists it's changed/removed from the strip's own controls. */}
-        {!isTemplateMode && !banner && (
-          <BannerPicker
-            onChange={(b) => void setBanner(b ?? DEFAULT_BANNER)}
-            trigger={
-              <button className="editor-icon-button" title="Add banner" aria-label="Add banner">
-                <ImageIcon className="h-5 w-5" />
-              </button>
-            }
+      <div className="editor-pane" ref={editorPaneRef}>
+        {findOpen && <FindBar view={editor.prosemirrorView} onClose={() => setFindOpen(false)} />}
+        {spellMenu && (
+          <SpellcheckMenu
+            ctx={spellMenu}
+            onReplace={(word) => menus.replaceMisspelling(spellMenu, word)}
+            onAddToDictionary={() => menus.addToDictionary(spellMenu)}
+            onClose={() => menus.setSpellMenu(null)}
           />
         )}
-        {/* Template actions — note mode only (a template doesn't use/save
-            templates of itself). */}
-        {!isTemplateMode && (
-          <>
-            <button
-              className="editor-icon-button"
-              onClick={() => setTemplatePickerOpen(true)}
-              title="Use template — insert a saved template"
-              aria-label="Use template"
-            >
-              <LayoutTemplate className="h-5 w-5" />
-            </button>
-            <button
-              className="editor-icon-button"
-              onClick={() => setSaveAsTemplateOpen(true)}
-              title="Save this note as a template"
-              aria-label="Save as template"
-            >
-              <BookmarkPlus className="h-5 w-5" />
-            </button>
-          </>
+        {save.reconcile.kind === "dirty-conflict" && (
+          <div className="reconcile-banner">
+            <span>This note changed on disk while you had unsaved edits.</span>
+            <div className="reconcile-banner-actions">
+              <button onClick={save.keepMine}>Keep mine</button>
+              <button onClick={save.takeTheirs}>Take theirs</button>
+            </div>
+          </div>
         )}
-        {!isTemplateMode && (
-          <button
-            className={`editor-icon-button${pinned ? " pinned" : ""}`}
-            onClick={() => void togglePin()}
-            title={pinned ? "Unpin from Home" : "Pin to Home"}
-            aria-pressed={pinned}
-          >
-            <Pin className="h-5 w-5" fill={pinned ? "currentColor" : "none"} />
-          </button>
+        {save.reconcile.kind === "deleted" && (
+          <div className="reconcile-banner">
+            <span>This note was deleted outside the app.</span>
+            <div className="reconcile-banner-actions">
+              <button onClick={save.recreate}>Recreate</button>
+            </div>
+          </div>
         )}
+        {!isTemplateMode && save.banner && (
+          <NoteBanner banner={save.banner} vaultPath={vaultPath} onChange={(b) => void save.setBanner(b)} />
+        )}
+        <EditorHeader
+          vaultPath={vaultPath}
+          isTemplateMode={isTemplateMode}
+          icon={save.icon}
+          onIconChange={save.setIcon}
+          title={save.title}
+          onTitleChange={save.setTitle}
+          pinned={save.pinned}
+          onTogglePin={() => void save.togglePin()}
+          banner={save.banner}
+          onBannerChange={(b) => void save.setBanner(b)}
+          onUseTemplate={() => templates.setTemplatePickerOpen(true)}
+          onSaveAsTemplate={() => templates.setSaveAsTemplateOpen(true)}
+        />
+        <BlockNoteView
+          editor={editor}
+          onChange={() => {
+            // Typed-link handling (open the `[[` picker, upgrade `[[Title]]`) runs
+            // before the save so the persisted tree carries id-backed link nodes.
+            links.onEditorChange();
+            save.scheduleSave();
+          }}
+          theme={resolvedTheme}
+          formattingToolbar={false}
+        >
+          {formatMenu && (
+            <EditorContextMenu x={formatMenu.x} y={formatMenu.y} onClose={() => menus.setFormatMenu(null)}>
+              <CustomFormattingToolbar />
+            </EditorContextMenu>
+          )}
+        </BlockNoteView>
+        <NoteLinkPicker
+          open={linkPicker.open}
+          onOpenChange={(o) => links.setLinkPicker((p) => ({ ...p, open: o }))}
+          currentNoteId={note.id}
+          display={linkPicker.display}
+          onPick={(n) => {
+            // The editor kept its selection while the picker had focus (ProseMirror
+            // preserves it): Ctrl+Shift+K had a word selected, so inserting replaces
+            // it (display text stays that word); the `[[` path had a collapsed cursor,
+            // so it inserts there and appends a space so the caret can leave the link.
+            editor.insertInlineContent([
+              { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: linkPicker.display } },
+              ...(linkPicker.trailingSpace ? [" "] : []),
+            ]);
+          }}
+        />
+        {/* Scroll-past-end room, BELOW the backlinks panel — lets the last line (or
+            the backlinks) rise toward the top without burying the panel (which the
+            old in-editor `padding-bottom: 60vh` did). */}
+        <div className="editor-tail-space" aria-hidden="true" />
       </div>
-      <BlockNoteView
-        editor={editor}
-        onChange={() => {
-          // Typing `[[` opens the keyboard-navigable note picker (checked first so
-          // the brackets are stripped before anything else looks at the text).
-          maybeOpenLinkPicker();
-          // Upgrade any just-completed `[[Title]]` to a link before saving, so
-          // the persisted block tree carries the id-backed node, not literal text.
-          maybeConvertTypedLinks();
-          scheduleSave();
-        }}
-        theme={resolvedTheme}
-        formattingToolbar={false}
-      >
-        {formatMenu && (
-          <EditorContextMenu x={formatMenu.x} y={formatMenu.y} onClose={() => setFormatMenu(null)}>
-            <CustomFormattingToolbar />
-          </EditorContextMenu>
-        )}
-      </BlockNoteView>
-      <NoteLinkPicker
-        open={linkPicker.open}
-        onOpenChange={(o) => setLinkPicker((p) => ({ ...p, open: o }))}
-        currentNoteId={note.id}
-        display={linkPicker.display}
-        onPick={(n) => {
-          // The editor kept its selection while the picker had focus (ProseMirror
-          // preserves it): Ctrl+Shift+K had a word selected, so inserting replaces
-          // it (display text stays that word); the `[[` path had a collapsed cursor,
-          // so it inserts there and appends a space so the caret can leave the link.
-          editor.insertInlineContent([
-            { type: NOTE_LINK_TYPE, props: { noteId: n.id, label: n.title, display: linkPicker.display } },
-            ...(linkPicker.trailingSpace ? [" "] : []),
-          ]);
-        }}
-      />
-      {/* Scroll-past-end room, BELOW the backlinks panel — lets the last line (or
-          the backlinks) rise toward the top without burying the panel (which the
-          old in-editor `padding-bottom: 60vh` did). */}
-      <div className="editor-tail-space" aria-hidden="true" />
-    </div>
-    {!isTemplateMode && (
-      <>
-        <TemplatePicker
-          open={templatePickerOpen}
-          onOpenChange={setTemplatePickerOpen}
-          onPick={(t) => void useTemplate(t.id)}
-        />
-        <SaveAsTemplateDialog
-          open={saveAsTemplateOpen}
-          onOpenChange={setSaveAsTemplateOpen}
-          defaultName={title}
-          onSave={(name) => void saveAsTemplate(name)}
-        />
-      </>
-    )}
-    {/* Save-state indicator: a sibling of .editor-pane (not a child), so it
-        anchors to the non-scrolling .main-pane and stays pinned to its
-        bottom-left corner regardless of note length or scroll (see .status). */}
-    <div className="status" aria-live="polite">
-      {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
-    </div>
-    </>
-  );
-}
-
-/**
- * Context menu for a right-clicked misspelling (Phase 3 step 5): suggestions to
- * replace the word, and "Add to dictionary". Positioned at the click; closes on
- * Escape or an outside click. Keyboard-accessible (arrow/Tab through buttons).
- */
-function SpellcheckMenu({
-  ctx,
-  onReplace,
-  onAddToDictionary,
-  onClose,
-}: {
-  ctx: SpellContext;
-  onReplace: (word: string) => void;
-  onAddToDictionary: () => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // Focus the first item so the menu is immediately keyboard-drivable.
-    ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown, true);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={ref}
-      className="spell-menu"
-      role="menu"
-      aria-label={`Spelling suggestions for ${ctx.word}`}
-      style={{ left: ctx.x, top: ctx.y }}
-    >
-      {ctx.suggestions.length === 0 ? (
-        <div className="spell-menu-empty muted">No suggestions</div>
-      ) : (
-        ctx.suggestions.map((s) => (
-          <button key={s} role="menuitem" className="spell-menu-item" onClick={() => onReplace(s)}>
-            {s}
-          </button>
-        ))
+      {!isTemplateMode && (
+        <>
+          <TemplatePicker
+            open={templates.templatePickerOpen}
+            onOpenChange={templates.setTemplatePickerOpen}
+            onPick={(t) => void templates.applyTemplate(t.id)}
+          />
+          <SaveAsTemplateDialog
+            open={templates.saveAsTemplateOpen}
+            onOpenChange={templates.setSaveAsTemplateOpen}
+            defaultName={save.title}
+            onSave={(name) => void templates.saveAsTemplate(name)}
+          />
+        </>
       )}
-      <div className="spell-menu-sep" />
-      <button role="menuitem" className="spell-menu-item spell-menu-add" onClick={onAddToDictionary}>
-        Add “{ctx.word}” to dictionary
-      </button>
-    </div>
-  );
-}
-
-/**
- * The app-specific in-app context menu (replaces the system right-click
- * menu): positioned at the click, closes on Escape or an outside click —
- * same pattern as SpellcheckMenu above. Content is the formatting/block menu.
- */
-function EditorContextMenu({
-  x,
-  y,
-  onClose,
-  children,
-}: {
-  x: number;
-  y: number;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown, true);
-    };
-  }, [onClose]);
-
-  return (
-    <div ref={ref} className="editor-context-menu" style={{ left: x, top: y }}>
-      {children}
-    </div>
+      {/* Save-state indicator: a sibling of .editor-pane (not a child), so it
+          anchors to the non-scrolling .main-pane and stays pinned to its
+          bottom-left corner regardless of note length or scroll (see .status). */}
+      <div className="status" aria-live="polite">
+        {save.saveState === "saving" ? "Saving…" : save.saveState === "saved" ? "Saved" : ""}
+      </div>
+    </>
   );
 }
