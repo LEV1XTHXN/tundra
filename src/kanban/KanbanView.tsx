@@ -61,14 +61,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-function errorMessage(err: unknown): string {
-  const e = err as { kind?: unknown; message?: unknown };
-  if (e && typeof e === "object" && "kind" in e) {
-    return typeof e.message === "string" ? `${String(e.kind)}: ${e.message}` : String(e.kind);
-  }
-  return String(err);
-}
+import { errorMessage } from "@/lib/errorMessage";
 
 /** The board-name dialog: creating a new board or renaming the active one. */
 type BoardDialog = { mode: "create" } | { mode: "rename"; boardId: string; name: string };
