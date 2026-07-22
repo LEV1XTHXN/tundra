@@ -708,7 +708,6 @@ body,
 .view-frame-header-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
 }
@@ -733,6 +732,9 @@ body,
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  /* Keep right-aligned now that the header row leads with the nav-history
+     buttons (so it no longer relies on `justify-content: space-between`). */
+  margin-left: auto;
 }
 .view-frame-toolbar {
   margin-top: 1rem;
@@ -1657,6 +1659,47 @@ body,
   top: 0.6rem;
   right: 0.6rem;
   z-index: 19;
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+/* Browser-style back/forward history buttons, top-left of every view. Inline by
+   default (sits at the start of a ViewFrame header row); `.nav-history-floating`
+   pins it to the pane's top-left corner in the editor (mirrors .inspector-toggle). */
+.nav-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.nav-history-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.nav-history-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.nav-history-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.nav-history-floating {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 19;
+  padding: 2px;
+  border-radius: var(--radius-md);
   background: var(--card);
   border: 1px solid var(--border);
 }

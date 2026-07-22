@@ -49,6 +49,8 @@ describe("matchCommand", () => {
     "inspector.toggle": "Alt+I",
     "note.new": "Ctrl+Alt+N",
     "view.quicknotes": "Ctrl+Q",
+    "nav.back": "Alt+ArrowLeft",
+    "nav.forward": "Alt+ArrowRight",
     "link.create": "Ctrl+Shift+K",
     "template.use": "Alt+T",
   };

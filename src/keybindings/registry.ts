@@ -18,6 +18,8 @@ export type CommandId =
   | "link.create"
   | "note.new"
   | "view.quicknotes"
+  | "nav.back"
+  | "nav.forward"
   | "template.use";
 
 /** Groups commands in the Settings UI; room to grow as more commands land. */
@@ -76,6 +78,20 @@ export const COMMANDS: readonly CommandDef[] = [
     description: "Switch to the quick notes view",
     category: "navigation",
     defaultBinding: "Ctrl+Q",
+  },
+  {
+    id: "nav.back",
+    label: "Back",
+    description: "Go back to the previously visited note or view",
+    category: "navigation",
+    defaultBinding: "Alt+ArrowLeft",
+  },
+  {
+    id: "nav.forward",
+    label: "Forward",
+    description: "Go forward to the next note or view in history",
+    category: "navigation",
+    defaultBinding: "Alt+ArrowRight",
   },
   {
     id: "link.create",

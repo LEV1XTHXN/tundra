@@ -22,6 +22,8 @@ export function useAppShortcuts({ onNewNote, setSearchOpen }: Params): void {
   const openNoteId = useViewState((s) => s.openNoteId);
   const toggleInspector = useViewState((s) => s.toggleInspector);
   const toggleGraphInspector = useViewState((s) => s.toggleGraphInspector);
+  const goBack = useViewState((s) => s.goBack);
+  const goForward = useViewState((s) => s.goForward);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -38,6 +40,14 @@ export function useAppShortcuts({ onNewNote, setSearchOpen }: Params): void {
           e.preventDefault();
           setView("quicknotes");
           break;
+        case "nav.back":
+          e.preventDefault();
+          goBack();
+          break;
+        case "nav.forward":
+          e.preventDefault();
+          goForward();
+          break;
         case "inspector.toggle":
           if (view === "editor" && openNoteId) {
             e.preventDefault();
@@ -49,7 +59,32 @@ export function useAppShortcuts({ onNewNote, setSearchOpen }: Params): void {
           break;
       }
     }
+    // Mouse back/forward (buttons 3/4), exactly like a web browser.
+    function onMouseUp(e: MouseEvent) {
+      if (e.button === 3) {
+        e.preventDefault();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        goForward();
+      }
+    }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindings, onNewNote, setSearchOpen, setView, view, openNoteId, toggleInspector, toggleGraphInspector]);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [
+    bindings,
+    onNewNote,
+    setSearchOpen,
+    setView,
+    view,
+    openNoteId,
+    toggleInspector,
+    toggleGraphInspector,
+    goBack,
+    goForward,
+  ]);
 }

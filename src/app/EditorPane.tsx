@@ -2,6 +2,7 @@ import { PanelRight } from "lucide-react";
 import type { NoteSummary } from "@/services";
 import { NoteEditor } from "@/editor/NoteEditor";
 import { NoteInspector } from "@/inspector/NoteInspector";
+import { NavHistoryButtons } from "./NavHistoryButtons";
 import { useViewState } from "@/store/viewState";
 
 interface EditorPaneProps {
@@ -34,11 +35,19 @@ export function EditorPane({
   const toggleInspector = useViewState((s) => s.toggleInspector);
 
   if (!openNoteId) {
-    return <div className="centered muted">Select or create a note.</div>;
+    return (
+      <>
+        <NavHistoryButtons floating />
+        <div className="centered muted">Select or create a note.</div>
+      </>
+    );
   }
 
   return (
     <>
+      {/* Browser-style back/forward, pinned to the pane's top-left (mirrors the
+          top-right inspector toggle). */}
+      <NavHistoryButtons floating />
       <NoteEditor
         key={`${openNoteId}:${editorRefreshToken}`}
         noteId={openNoteId}

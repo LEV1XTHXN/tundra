@@ -12,6 +12,7 @@
  * (see index.css) so its content lines up with every other view.
  */
 import type { ReactNode } from "react";
+import { NavHistoryButtons } from "@/app/NavHistoryButtons";
 
 interface ViewFrameProps {
   title: ReactNode;
@@ -33,6 +34,8 @@ export function ViewFrame({ title, subtitle, actions, toolbar, fullBleed, childr
     <div className="view-frame">
       <header className="view-frame-header">
         <div className="view-frame-header-row">
+          {/* Browser-style back/forward, top-left of every framed view. */}
+          <NavHistoryButtons />
           <div className="view-frame-titles">
             <h1 className="view-frame-title">{title}</h1>
             {subtitle && <p className="view-frame-subtitle muted">{subtitle}</p>}
