@@ -946,6 +946,40 @@ body,
   gap: 0.5rem;
   font-size: 0.8rem;
 }
+
+/* Inline global-search widget (Home). Input pinned at top; results scroll
+   within `.widget-body`, which already handles overflow. */
+.search-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  flex: 1;
+}
+.search-widget-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.search-widget-input:focus {
+  outline: none;
+  border-color: var(--ring);
+}
+.search-widget-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Search rows stack title + snippet, so align them to the top rather than
+   centering like the single-line note rows. */
+.search-widget-row {
+  align-items: flex-start;
+}
 .quick-capture-actions button:disabled {
   opacity: 0.5;
   cursor: default;

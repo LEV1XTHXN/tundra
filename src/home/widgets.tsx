@@ -22,8 +22,8 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
 
-import { calendar, notes, quickNote, tags as tagsService } from "@/services";
-import type { Block, NoteSummary } from "@/services";
+import { calendar, notes, quickNote, search, tags as tagsService } from "@/services";
+import type { Block, NoteSummary, SearchHit } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
@@ -120,6 +120,84 @@ export function RecentWidget({ vaultPath, refreshKey, onOpenNote }: WidgetProps)
     };
   }, [refreshKey]);
   return <NoteList items={items} vaultPath={vaultPath} onOpenNote={onOpenNote} empty="No notes yet." />;
+}
+
+const SEARCH_RESULT_LIMIT = 12;
+const SEARCH_DEBOUNCE_MS = 150;
+
+/** Inline global search, right on Home — the non-dialog twin of the F2
+ *  `SearchPalette`. Shares the same backend search: full text via
+ *  `search.query`, and a leading `#` switches to tag search (`search.byTag`),
+ *  same as the palette. Click a hit to open it (`onOpenNote`). */
+export function SearchWidget({ onOpenNote }: WidgetProps) {
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setHits([]);
+      return;
+    }
+    // `#tag` mode: a leading `#` searches by tag instead of full text; a bare
+    // `#` with no tag yet shows nothing rather than every note.
+    const isTagSearch = trimmed.startsWith("#");
+    const tagQuery = trimmed.slice(1).trim();
+    if (isTagSearch && !tagQuery) {
+      setHits([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const request = isTagSearch
+        ? search.byTag(tagQuery, SEARCH_RESULT_LIMIT)
+        : search.query(trimmed, SEARCH_RESULT_LIMIT);
+      void request
+        .then((results) => {
+          if (!cancelled) setHits(results);
+        })
+        .catch(() => {
+          if (!cancelled) setHits([]);
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const trimmed = query.trim();
+  return (
+    <div className="search-widget">
+      <input
+        className="search-widget-input"
+        type="text"
+        value={query}
+        placeholder="Search notes…  (#tag to search by tag)"
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="search-widget-results">
+        {hits.length === 0 ? (
+          <p className="widget-empty muted">
+            {trimmed ? "No notes found." : "Type to search…  Start with # to search by tag."}
+          </p>
+        ) : (
+          hits.map((hit) => (
+            <button
+              key={hit.id}
+              className="home-note-row search-widget-row"
+              onClick={() => onOpenNote(hit.id)}
+            >
+              <div className="search-hit">
+                <span className="search-hit-title">{hit.title || "Untitled"}</span>
+                {hit.snippet && <span className="search-hit-snippet">{hit.snippet}</span>}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** Jot a thought straight into the quick-note scratchpad without leaving Home. */

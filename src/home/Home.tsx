@@ -17,6 +17,7 @@ import {
   PinnedWidget,
   QuickCaptureWidget,
   RecentWidget,
+  SearchWidget,
   StorageWidget,
   StreakWidget,
   type WidgetProps,
@@ -28,7 +29,15 @@ const MiniGraphWidget = lazy(() =>
   import("./MiniGraphWidget").then((m) => ({ default: m.MiniGraphWidget })),
 );
 
-type WidgetId = "pinned" | "recent" | "quickCapture" | "calendar" | "storage" | "streak" | "miniGraph";
+type WidgetId =
+  | "search"
+  | "pinned"
+  | "recent"
+  | "quickCapture"
+  | "calendar"
+  | "storage"
+  | "streak"
+  | "miniGraph";
 
 /** Widget span on the invisible grid, in whole cells. */
 interface WidgetSize {
@@ -58,6 +67,7 @@ const MAX_W_SPAN = 6; // cap on how many columns a widget may store
 const MAX_H_SPAN = 4; // cap on how many rows a widget can span
 
 const WIDGET_META: { id: WidgetId; title: string; render: (p: WidgetProps) => React.ReactElement }[] = [
+  { id: "search", title: "Search", render: (p) => <SearchWidget {...p} /> },
   { id: "pinned", title: "Pinned", render: (p) => <PinnedWidget {...p} /> },
   { id: "recent", title: "Recent", render: (p) => <RecentWidget {...p} /> },
   { id: "quickCapture", title: "Quick capture", render: (p) => <QuickCaptureWidget {...p} /> },
@@ -76,6 +86,7 @@ const WIDGET_META: { id: WidgetId; title: string; render: (p: WidgetProps) => Re
 ];
 
 const DEFAULT_WIDGETS: WidgetId[] = [
+  "search",
   "pinned",
   "recent",
   "quickCapture",
