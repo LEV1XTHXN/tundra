@@ -216,6 +216,10 @@ function TagsSection({ onChanged }: { onChanged?: () => void }) {
   const kanbanTags = useKanbanTags((s) => s.tags);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+
+  const q = filter.trim().toLowerCase();
+  const visibleTags = q ? vaultTags.filter((t) => t.toLowerCase().includes(q)) : vaultTags;
 
   const deleteTag = async (tag: string) => {
     setError(null);
@@ -238,11 +242,24 @@ function TagsSection({ onChanged }: { onChanged?: () => void }) {
         Every tag in the vault. Deleting a tag removes it from all notes and can’t be undone.
       </p>
 
+      {vaultTags.length > 0 && (
+        <input
+          className="settings-tag-search"
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Search tags…"
+          aria-label="Search tags"
+        />
+      )}
+
       {vaultTags.length === 0 ? (
         <p className="muted">No tags yet — add tags to a note from its info panel.</p>
+      ) : visibleTags.length === 0 ? (
+        <p className="muted">No tags match “{filter.trim()}”.</p>
       ) : (
         <ul className="settings-taglist">
-          {vaultTags.map((t) => {
+          {visibleTags.map((t) => {
             const isKanban = kanbanTags.has(t);
             return (
               <li key={t}>

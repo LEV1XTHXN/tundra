@@ -2871,6 +2871,25 @@ body,
   color: var(--destructive);
 }
 
+/* Tag search box in the Tags settings tab. */
+.settings-tag-search {
+  width: 100%;
+  margin: 0.5rem 0 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.settings-tag-search::placeholder {
+  color: var(--muted-foreground);
+}
+.settings-tag-search:focus {
+  outline: none;
+  border-color: var(--ring, var(--accent));
+}
+
 /* Tags management list (reuses .settings-wordlist layout). */
 .settings-taglist {
   list-style: none;
