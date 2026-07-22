@@ -129,6 +129,20 @@ fn specta_builder() -> Builder<tauri::Wry> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK (Linux): disable the DMABUF-based accelerated renderer. Its
+    // tiled backing store samples the composited scroll layer off the pixel
+    // grid at alternating scroll offsets, so text blurs on every other wheel
+    // notch (reproduced on Fedora/GNOME, devicePixelRatio 1). Disabling just
+    // the DMABUF path fixes the blur while KEEPING accelerated compositing — so
+    // the WebGL graph view stays GPU-composited (CLAUDE.md prime directive:
+    // the graph is perf-critical and must scale). Must be set before WebKitGTK
+    // initializes, hence the very top of `run()`. Linux-only; no effect on the
+    // WebView2/WebKit backends used on Windows/macOS.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let builder = specta_builder();
 
     // In dev, regenerate the TypeScript bindings on every launch so the
