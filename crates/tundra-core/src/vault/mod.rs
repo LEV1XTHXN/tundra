@@ -64,6 +64,19 @@ pub struct TemplateSummary {
     pub icon: Option<crate::document::Icon>,
 }
 
+/// Result of `cleanup_orphan_attachments`: how many orphaned media files were
+/// deleted and how many bytes that freed. Crosses the IPC boundary so the
+/// settings UI can report "Freed X MB (N files)".
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct CleanupReport {
+    /// Number of orphaned attachment files removed.
+    pub removed: u32,
+    /// Total bytes freed by removing them. An `f64` (not `u64`): specta forbids
+    /// exporting bigint types across the IPC boundary, and a JS number holds a
+    /// byte count exactly well past any realistic vault size (2^53 bytes).
+    pub bytes: f64,
+}
+
 /// Which attachment library an import lands in (CLAUDE.md §5.2:
 /// `attachments/{images,videos,files}`). Crosses the IPC boundary, so it is
 /// serialized; the frontend maps a file's MIME type onto one of these.

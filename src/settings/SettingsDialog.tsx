@@ -18,8 +18,8 @@ import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN, useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
-import { appSettings, backup, notes, pickDirectory, spellcheck, tags as tagsService, templates } from "@/services";
-import type { SpellLanguages } from "@/services";
+import { appSettings, attachments, backup, notes, pickDirectory, spellcheck, tags as tagsService, templates } from "@/services";
+import type { CleanupReport, SpellLanguages } from "@/services";
 import { useTemplates } from "@/store/templates";
 import {
   kanbanTagChipStyle,
@@ -489,11 +489,29 @@ function ImportSection({ onOpenImport }: { onOpenImport?: () => void }) {
  * content. Destructive and irreversible, so the button reveals an inline confirm
  * before running.
  */
+/** Human-readable byte size for the attachment-cleanup result line. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
 function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Unused-attachments sweep — independent state from the empty-note cleanup.
+  const [attBusy, setAttBusy] = useState(false);
+  const [attResult, setAttResult] = useState<CleanupReport | null>(null);
+  const [attError, setAttError] = useState<string | null>(null);
 
   const runCleanup = async () => {
     setBusy(true);
@@ -508,6 +526,19 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
     } finally {
       setBusy(false);
       setConfirming(false);
+    }
+  };
+
+  const runAttachmentCleanup = async () => {
+    setAttBusy(true);
+    setAttError(null);
+    setAttResult(null);
+    try {
+      setAttResult(await attachments.cleanupOrphans());
+    } catch (e) {
+      setAttError(String(e));
+    } finally {
+      setAttBusy(false);
     }
   };
 
@@ -541,6 +572,26 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
         </p>
       )}
       {error && <p className="error">{error}</p>}
+
+      <h3 className="settings-section-title settings-section-title-spaced">Unused attachments</h3>
+      <p className="muted settings-section-desc">
+        Remove image, video, and file attachments that no note, template, or quick note
+        uses anymore — left behind when you delete an embed or a note. Attachments still
+        referenced anywhere are always kept. This cannot be undone.
+      </p>
+      <div className="settings-actions">
+        <Button variant="outline" size="sm" disabled={attBusy} onClick={runAttachmentCleanup}>
+          {attBusy ? "Cleaning up…" : "Clean up unused attachments"}
+        </Button>
+      </div>
+      {attResult !== null && (
+        <p className="muted settings-backup-last">
+          {attResult.removed === 0
+            ? "No unused attachments found."
+            : `Freed ${formatBytes(attResult.bytes ?? 0)} (${attResult.removed} file${attResult.removed === 1 ? "" : "s"} removed).`}
+        </p>
+      )}
+      {attError && <p className="error">{attError}</p>}
     </div>
   );
 }

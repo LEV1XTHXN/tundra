@@ -26,7 +26,8 @@ pub use error::{CoreError, Result};
 pub use index::{extract_text, SearchHit, SearchIndex};
 pub use links::{extract_link_ids, GraphData, GraphEdge, GraphNode, LinkIndex, LINK_INLINE_TYPE};
 pub use vault::{
-    AttachmentKind, ChangeEvent, FolderNode, TemplateSummary, TreeNode, Vault, VaultInfo,
+    AttachmentKind, CleanupReport, ChangeEvent, FolderNode, TemplateSummary, TreeNode, Vault,
+    VaultInfo,
 };
 pub use watcher::Watcher;
 

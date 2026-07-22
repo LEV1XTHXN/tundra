@@ -6,10 +6,10 @@
  * copied into the vault by the core via the `banners` service — this module
  * never touches the file system (CLAUDE.md §2).
  */
-import { useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ImagePlus, Trash2, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { banners } from "@/services";
+import { attachments, banners } from "@/services";
 import type { Banner } from "@/services";
 
 /**
@@ -67,6 +67,8 @@ export function NoteBanner({
     <div className="note-banner" style={{ background: bannerBackground(banner, vaultPath) }}>
       <div className="note-banner-controls">
         <BannerPicker
+          banner={banner}
+          vaultPath={vaultPath}
           onChange={onChange}
           trigger={
             <button className="note-banner-button" title="Change banner">
@@ -88,46 +90,112 @@ export function NoteBanner({
 }
 
 /**
- * The banner chooser popover: pastel gradient swatches, an "Upload image…"
- * action, and (when a banner already exists) it is reached via the strip's
- * "Change cover" button. Mirrors `IconPicker`'s trigger + popover pattern.
+ * The banner chooser popover: every uploaded custom cover is saved in a
+ * vault-scoped gallery and shown as a swatch in the same grid as the pastel
+ * gradient presets — so a custom image stays re-selectable even after a note's
+ * cover is removed. Each gallery swatch has a delete (×) to drop it from the
+ * gallery for good; an "Upload image…" action adds a new one. The currently
+ * applied cover is highlighted. Mirrors `IconPicker`'s trigger + popover pattern.
  */
 export function BannerPicker({
   trigger,
+  banner,
+  vaultPath,
   onChange,
 }: {
   trigger: React.ReactNode;
+  banner: Banner | null | undefined;
+  vaultPath: string;
   onChange: (banner: Banner | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [gallery, setGallery] = useState<string[]>([]);
+
+  // Load the saved gallery whenever the popover opens. If the note's current
+  // cover is an image not yet saved (e.g. set before the gallery existed), fold
+  // it in so it persists and gets a swatch like any other.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void (async () => {
+      let list = await banners.gallery();
+      if (banner?.type === "image" && !list.includes(banner.value)) {
+        list = await banners.addToGallery(banner.value);
+      }
+      if (alive) setGallery(list);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [open, banner]);
 
   async function handleUpload() {
     const src = await banners.pickFile();
     if (!src) return;
     const rel = await banners.import(src);
+    setGallery(await banners.addToGallery(rel));
     onChange({ type: "image", value: rel });
     setOpen(false);
+  }
+
+  async function handleDeleteFromGallery(path: string) {
+    // If the deleted image is this note's active cover, clear the cover first so
+    // nothing references the file — then the sweep can actually reclaim it.
+    if (banner?.type === "image" && banner.value === path) onChange(null);
+    setGallery(await banners.removeFromGallery(path));
+    void attachments.cleanupOrphans().catch(() => {});
   }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="banner-picker-content" align="start">
-        <div className="banner-picker-label">Gradients</div>
+        <div className="banner-picker-label">Covers</div>
         <div className="banner-picker-swatches">
-          {GRADIENT_ORDER.map((id) => (
-            <button
-              key={id}
-              className="banner-picker-swatch"
-              style={{ background: BANNER_GRADIENTS[id] }}
-              title={id}
-              aria-label={`${id} gradient banner`}
-              onClick={() => {
-                onChange({ type: "gradient", value: id });
-                setOpen(false);
-              }}
-            />
-          ))}
+          {gallery.map((path) => {
+            const image: Banner = { type: "image", value: path };
+            const isActive = banner?.type === "image" && banner.value === path;
+            return (
+              <div key={path} className="banner-picker-swatch-wrap">
+                <button
+                  className={`banner-picker-swatch${isActive ? " active" : ""}`}
+                  style={{ background: bannerBackground(image, vaultPath) }}
+                  title="Custom cover image"
+                  aria-label="Custom cover image"
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    onChange(image);
+                    setOpen(false);
+                  }}
+                />
+                <button
+                  className="banner-picker-swatch-remove"
+                  title="Delete from gallery"
+                  aria-label="Delete cover from gallery"
+                  onClick={() => void handleDeleteFromGallery(path)}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            );
+          })}
+          {GRADIENT_ORDER.map((id) => {
+            const isActive = banner?.type === "gradient" && banner.value === id;
+            return (
+              <button
+                key={id}
+                className={`banner-picker-swatch${isActive ? " active" : ""}`}
+                style={{ background: BANNER_GRADIENTS[id] }}
+                title={id}
+                aria-label={`${id} gradient banner`}
+                aria-pressed={isActive}
+                onClick={() => {
+                  onChange({ type: "gradient", value: id });
+                  setOpen(false);
+                }}
+              />
+            );
+          })}
         </div>
         <div className="banner-picker-actions">
           <button className="icon-picker-action" onClick={handleUpload}>

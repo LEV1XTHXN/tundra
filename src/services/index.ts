@@ -23,6 +23,7 @@ export type {
   FolderNode,
   SearchHit,
   AttachmentKind,
+  CleanupReport,
   GraphData,
   GraphNode,
   GraphEdge,
@@ -34,7 +35,7 @@ export type {
   SpellLanguages,
   SourceFile,
 } from "./bindings";
-import type { AttachmentKind, SourceFile } from "./bindings";
+import type { AttachmentKind, CleanupReport, SourceFile } from "./bindings";
 import type { GraphData } from "./bindings";
 import type { Note, NoteSummary, VaultInfo, TreeNode, SearchHit } from "./bindings";
 import type { Event, NoteDate, CalendarRange } from "./bindings";
@@ -133,7 +134,12 @@ export const notes = {
     unwrap(commands.createNoteIn(title, folder)),
   read: (id: string): Promise<Note> => unwrap(commands.readNote(id)),
   save: (note: Note): Promise<null> => unwrap(commands.saveNote(note)),
-  delete: (id: string): Promise<null> => unwrap(commands.deleteNote(id)),
+  /** Delete a note, then sweep any attachments it alone kept alive (fire-and-forget). */
+  delete: async (id: string): Promise<null> => {
+    const result = await unwrap(commands.deleteNote(id));
+    void attachments.cleanupOrphans().catch(() => {});
+    return result;
+  },
   /**
    * Vault cleanup: delete every note whose body is empty (any title), keeping
    * notes that hold images/tables/other non-text content. Returns the deleted
@@ -159,7 +165,12 @@ export const folders = {
     unwrap(commands.renameFolder(path, newName)),
   move: (path: string, newParent: string): Promise<null> =>
     unwrap(commands.moveFolder(path, newParent)),
-  delete: (path: string): Promise<null> => unwrap(commands.deleteFolder(path)),
+  /** Delete a folder (and its notes), then sweep now-orphaned attachments (fire-and-forget). */
+  delete: async (path: string): Promise<null> => {
+    const result = await unwrap(commands.deleteFolder(path));
+    void attachments.cleanupOrphans().catch(() => {});
+    return result;
+  },
 };
 
 /** The folder/note tree for the open vault. */
@@ -492,6 +503,13 @@ export const attachments = {
    * actually needs here.
    */
   openFile: (vaultPath: string, relPath: string): Promise<void> => openPath(`${vaultPath}/${relPath}`),
+  /**
+   * Delete every media attachment (`attachments/{images,videos,files}`) that no
+   * note, template, or quick note references — the orphans left behind when an
+   * embed/banner is removed or a note/folder is deleted. Returns how many files
+   * were removed and the bytes freed. Never touches `attachments/icons`.
+   */
+  cleanupOrphans: (): Promise<CleanupReport> => unwrap(commands.cleanupOrphanAttachments()),
 };
 
 /**
@@ -594,4 +612,33 @@ export const banners = {
   /** A displayable URL for a custom banner's vault-relative path. */
   assetUrl: (vaultPath: string, relPath: string): string =>
     convertFileSrc(`${vaultPath}/${relPath}`),
+
+  // --- banner gallery -------------------------------------------------------
+  //
+  // Uploaded custom banner images persist in a vault-scoped gallery
+  // (`.vault/config/banners.json`, a list of vault-relative image paths) so they
+  // stay re-selectable in the picker alongside the gradients even after a note's
+  // cover is removed. The Rust orphan sweep reads this same file, so a gallery
+  // image is never garbage-collected until it's removed from the gallery here.
+
+  /** The saved banner-gallery image paths (empty if none saved yet). */
+  async gallery(): Promise<string[]> {
+    return (await config.read<string[]>("banners.json")) ?? [];
+  },
+  /** Add `relPath` to the gallery (if absent) and return the updated list. */
+  async addToGallery(relPath: string): Promise<string[]> {
+    const current = await this.gallery();
+    if (current.includes(relPath)) return current;
+    const next = [...current, relPath];
+    await config.write("banners.json", next);
+    return next;
+  },
+  /** Remove `relPath` from the gallery and return the updated list. The caller
+   *  runs the orphan sweep afterwards so the file is deleted if no note uses it. */
+  async removeFromGallery(relPath: string): Promise<string[]> {
+    const current = await this.gallery();
+    const next = current.filter((p) => p !== relPath);
+    if (next.length !== current.length) await config.write("banners.json", next);
+    return next;
+  },
 };

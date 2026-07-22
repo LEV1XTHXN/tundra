@@ -61,6 +61,8 @@ export function EditorHeader({
           banner exists it's changed/removed from the strip's own controls. */}
       {!isTemplateMode && !banner && (
         <BannerPicker
+          banner={banner}
+          vaultPath={vaultPath}
           onChange={(b) => onBannerChange(b ?? DEFAULT_BANNER)}
           trigger={
             <button className="editor-icon-button" title="Add banner" aria-label="Add banner">

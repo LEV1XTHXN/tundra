@@ -1,5 +1,5 @@
 use super::*;
-use crate::document::{Block, Icon};
+use crate::document::{Banner, Block, Icon};
 
 fn temp_vault() -> (Vault, PathBuf) {
     let dir = std::env::temp_dir().join(format!("tundra-vault-test-{}", uuid::Uuid::new_v4()));
@@ -849,5 +849,158 @@ fn reconcile_path_tracks_externally_created_and_removed_folders() {
         .iter()
         .any(|n| matches!(n, TreeNode::Folder(f) if f.name == "External Folder")));
 
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A minimal image-embed block referencing a vault-relative attachment path,
+/// the same `props.url` shape BlockNote stores.
+fn image_block(url: &str) -> Block {
+    Block {
+        id: uuid::Uuid::new_v4().to_string(),
+        block_type: "image".to_string(),
+        props: Some(serde_json::json!({ "url": url })),
+        content: None,
+        children: Vec::new(),
+    }
+}
+
+#[test]
+fn cleanup_removes_orphaned_media_but_keeps_referenced() {
+    let (vault, dir) = temp_vault();
+
+    let rel = vault
+        .import_attachment(AttachmentKind::Image, "a.png", b"image-a")
+        .unwrap();
+    let mut note = vault.create_note("Has image").unwrap();
+    note.blocks.push(image_block(&rel));
+    vault.save_note(note.clone()).unwrap();
+
+    // Still referenced -> sweep is a no-op and the file survives.
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(dir.join(&rel).exists());
+
+    // Drop the reference -> the now-orphaned file is deleted, bytes reported.
+    let mut note = vault.read_note(&note.id).unwrap();
+    note.blocks.retain(|b| b.block_type != "image");
+    vault.save_note(note).unwrap();
+
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 1);
+    assert_eq!(report.bytes, b"image-a".len() as f64);
+    assert!(!dir.join(&rel).exists());
+    // The `<aa>/` shard directory emptied by the removal is gone too, but the
+    // library root itself remains.
+    assert!(!dir.join(&rel).parent().unwrap().exists());
+    assert!(dir.join("attachments/images").is_dir());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cleanup_keeps_media_still_referenced_by_another_note() {
+    let (vault, dir) = temp_vault();
+
+    // Content-addressed: both notes reference the identical bytes -> one file.
+    let rel = vault
+        .import_attachment(AttachmentKind::Image, "shared.png", b"shared-bytes")
+        .unwrap();
+
+    let mut a = vault.create_note("A").unwrap();
+    a.blocks.push(image_block(&rel));
+    vault.save_note(a.clone()).unwrap();
+
+    let mut b = vault.create_note("B").unwrap();
+    b.blocks.push(image_block(&rel));
+    vault.save_note(b).unwrap();
+
+    // Remove from A only; B still references the shared file.
+    let mut a = vault.read_note(&a.id).unwrap();
+    a.blocks.retain(|blk| blk.block_type != "image");
+    vault.save_note(a).unwrap();
+
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(dir.join(&rel).exists());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cleanup_respects_template_and_banner_references() {
+    let (vault, dir) = temp_vault();
+
+    // Referenced only by a template (outside the note index).
+    let tpl_rel = vault
+        .import_attachment(AttachmentKind::Image, "tpl.png", b"in-template")
+        .unwrap();
+    let mut tpl = vault.create_template("T").unwrap();
+    tpl.blocks.push(image_block(&tpl_rel));
+    vault.save_template(tpl).unwrap();
+
+    // Referenced only as a note banner (image variant).
+    let banner_rel = vault
+        .import_attachment(AttachmentKind::Image, "cover.png", b"banner-bytes")
+        .unwrap();
+    let mut note = vault.create_note("Cover note").unwrap();
+    note.meta.banner = Some(Banner::Image(banner_rel.clone()));
+    vault.save_note(note).unwrap();
+
+    // A genuine orphan (a file kind) that nothing references.
+    let orphan_rel = vault
+        .import_attachment(AttachmentKind::File, "junk.bin", b"orphan-bytes")
+        .unwrap();
+
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(dir.join(&tpl_rel).exists());
+    assert!(dir.join(&banner_rel).exists());
+    assert!(!dir.join(&orphan_rel).exists());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cleanup_keeps_banner_gallery_images_no_note_uses() {
+    let (vault, dir) = temp_vault();
+
+    // An image saved to the banner gallery but used as no note's cover.
+    let rel = vault
+        .import_attachment(AttachmentKind::Image, "saved-cover.png", b"gallery-cover")
+        .unwrap();
+    vault
+        .write_config("banners.json", &serde_json::to_string(&[&rel]).unwrap())
+        .unwrap();
+
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(dir.join(&rel).exists());
+
+    // Once it's dropped from the gallery too, nothing references it -> swept.
+    vault.write_config("banners.json", "[]").unwrap();
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!dir.join(&rel).exists());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cleanup_never_touches_the_icons_library() {
+    let (vault, dir) = temp_vault();
+
+    // A custom icon nothing "references" in the sweep's tracked set must still
+    // survive — icons are deliberately out of scope.
+    let src_dir = std::env::temp_dir().join(format!("tundra-icon-keep-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&src_dir).unwrap();
+    let src = src_dir.join("star.png");
+    fs::write(&src, b"icon bytes").unwrap();
+    let icon_rel = vault.import_icon(&src).unwrap();
+
+    let report = vault.cleanup_orphan_attachments().unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(dir.join(&icon_rel).exists());
+
+    std::fs::remove_dir_all(&src_dir).ok();
     std::fs::remove_dir_all(&dir).ok();
 }

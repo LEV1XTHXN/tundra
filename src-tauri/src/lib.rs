@@ -80,6 +80,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::import_icon,
             commands::import_banner,
             commands::import_attachment,
+            commands::cleanup_orphan_attachments,
             commands::search_query,
             commands::search_by_tag,
             commands::rebuild_index,

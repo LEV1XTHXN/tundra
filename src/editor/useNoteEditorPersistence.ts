@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { notes, watcher } from "@/services";
+import { attachments, notes, watcher } from "@/services";
 import type { Banner, Icon, Note } from "@/services";
 import { useActivity } from "@/store/activity";
 import { createDebouncedFlush, type DebouncedFlush } from "./debouncedFlush";
@@ -11,6 +11,43 @@ import type { NoteBlockEditor } from "./useNoteBlockEditor";
 
 const DEBOUNCE_MS = 600;
 const MAX_WAIT_MS = 2500;
+
+/** Media attachment libraries whose orphans the cleanup sweep reclaims (icons
+ *  are deliberately excluded — see `vault/attachments.rs`). */
+const MEDIA_PATH = /^attachments\/(images|videos|files)\//;
+
+/** Collect every media attachment path a note references (block `props.url`
+ *  across the whole tree, plus an image banner) — the inputs to the removed-media
+ *  diff that gates the orphan sweep. */
+function mediaPathsOf(note: Note): Set<string> {
+  const out = new Set<string>();
+  const walk = (blocks: readonly unknown[]) => {
+    for (const block of blocks) {
+      const b = block as { props?: { url?: unknown }; children?: unknown[] };
+      const url = b.props?.url;
+      if (typeof url === "string" && MEDIA_PATH.test(url)) out.add(url);
+      if (Array.isArray(b.children)) walk(b.children);
+    }
+  };
+  walk(note.blocks ?? []);
+  if (note.meta?.banner?.type === "image") out.add(note.meta.banner.value);
+  return out;
+}
+
+/** If any media path present in `prev` is gone from `next`, fire the vault-wide
+ *  orphan sweep (fire-and-forget). Gating on an actual removal keeps the sweep
+ *  off ordinary keystroke saves — it runs only when an embed/banner disappears. */
+function cleanupIfMediaRemoved(prev: Note, next: Note) {
+  const before = mediaPathsOf(prev);
+  if (before.size === 0) return;
+  const after = mediaPathsOf(next);
+  for (const path of before) {
+    if (!after.has(path)) {
+      void attachments.cleanupOrphans().catch(() => {});
+      return;
+    }
+  }
+}
 
 interface Params {
   note: Note;
@@ -94,6 +131,7 @@ export function useNoteEditorPersistence({
         blocks: editor.document as unknown as Note["blocks"],
       });
       await persistence.save(updated);
+      cleanupIfMediaRemoved(noteRef.current, updated);
       noteRef.current = updated;
       isDirtyRef.current = false;
       setSaveState("saved");
@@ -156,6 +194,7 @@ export function useNoteEditorPersistence({
         ...patch,
       });
       await persistence.save(updated);
+      cleanupIfMediaRemoved(noteRef.current, updated);
       noteRef.current = updated;
       apply();
       setSaveState("saved");

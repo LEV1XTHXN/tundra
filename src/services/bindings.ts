@@ -122,6 +122,13 @@ export const commands = {
 	 *  bytes are ever written from the frontend.
 	 */
 	importAttachment: (kind: AttachmentKind, fileName: string, bytes: number[]) => typedError<string, CoreError>(__TAURI_INVOKE("import_attachment", { kind, fileName, bytes })),
+	/**
+	 *  Delete every media attachment (`attachments/{images,videos,files}`) that no
+	 *  note, template, or quick note references — the orphans left behind when an
+	 *  embed/banner is removed or a note/folder is deleted. Returns how many files
+	 *  were removed and the bytes freed. Never touches `attachments/icons`.
+	 */
+	cleanupOrphanAttachments: () => typedError<CleanupReport, CoreError>(__TAURI_INVOKE("cleanup_orphan_attachments")),
 	/**  Ranked full-text search hits (id, title, snippet) for `query`. */
 	searchQuery: (query: string, limit: number) => typedError<SearchHit[], CoreError>(__TAURI_INVOKE("search_query", { query, limit })),
 	/**
@@ -374,6 +381,22 @@ export type CalendarRange_Deserialize = {
 export type CalendarRange_Serialize = {
 	events: Event_Serialize[],
 	note_dates: NoteDateEntry_Serialize[],
+};
+
+/**
+ *  Result of `cleanup_orphan_attachments`: how many orphaned media files were
+ *  deleted and how many bytes that freed. Crosses the IPC boundary so the
+ *  settings UI can report "Freed X MB (N files)".
+ */
+export type CleanupReport = {
+	/**  Number of orphaned attachment files removed. */
+	removed: number,
+	/**
+	 *  Total bytes freed by removing them. An `f64` (not `u64`): specta forbids
+	 *  exporting bigint types across the IPC boundary, and a JS number holds a
+	 *  byte count exactly well past any realistic vault size (2^53 bytes).
+	 */
+	bytes: number | null,
 };
 
 export type CoreError = 

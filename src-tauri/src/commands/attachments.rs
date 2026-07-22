@@ -32,3 +32,13 @@ pub fn import_attachment(
 ) -> Result<String, CoreError> {
     current(&state)?.import_attachment(kind, &file_name, &bytes)
 }
+
+/// Delete every media attachment (`attachments/{images,videos,files}`) that no
+/// note, template, or quick note references — the orphans left behind when an
+/// embed/banner is removed or a note/folder is deleted. Returns how many files
+/// were removed and the bytes freed. Never touches `attachments/icons`.
+#[tauri::command]
+#[specta::specta]
+pub fn cleanup_orphan_attachments(state: State<AppState>) -> Result<CleanupReport, CoreError> {
+    current(&state)?.cleanup_orphan_attachments()
+}

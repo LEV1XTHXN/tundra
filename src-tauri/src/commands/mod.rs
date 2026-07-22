@@ -12,7 +12,7 @@ use tauri_specta::Event;
 use chrono::NaiveDate;
 
 use tundra_core::{
-    AttachmentKind, CalendarRange, CalendarStore, ChangeEvent, CoreError,
+    AttachmentKind, CalendarRange, CalendarStore, ChangeEvent, CleanupReport, CoreError,
     Event as CalendarEvent, GraphData, KanbanBoard, KanbanStore, LinkIndex, Misspelling, Note,
     NoteDate, NoteSummary, SearchHit, SearchIndex, SpellChecker, TreeNode, Vault, VaultInfo, Watcher,
 };
