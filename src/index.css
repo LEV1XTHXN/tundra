@@ -1578,6 +1578,116 @@ body,
   display: none;
 }
 
+/* Table-of-contents minimap (TableOfContents.tsx) — a Notion-style outline
+   pinned to the right edge of the note. Rendered as a SIBLING of .editor-pane so
+   it anchors to the non-scrolling .main-pane (like .status) and stays put while
+   the note scrolls. Hovering the stripes reveals the titles panel. Sits below
+   the inspector (z 20), which it's hidden behind anyway (shown one at a time). */
+.toc {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  max-height: 70%;
+}
+
+/* The collapsed stripes: one per heading, width encodes the level. Fades out as
+   the panel fades in on hover. `aria-hidden` — the panel buttons are the real
+   controls. */
+.toc-stripes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  padding: 0.4rem 0.35rem;
+  transition: opacity 0.15s ease;
+}
+.toc:hover .toc-stripes,
+.toc:focus-within .toc-stripes {
+  opacity: 0;
+}
+.toc-stripe {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--muted-foreground);
+  opacity: 0.4;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.toc-stripe-l1 {
+  width: 16px;
+}
+.toc-stripe-l2 {
+  width: 12px;
+}
+.toc-stripe-l3 {
+  width: 8px;
+}
+.toc-stripe.is-active {
+  background: var(--foreground);
+  opacity: 1;
+}
+
+/* The hover panel: titles indented by level, each a click-to-scroll button.
+   Hidden (and non-interactive) until the whole .toc is hovered/focused. Anchored
+   to the right edge, growing leftward. */
+.toc-panel {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) translateX(6px);
+  min-width: 180px;
+  max-width: 280px;
+  /* Fixed height (not `100%`, which resolves against .toc's short stripe-column
+     height and clipped the panel to 2–3 rows) — ~5 sections tall, then scrolls,
+     capped to the viewport so it never overflows a short window. */
+  max-height: min(60vh, 15rem);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.toc:hover .toc-panel,
+.toc:focus-within .toc-panel {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+  pointer-events: auto;
+}
+.toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.toc-item:hover,
+.toc-item.is-active {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.toc-item-l2 {
+  padding-left: 1.25rem;
+}
+.toc-item-l3 {
+  padding-left: 2rem;
+}
+
 /* Note links (Phase 2 step 3) — an id-backed inline node rendered with the
    target's live title. */
 .note-link {
@@ -2704,6 +2814,24 @@ body,
 }
 .settings-theme-option-desc {
   font-size: 0.75rem;
+}
+.settings-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 20rem;
+}
+.settings-slider-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.settings-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+  cursor: pointer;
 }
 .settings-check {
   display: flex;

@@ -34,6 +34,7 @@ import { useEditorContextMenus } from "./useEditorContextMenus";
 import { useEditorShortcuts } from "./useEditorShortcuts";
 import { EditorHeader } from "./EditorHeader";
 import { EditorContextMenu, SpellcheckMenu } from "./EditorMenus";
+import { TableOfContents } from "./TableOfContents";
 
 export { TEMPLATE_PERSISTENCE, type NotePersistence } from "./persistence";
 
@@ -285,6 +286,10 @@ function LoadedNoteEditor({
           />
         </>
       )}
+      {/* Table-of-contents minimap — a sibling of .editor-pane so it anchors to
+          the non-scrolling .main-pane (like .status below) and stays pinned to
+          the right edge while the note scrolls. Hidden in the Templates manager. */}
+      {!isTemplateMode && <TableOfContents editor={editor} scrollRef={editorPaneRef} />}
       {/* Save-state indicator: a sibling of .editor-pane (not a child), so it
           anchors to the non-scrolling .main-pane and stays pinned to its
           bottom-left corner regardless of note length or scroll (see .status). */}

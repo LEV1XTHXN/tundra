@@ -16,17 +16,24 @@ export type ThemePref = "system" | "light" | "dark";
 type Resolved = "light" | "dark";
 /** 24h ("13:00", the European/international default) or 12h ("1:00 PM"). */
 export type TimeFormatPref = "24h" | "12h";
-/** Editor content font size (BlockNote's own default is "medium" = 16px). */
-export type EditorFontSizePref = "small" | "medium" | "large" | "xlarge";
+/** Editor content font size in pixels. BlockNote's own default is 16. */
+export type EditorFontSizePref = number;
 
 /** The app-settings blob name under which appearance preferences persist. */
 const SETTINGS_NAME = "appearance";
 
-const EDITOR_FONT_SIZE_PX: Record<EditorFontSizePref, string> = {
-  small: "14px",
-  medium: "16px",
-  large: "18px",
-  xlarge: "20px",
+/** Slider bounds and default for the editor content font size (pixels). */
+export const EDITOR_FONT_SIZE_MIN = 12;
+export const EDITOR_FONT_SIZE_MAX = 24;
+export const EDITOR_FONT_SIZE_DEFAULT = 16;
+
+/** Legacy string presets (pre-slider) mapped to their pixel sizes, so configs
+ *  written by older versions still load correctly. */
+const LEGACY_FONT_SIZE_PX: Record<string, number> = {
+  small: 14,
+  medium: 16,
+  large: 18,
+  xlarge: 20,
 };
 
 interface AppearanceConfig {
@@ -35,8 +42,9 @@ interface AppearanceConfig {
   /** Show a note's last-modified date in a tooltip on hover, in the nav tree
    *  and home dashboard note lists. Off by default. */
   showModifiedOnHover?: boolean;
-  /** Editor content font size. Defaults to "medium" (BlockNote's own 16px). */
-  editorFontSize?: EditorFontSizePref;
+  /** Editor content font size in pixels. Older versions persisted a string
+   *  preset ("small"/"medium"/…); load() normalizes those. */
+  editorFontSize?: EditorFontSizePref | string;
   /** Swap editor content to a dyslexia-friendly font (OpenDyslexic). Off by
    *  default; scoped to note/quick-note content only, not the app chrome. */
   dyslexiaFont?: boolean;
@@ -58,7 +66,8 @@ function applyToDom(resolved: Resolved): void {
 
 function applyEditorFontSize(size: EditorFontSizePref): void {
   if (typeof document !== "undefined") {
-    document.documentElement.style.setProperty("--editor-font-size", EDITOR_FONT_SIZE_PX[size]);
+    const px = Math.min(EDITOR_FONT_SIZE_MAX, Math.max(EDITOR_FONT_SIZE_MIN, size));
+    document.documentElement.style.setProperty("--editor-font-size", `${px}px`);
   }
 }
 
@@ -102,7 +111,7 @@ export const useTheme = create<ThemeState>((set, get) => ({
   resolved: resolvePref("system"),
   timeFormat: "24h",
   showModifiedOnHover: false,
-  editorFontSize: "medium",
+  editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   dyslexiaFont: false,
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
@@ -159,7 +168,13 @@ export const useTheme = create<ThemeState>((set, get) => ({
     const theme = cfg?.theme ?? "system";
     const timeFormat = cfg?.timeFormat ?? "24h";
     const showModifiedOnHover = cfg?.showModifiedOnHover ?? false;
-    const editorFontSize = cfg?.editorFontSize ?? "medium";
+    const rawFontSize = cfg?.editorFontSize;
+    const editorFontSize =
+      typeof rawFontSize === "number"
+        ? rawFontSize
+        : typeof rawFontSize === "string"
+          ? LEGACY_FONT_SIZE_PX[rawFontSize] ?? EDITOR_FONT_SIZE_DEFAULT
+          : EDITOR_FONT_SIZE_DEFAULT;
     const dyslexiaFont = cfg?.dyslexiaFont ?? false;
     const resolved = resolvePref(theme);
     applyToDom(resolved);
