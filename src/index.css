@@ -241,11 +241,16 @@ body,
   color: var(--primary-foreground);
 }
 
-/* App shell */
+/* App shell: icon ribbon | note-tree panel | main pane. The ribbon's width is a
+   custom property so sliding it open (icons -> icons + labels) is one variable. */
 .app {
+  --ribbon-width: 2.75rem;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: var(--ribbon-width) 260px 1fr;
   height: 100vh;
+}
+.app.ribbon-open {
+  --ribbon-width: 11rem;
 }
 
 .sidebar {
@@ -391,173 +396,72 @@ body,
   cursor: default;
 }
 
-/* Top-level view switcher — a vertical icon+label list (Home / Notes / Graph /
-   Calendar / Kanban / Quick). A horizontal segmented control stopped fitting
-   once the view count grew past four, silently truncating the last tabs; a
-   vertical list has effectively unlimited room and matches the rest of the
-   sidebar's stacked layout (nav tree, templates section). */
-.view-switcher {
+/* The left-edge icon ribbon (Ribbon.tsx) — the app's top-level navigation.
+   Icon-only by default; sliding it open reveals the labels (the width itself
+   lives on .app as --ribbon-width, so the grid tracks it). */
+.ribbon {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.25rem;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.view-switcher-tab {
+.ribbon-items,
+.ribbon-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+.ribbon-items {
+  overflow-y: auto;
+}
+
+.ribbon-item {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.6rem;
-  width: 100%;
-  padding: 0.4rem 0.6rem;
+  height: 2rem;
+  padding: 0;
   border: none;
   border-radius: var(--radius-md);
   background: none;
   color: var(--muted-foreground);
   font-size: 0.85rem;
-  text-align: left;
   cursor: pointer;
 }
-.view-switcher-tab svg {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
+.ribbon.expanded .ribbon-item {
+  justify-content: flex-start;
+  padding: 0 0.55rem;
 }
 
-.view-switcher-tab:hover {
+.ribbon-item-icon {
+  flex-shrink: 0;
+}
+.ribbon-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ribbon-item:hover {
   background: var(--accent);
   color: var(--accent-foreground);
 }
-.view-switcher-tab:hover svg {
-  color: var(--accent-foreground);
-}
-
-.view-switcher-tab.active {
+.ribbon-item.active {
   background: var(--secondary);
   color: var(--foreground);
   font-weight: 600;
 }
-.view-switcher-tab.active svg {
-  color: var(--foreground);
-}
 
-.sidebar-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.new-note {
-  text-align: left;
-}
-
-/* Dedicated sidebar sections (Pinned, Templates) above the folder/note tree.
-   Full-bleed like .nav-tree-scroll; capped so a long list can't crowd out the
-   tree (it scrolls within the cap instead). */
-.sidebar-sections {
-  flex: 0 0 auto;
-  max-height: 45%;
-  overflow-y: auto;
-  margin: 0 -0.75rem;
-  display: flex;
-  flex-direction: column;
-}
-.sidebar-section {
-  display: flex;
-  flex-direction: column;
-}
-.sidebar-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.2rem 0.75rem 0.2rem 0.4rem;
-}
-.sidebar-section-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted-foreground);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.sidebar-section-toggle:hover {
-  color: var(--foreground);
-}
-.sidebar-section-heading {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sidebar-section-count {
-  font-size: 0.7rem;
-  font-weight: 500;
+.ribbon-toggle {
   color: var(--muted-foreground);
   opacity: 0.7;
-}
-.sidebar-section-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.sidebar-section-action:hover {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.sidebar-section-body {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 0.25rem;
-}
-.sidebar-section-row-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.sidebar-section-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  padding: 0.25rem 0.75rem 0.25rem 1.5rem;
-  background: none;
-  border: none;
-  font-size: 0.9rem;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  color: var(--foreground);
-}
-.sidebar-section-row:hover {
-  background: var(--accent);
-}
-.sidebar-section-row.active {
-  background: var(--accent);
-  color: var(--accent-foreground);
-}
-.sidebar-section-row-actions {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-  gap: 2px;
-}
-.sidebar-section-row-wrap:hover .sidebar-section-row-actions {
-  display: flex;
-}
-.sidebar-section-empty {
-  padding: 0.15rem 0.75rem 0.35rem 1.5rem;
-  font-size: 0.8rem;
 }
 
 .nav-tree-scroll {
@@ -608,35 +512,31 @@ body,
   padding: 0.4rem;
 }
 
-.nav-row-actions {
+/* Rows carry no hover buttons — every action is on the right-click menu. The
+   row the menu is open on stays highlighted while it's up. */
+.nav-row-wrap[data-state="open"] .nav-row {
+  background: var(--accent);
+}
+
+/* Zero-width anchor the icon picker opens against when it's launched from the
+   context menu, positioned where the row's own icon sits. */
+.nav-icon-anchor {
   position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-  gap: 2px;
+  left: 1.25rem;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  pointer-events: none;
 }
 
-.nav-row-wrap:hover .nav-row-actions {
-  display: flex;
+/* Check/direction columns in the folder "Sort by" submenu. */
+.nav-sort-check {
+  display: inline-block;
+  width: 0.75rem;
 }
-
-.nav-row-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--card);
+.nav-sort-dir {
+  margin-left: auto;
   color: var(--muted-foreground);
-  cursor: pointer;
-}
-
-.nav-row-action:hover {
-  background: var(--border);
-  color: var(--foreground);
 }
 
 .nav-row-edit {
@@ -659,14 +559,6 @@ body,
   font-size: 0.9rem;
   color: var(--muted-foreground);
   border-bottom: 1px dashed var(--border);
-}
-
-/* Full-bleed separator between the tree and the bottom-anchored Templates section. */
-.sidebar-divider {
-  height: 1px;
-  margin: 0 -0.75rem;
-  background: var(--border);
-  flex: 0 0 auto;
 }
 
 .drag-over {
@@ -2948,125 +2840,6 @@ body,
   color: var(--destructive);
 }
 
-/* Tag search box in the Tags settings tab. */
-.settings-tag-search {
-  width: 100%;
-  margin: 0.5rem 0 0;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.85rem;
-  color: var(--foreground);
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-.settings-tag-search::placeholder {
-  color: var(--muted-foreground);
-}
-.settings-tag-search:focus {
-  outline: none;
-  border-color: var(--ring, var(--accent));
-}
-
-/* Tags management list (reuses .settings-wordlist layout). */
-.settings-taglist {
-  list-style: none;
-  margin: 0.5rem 0 0;
-  padding: 0;
-  max-height: 20rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.settings-taglist li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.3rem 0.4rem;
-  border-radius: var(--radius-sm);
-}
-.settings-taglist li:hover {
-  background: var(--accent);
-}
-.settings-tag-chip {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--accent-foreground);
-  background: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-}
-.settings-tag-managed {
-  font-size: 0.75rem;
-}
-.settings-tag-delete {
-  display: inline-flex;
-  padding: 0.1rem;
-  border: none;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.settings-tag-delete:hover {
-  color: var(--destructive);
-}
-.settings-tag-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.settings-tag-confirm button {
-  font-size: 0.78rem;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--background);
-  color: var(--foreground);
-  cursor: pointer;
-}
-.settings-tag-confirm .settings-tag-danger {
-  background: var(--destructive);
-  border-color: var(--destructive);
-  color: var(--destructive-foreground, #fff);
-}
-
-/* Templates management list (reuses .settings-wordlist layout). */
-.settings-templatelist {
-  max-height: 20rem;
-  margin-top: 0.75rem;
-}
-.settings-template-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.settings-template-actions,
-.settings-template-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex: 0 0 auto;
-}
-/* Edit (pencil) is not destructive — only the trash turns red on hover. */
-.settings-template-actions button:first-child:hover {
-  color: var(--foreground);
-}
-.settings-template-confirm button {
-  font-size: 0.8rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--muted-foreground);
-}
-.settings-template-danger {
-  color: var(--destructive) !important;
-  font-weight: 500;
-}
-
 /* --- Kanban view (Phase 3+) -------------------------------------------- */
 .kanban {
   position: absolute;
@@ -3637,7 +3410,10 @@ body,
 
 /* Left-click opens the icon picker directly — same trigger pattern as the
    group icon button below, no separate "set icon" action for folders. */
-.nav-folder-icon {
+/* The row's own icon, doubling as the icon-picker trigger — same treatment for
+   folders, groups, and notes. */
+.nav-folder-icon,
+.nav-note-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3649,7 +3425,8 @@ body,
   flex-shrink: 0;
 }
 
-.nav-folder-label {
+.nav-folder-label,
+.nav-note-label {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -4453,4 +4230,164 @@ body.ft-resizing * {
 /* Divider between the pinned group and the rest, so the grouping is obvious. */
 .ft-row.last-pinned {
   border-bottom: 2px solid color-mix(in oklch, var(--primary) 45%, var(--border));
+}
+
+/* A plain header action button for views that need one (Templates' "New
+   template"), matching the density of the rest of the view-frame header. */
+.view-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.view-action:hover {
+  background: var(--accent);
+}
+
+/* Templates view (TemplatesView.tsx) — a card grid of the vault's templates. */
+.template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.template-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.template-card:hover {
+  background: var(--accent);
+}
+.template-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tags view (TagsView.tsx) — tag list on the left, the selected tag's notes on
+   the right. Full-bleed inside the view frame, so each pane scrolls on its own. */
+.tags-view {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) 1fr;
+  height: 100%;
+  min-height: 0;
+}
+.tags-list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  border-right: 1px solid var(--border);
+}
+.tags-notes-pane {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+
+.tags-filter,
+.tags-rename {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+}
+
+.tags-list,
+.tags-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tags-row,
+.tags-note-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.tags-row:hover,
+.tags-note-row:hover {
+  background: var(--accent);
+}
+.tags-row.active {
+  background: var(--secondary);
+}
+
+.tags-chip {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tags-count {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+.tags-empty {
+  padding: 0.4rem;
+  font-size: 0.85rem;
+}
+
+/* Color swatches inside a tag's context menu. */
+.tags-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0.15rem 0.5rem 0.3rem;
+}
+.tags-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+}
+.tags-swatch-clear {
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
 }

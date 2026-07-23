@@ -3,7 +3,10 @@ import { create } from "zustand";
 /**
  * The top-level view the shell is showing (Phase 2 step 4). The editor/nav are
  * the note-editing view; graph, quick notes, and home are peers switched via the
- * shell's view switcher. `quicknotes` and `home` are wired in steps 5–6.
+ * shell's icon ribbon. `quicknotes` and `home` are wired in steps 5–6.
+ *
+ * `templates` is the template *manager* (a list of every template); `template`
+ * — singular — is the editor open on ONE template, keyed by `templateEditId`.
  */
 export type AppView =
   | "editor"
@@ -13,6 +16,8 @@ export type AppView =
   | "calendar"
   | "kanban"
   | "folder"
+  | "tags"
+  | "templates"
   | "template";
 
 /**

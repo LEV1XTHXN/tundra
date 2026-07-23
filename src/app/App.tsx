@@ -6,11 +6,14 @@
  * the `services` layer; React only renders and dispatches (CLAUDE.md §2).
  */
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { SearchPalette } from "@/search/SearchPalette";
 import { SettingsDialog } from "@/settings/SettingsDialog";
 import { ImportDialog } from "@/import/ImportDialog";
 import { useViewState } from "@/store/viewState";
+import { useTheme } from "@/store/theme";
 import { Onboarding } from "./Onboarding";
+import { Ribbon } from "./Ribbon";
 import { AppSidebar } from "./AppSidebar";
 import { MainPane } from "./MainPane";
 import { ErrorToast } from "./ErrorToast";
@@ -34,6 +37,9 @@ export default function App() {
   useAppStores(vaultInfo);
 
   const openNote = useViewState((s) => s.openNote);
+  // The ribbon's width is a grid track on `.app`, so the shell owns the class
+  // that widens it when the ribbon is slid open.
+  const ribbonExpanded = useTheme((s) => s.ribbonExpanded);
   const [editorRefreshToken, bumpEditor] = useEditorRefresh();
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -41,7 +47,7 @@ export default function App() {
 
   const noteActions = useNoteActions({ refreshTree, setError, bumpEditor });
   const creation = useCreationDialogs({ refreshTree, setError });
-  const templateActions = useTemplateActions({ setSettingsOpen, setError });
+  const templateActions = useTemplateActions({ setError });
   const deletion = useDeletion({
     refreshTree,
     setError,
@@ -58,16 +64,15 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={cn("app", ribbonExpanded && "ribbon-open")}>
+      <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
+
       <AppSidebar
         vaultInfo={vaultInfo}
         treeData={treeData}
         noteActions={noteActions}
         deletion={deletion}
         creation={creation}
-        templateActions={templateActions}
-        onSearch={() => setSearchOpen(true)}
-        onSettings={() => setSettingsOpen(true)}
         onSwitchVault={switchVault}
         onError={setError}
       />
@@ -80,7 +85,8 @@ export default function App() {
         setError={setError}
         editorRefreshToken={editorRefreshToken}
         bumpEditor={bumpEditor}
-        onDoneEditingTemplate={templateActions.onDoneEditingTemplate}
+        templateActions={templateActions}
+        deletion={deletion}
       />
 
       <ErrorToast error={error} />
@@ -91,8 +97,6 @@ export default function App() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         onCleaned={noteActions.onVaultCleaned}
-        onEditTemplate={templateActions.onEditTemplateFromSettings}
-        onTagsChanged={() => void refreshTree()}
         onOpenImport={() => {
           setSettingsOpen(false);
           setImportOpen(true);

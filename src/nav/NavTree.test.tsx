@@ -59,6 +59,10 @@ describe("NavTree virtualization", () => {
         onRequestDeleteFolder={() => {}}
         onSetNoteIcon={() => {}}
         onRequestDeleteGroup={() => {}}
+        onNewNote={() => {}}
+        onNewFolder={() => {}}
+        onNewFolderInGroup={() => {}}
+        onNewGroup={() => {}}
       />,
     );
 

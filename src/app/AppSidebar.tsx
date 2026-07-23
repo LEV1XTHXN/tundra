@@ -1,14 +1,10 @@
 import type { TreeNode, VaultInfo } from "@/services";
 import { NavTree } from "@/nav/NavTree";
-import { SidebarSections } from "@/nav/SidebarSections";
 import { useViewState } from "@/store/viewState";
-import { ViewSwitcher } from "./ViewSwitcher";
-import { SidebarActions } from "./SidebarActions";
 import { VaultSwitcher } from "./VaultSwitcher";
 import type { NoteActions } from "./hooks/useNoteActions";
 import type { Deletion } from "./hooks/useDeletion";
 import type { CreationDialogs } from "./hooks/useCreationDialogs";
-import type { TemplateActions } from "./hooks/useTemplateActions";
 
 interface AppSidebarProps {
   vaultInfo: VaultInfo;
@@ -16,9 +12,6 @@ interface AppSidebarProps {
   noteActions: NoteActions;
   deletion: Deletion;
   creation: CreationDialogs;
-  templateActions: TemplateActions;
-  onSearch: () => void;
-  onSettings: () => void;
   /** Switch to a different (known, opened-elsewhere, or brand-new) vault —
    *  from `useVaultSession`; the vault-name switcher's only entry point. */
   onSwitchVault: (path: string) => Promise<void>;
@@ -26,9 +19,12 @@ interface AppSidebarProps {
 }
 
 /**
- * The app frame's left sidebar: vault name, view switcher, action buttons, the
- * nav tree (notes + folders), and the Templates section below a divider. Nav
- * *view* state (open note, expanded folders, active view) is read straight from
+ * The tree panel, between the icon ribbon and the main pane: the vault name
+ * (which doubles as the vault switcher) and the folder/note tree, nothing else.
+ * Creating, renaming and deleting all happen on the tree's right-click menu, so
+ * this panel carries no buttons of its own.
+ *
+ * Nav *view* state (open note, expanded folders) is read straight from
  * `useViewState`; the mutation callbacks come from the action hooks via props.
  */
 export function AppSidebar({
@@ -37,9 +33,6 @@ export function AppSidebar({
   noteActions,
   deletion,
   creation,
-  templateActions,
-  onSearch,
-  onSettings,
   onSwitchVault,
   onError,
 }: AppSidebarProps) {
@@ -48,20 +41,10 @@ export function AppSidebar({
   const toggleFolder = useViewState((s) => s.toggleFolder);
   const openNote = useViewState((s) => s.openNote);
   const openFolder = useViewState((s) => s.openFolder);
-  const view = useViewState((s) => s.view);
-  const templateEditId = useViewState((s) => s.templateEditId);
 
   return (
     <aside className="sidebar">
       <VaultSwitcher vaultInfo={vaultInfo} onSwitch={onSwitchVault} onError={onError} />
-      <ViewSwitcher />
-      <SidebarActions
-        onSearch={onSearch}
-        onNewNote={() => void noteActions.onNewNote()}
-        onNewFolder={creation.onNewFolder}
-        onNewGroup={creation.onNewGroup}
-        onSettings={onSettings}
-      />
       <NavTree
         tree={treeData}
         vaultPath={vaultInfo.path}
@@ -78,16 +61,12 @@ export function AppSidebar({
         onRequestDeleteFolder={deletion.onRequestDeleteFolder}
         onSetNoteIcon={noteActions.onSetNoteIcon}
         onRequestDeleteGroup={deletion.onRequestDeleteGroup}
-      />
-      {/* Templates live at the bottom of the sidebar, below the vault tree,
-          separated by a divider. */}
-      <div className="sidebar-divider" />
-      <SidebarSections
-        vaultPath={vaultInfo.path}
-        activeTemplateId={view === "template" ? templateEditId : null}
-        onOpenTemplate={templateActions.onOpenTemplate}
-        onNewTemplate={() => void templateActions.onNewTemplate()}
-        onRequestDeleteTemplate={deletion.onRequestDeleteTemplate}
+        onNewNote={(folder) => void noteActions.onNewNote(folder)}
+        onNewFolder={(parent, label) => creation.onNewFolder({ parent, label })}
+        onNewFolderInGroup={(groupId, label) =>
+          creation.onNewFolder({ parent: "", groupId, label })
+        }
+        onNewGroup={creation.onNewGroup}
       />
     </aside>
   );

@@ -9,6 +9,11 @@ import type { Icon } from "@/services";
 interface IconPickerProps {
   trigger: React.ReactNode;
   onChange: (icon: Icon | null) => void;
+  /** Optionally drive the popover from outside. Needed where the picker isn't
+   *  opened by clicking its own trigger — the nav tree's context menu closes
+   *  itself on select, then opens the picker against an invisible row anchor. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -17,8 +22,18 @@ interface IconPickerProps {
  * data (`public/emojibase/en/`) rather than frimousse's CDN default, so the
  * picker works fully offline like the rest of the app.
  */
-export function IconPicker({ trigger, onChange }: IconPickerProps) {
-  const [open, setOpen] = useState(false);
+export function IconPicker({
+  trigger,
+  onChange,
+  open: controlledOpen,
+  onOpenChange,
+}: IconPickerProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
 
   async function handleImportCustom() {
     const src = await iconsService.pickFile();

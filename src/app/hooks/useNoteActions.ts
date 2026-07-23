@@ -13,7 +13,8 @@ interface Params {
 }
 
 export interface NoteActions {
-  onNewNote: () => Promise<void>;
+  /** Create an "Untitled" note in `folder` (`""` = vault root) and open it. */
+  onNewNote: (folder?: string) => Promise<void>;
   onMoveNote: (id: string, folder: string) => Promise<void>;
   onMoveFolder: (path: string, newParent: string) => Promise<void>;
   onRenameNote: (id: string, newTitle: string) => Promise<void>;
@@ -34,17 +35,25 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
   const setOpenNoteId = useViewState((s) => s.setOpenNoteId);
   const openNote = useViewState((s) => s.openNote);
 
-  const onNewNote = useCallback(async () => {
-    try {
-      // Always the vault root — no default folder, regardless of what's
-      // currently open (the user can move it into a folder afterward).
-      const note = await notes.createIn("Untitled", "");
-      await refreshTree();
-      openNote(note.id);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, [refreshTree, openNote, setError]);
+  const onNewNote = useCallback(
+    async (folder = "") => {
+      try {
+        // The vault root unless the caller named a folder (the nav tree's
+        // context menu does; the global shortcut doesn't).
+        const note = await notes.createIn("Untitled", folder);
+        await refreshTree();
+        // Reveal it in the tree — a collapsed parent would hide the new note.
+        if (folder) {
+          const { expandedFolders, toggleFolder } = useViewState.getState();
+          if (!expandedFolders.has(folder)) toggleFolder(folder);
+        }
+        openNote(note.id);
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    },
+    [refreshTree, openNote, setError],
+  );
 
   const onMoveNote = useCallback(
     async (id: string, folder: string) => {

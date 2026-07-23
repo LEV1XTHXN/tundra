@@ -9,14 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { CreationDialog } from "../hooks/useCreationDialogs";
 
-/** Name-entry dialog for creating a folder (at the vault root). Bound entirely
+/** Name-entry dialog for creating a folder — at the vault root, or inside the
+ *  folder/group the nav tree's context menu named (`targetLabel`). Bound entirely
  *  by the {@link CreationDialog} bundle from `useCreationDialogs`. */
-export function NewFolderDialog({ open, onOpenChange, name, onNameChange, onCreate }: CreationDialog) {
+export function NewFolderDialog({
+  open,
+  onOpenChange,
+  name,
+  onNameChange,
+  onCreate,
+  targetLabel,
+}: CreationDialog) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New folder</DialogTitle>
+          <DialogTitle>{targetLabel ? `New folder in ${targetLabel}` : "New folder"}</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(e) => {

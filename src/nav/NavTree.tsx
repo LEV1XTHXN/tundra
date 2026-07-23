@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format, parseISO } from "date-fns";
-import { ArrowUpDown, ChevronDown, ChevronRight, Pencil, Smile, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { Icon, TreeNode } from "@/services";
 import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
 import { useFolderGroups } from "@/store/folderGroups";
@@ -10,7 +11,7 @@ import { useTheme } from "@/store/theme";
 import { flattenWithGroups, groupKey, reorderKeys, type NavRow } from "./flatten";
 import { NoteIcon } from "./NoteIcon";
 import { IconPicker } from "./IconPicker";
-import { FolderSortMenu } from "./FolderSortMenu";
+import { NavRootMenu, NavRowMenu, type NavMenuActions } from "./NavContextMenu";
 import { canDropOnFolder, DRAG_MIME, serializeDragPayload, type DragPayload } from "./dragDrop";
 
 const ROW_HEIGHT = 28;
@@ -41,6 +42,14 @@ interface NavTreeProps {
   onSetNoteIcon: (id: string, icon: Icon | null) => void;
   /** Confirm-and-delete a folder group (folders survive; only the grouping is removed). */
   onRequestDeleteGroup: (id: string, name: string) => void;
+  /** Create a note in `folder` (`""` = vault root) — from the context menu. */
+  onNewNote: (folder: string) => void;
+  /** Open the new-folder dialog targeting `parent` (`""` = vault root). */
+  onNewFolder: (parent: string, label?: string) => void;
+  /** Open the new-folder dialog for a folder that lands inside `groupId`. */
+  onNewFolderInGroup: (groupId: string, label: string) => void;
+  /** Open the new-group dialog. */
+  onNewGroup: () => void;
 }
 
 type EditingKey =
@@ -58,10 +67,18 @@ type DropIntent =
 /** A top-level folder (single path segment) — the only thing a group can hold. */
 const isTopLevel = (path: string) => path !== "" && !path.includes("/");
 
+/** Stable per-row identity — the React key, and what the icon picker targets. */
+const rowIdentity = (row: NavRow): string =>
+  row.kind === "folder" ? `folder:${row.path}` : row.kind === "note" ? `note:${row.id}` : `group:${row.id}`;
+
 /**
  * Virtualized folder/note tree (CLAUDE.md Phase 1 preamble: design for a
  * ~50k-note vault) with move + reorder (native HTML5 drag-and-drop — no DnD
  * library), inline rename, per-folder sort, per-folder/note icons, and delete.
+ *
+ * Rows carry no hover chrome: every action is on the right-click menu
+ * (`NavContextMenu`), which is target-aware — creating from a folder's menu
+ * creates inside that folder, from the background creates at the vault root.
  *
  * The top level is laid out into user-defined **folder groups** (collapsible
  * sections holding top-level folders) followed by everything ungrouped — see
@@ -86,6 +103,10 @@ export function NavTree({
   onRequestDeleteFolder,
   onSetNoteIcon,
   onRequestDeleteGroup,
+  onNewNote,
+  onNewFolder,
+  onNewFolderInGroup,
+  onNewGroup,
 }: NavTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
@@ -116,6 +137,10 @@ export function NavTree({
   const [dropIntent, setDropIntent] = useState<DropIntent | null>(null);
   const [editing, setEditing] = useState<EditingKey | null>(null);
   const [editValue, setEditValue] = useState("");
+  // Which row's icon picker is open. The context menu closes itself on select,
+  // so the picker can't be that menu item's own popover — it opens afterwards,
+  // anchored to an invisible span in the row (see `nav-icon-anchor`).
+  const [iconTarget, setIconTarget] = useState<string | null>(null);
 
   /** The drag/manual-order key for a row's payload. */
   const rowKeyOf = (row: NavRow) =>
@@ -319,6 +344,33 @@ export function NavTree({
     else if (e.key === "Escape") setEditing(null);
   }
 
+  /** Persist an icon change for whichever row kind the picker was opened on. */
+  function applyIcon(row: NavRow, icon: Icon | null) {
+    if (row.kind === "note") onSetNoteIcon(row.id, icon);
+    else if (row.kind === "folder") void patch(row.path, { icon: icon ?? undefined });
+    else void setGroupIcon(row.id, icon);
+  }
+
+  const menuActions: NavMenuActions = {
+    onNewNote,
+    onNewFolder,
+    onNewFolderInGroup,
+    onNewGroup,
+    onOpenNote: onSelectNote,
+    onOpenFolder,
+    onRename: (row) => {
+      if (row.kind === "folder") startRename({ kind: "folder", path: row.path }, row.name);
+      else if (row.kind === "note") startRename({ kind: "note", id: row.id }, row.title);
+      else startRename({ kind: "group", id: row.id }, row.name);
+    },
+    onSetIcon: (row) => setIconTarget(rowIdentity(row)),
+    onDelete: (row) => {
+      if (row.kind === "folder") onRequestDeleteFolder(row.path, row.name, row.hasChildren);
+      else if (row.kind === "note") onRequestDeleteNote(row.id, row.title);
+      else onRequestDeleteGroup(row.id, row.name);
+    },
+  };
+
   const rootDroppable = dragging !== null && canDropOnFolder(dragging, "") && dropIntent === null;
 
   return (
@@ -338,198 +390,186 @@ export function NavTree({
         Vault
       </div>
 
-      {rows.length === 0 ? (
-        <div className="nav-tree-scroll">
-          <p className="muted empty-hint">No notes yet</p>
-        </div>
-      ) : (
-        <div ref={parentRef} className="nav-tree-scroll" data-testid="nav-tree-scroll">
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((item) => {
-              const row = rows[item.index];
-              const rowKey =
-                row.kind === "folder"
-                  ? `folder:${row.path}`
-                  : row.kind === "note"
-                    ? `note:${row.id}`
-                    : `group:${row.id}`;
-              const isEditing =
-                editing !== null &&
-                ((editing.kind === "folder" && row.kind === "folder" && editing.path === row.path) ||
-                  (editing.kind === "note" && row.kind === "note" && editing.id === row.id) ||
-                  (editing.kind === "group" && row.kind === "group" && editing.id === row.id));
+      {/* One menu for the tree's background (creates at the vault root); each row
+          carries its own and stops the event so only the innermost one opens. */}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {rows.length === 0 ? (
+            <div className="nav-tree-scroll">
+              <p className="muted empty-hint">No notes yet</p>
+            </div>
+          ) : (
+            <div ref={parentRef} className="nav-tree-scroll" data-testid="nav-tree-scroll">
+              <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const row = rows[item.index];
+                  const rowKey = rowIdentity(row);
+                  const isEditing =
+                    editing !== null &&
+                    ((editing.kind === "folder" && row.kind === "folder" && editing.path === row.path) ||
+                      (editing.kind === "note" && row.kind === "note" && editing.id === row.id) ||
+                      (editing.kind === "group" && row.kind === "group" && editing.id === row.id));
 
-              // Group headers reorder at the root level (no `parent` field).
-              const rowParent = row.kind === "group" ? "" : row.parent;
-              const intentHere =
-                dropIntent?.kind === "reorder" &&
-                dropIntent.parent === rowParent &&
-                dropIntent.targetKey === rowKeyOf(row)
-                  ? dropIntent.position
-                  : dropIntent?.kind === "into" && row.kind === "folder" && dropIntent.folderPath === row.path
-                    ? "into"
-                    : dropIntent?.kind === "assign" && row.kind === "group" && dropIntent.groupId === row.id
-                      ? "into"
-                      : null;
+                  // Group headers reorder at the root level (no `parent` field).
+                  const rowParent = row.kind === "group" ? "" : row.parent;
+                  const intentHere =
+                    dropIntent?.kind === "reorder" &&
+                    dropIntent.parent === rowParent &&
+                    dropIntent.targetKey === rowKeyOf(row)
+                      ? dropIntent.position
+                      : dropIntent?.kind === "into" && row.kind === "folder" && dropIntent.folderPath === row.path
+                        ? "into"
+                        : dropIntent?.kind === "assign" && row.kind === "group" && dropIntent.groupId === row.id
+                          ? "into"
+                          : null;
 
-              const editIndent =
-                row.kind === "group"
-                  ? 28
-                  : row.kind === "folder"
-                    ? row.depth * 16 + 8
-                    : row.depth * 16 + 28;
+                  const editIndent =
+                    row.kind === "group"
+                      ? 28
+                      : row.kind === "folder"
+                        ? row.depth * 16 + 8
+                        : row.depth * 16 + 28;
 
-              return (
-                <div
-                  key={rowKey}
-                  className={cn(
-                    "nav-row-wrap",
-                    intentHere === "into" && "drag-over",
-                    intentHere === "before" && "reorder-before",
-                    intentHere === "after" && "reorder-after",
-                  )}
-                  data-testid="nav-row"
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: item.size,
-                    transform: `translateY(${item.start}px)`,
-                  }}
-                  draggable={!isEditing}
-                  onDragStart={(e) => {
-                    if (row.kind === "folder") startDrag(e, { kind: "folder", path: row.path });
-                    else if (row.kind === "note") startDrag(e, { kind: "note", id: row.id });
-                    else startDrag(e, { kind: "group", id: row.id });
-                  }}
-                  onDragEnd={endDrag}
-                  onDragOver={(e) => dragOverRow(e, row)}
-                  onDrop={(e) => dropOnRow(e, row)}
-                >
-                  {isEditing ? (
-                    <input
-                      autoFocus
-                      className="nav-row-edit"
-                      style={{ marginLeft: editIndent }}
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={renameKeyDown}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : row.kind === "group" ? (
-                    <div className="nav-row nav-row-group" style={{ paddingLeft: 8 }}>
-                      <button
-                        className="nav-folder-chevron"
-                        title={row.collapsed ? "Expand group" : "Collapse group"}
-                        onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
-                      >
-                        {row.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                      </button>
-                      <IconPicker
-                        onChange={(icon) => void setGroupIcon(row.id, icon)}
-                        trigger={
-                          <button className="nav-group-icon" title="Set group icon" onClick={(e) => e.stopPropagation()}>
-                            <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="group" className="h-4 w-4 shrink-0" />
-                          </button>
-                        }
-                      />
-                      <button
-                        className="nav-group-label"
-                        onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
-                      >
-                        <span className="nav-row-label">{row.name}</span>
-                        <span className="nav-group-count">{row.folderCount}</span>
-                      </button>
-                    </div>
-                  ) : row.kind === "folder" ? (
-                    <div className="nav-row nav-row-folder" style={{ paddingLeft: row.depth * 16 + 8 }}>
-                      <button
-                        className="nav-folder-chevron"
-                        title={row.expanded ? "Collapse" : "Expand"}
-                        onClick={() => onToggleFolder(row.path)}
-                      >
-                        {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
-                      <IconPicker
-                        onChange={(icon) => void patch(row.path, { icon: icon ?? undefined })}
-                        trigger={
-                          <button className="nav-folder-icon" title="Set folder icon" onClick={(e) => e.stopPropagation()}>
-                            <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
-                          </button>
-                        }
-                      />
-                      <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
-                        <span className="nav-row-label">{row.name}</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      className={cn("nav-row nav-row-note", row.id === openNoteId && "active")}
-                      style={{ paddingLeft: row.depth * 16 + 28 }}
-                      onClick={() => onSelectNote(row.id)}
-                      title={showModifiedOnHover ? formatModified(row.modified) : undefined}
-                    >
-                      <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
-                      <span className="nav-row-label">{row.title}</span>
-                    </button>
-                  )}
-
-                  {!isEditing && (
-                    <div className="nav-row-actions">
-                      {row.kind === "folder" && (
-                        <FolderSortMenu
-                          path={row.path}
-                          trigger={
-                            <button className="nav-row-action" title="Sort folder" onClick={(e) => e.stopPropagation()}>
-                              <ArrowUpDown size={12} />
-                            </button>
-                          }
-                        />
-                      )}
-                      {row.kind === "note" && (
-                        <IconPicker
-                          onChange={(icon) => onSetNoteIcon(row.id, icon)}
-                          trigger={
-                            <button className="nav-row-action" title="Set icon" onClick={(e) => e.stopPropagation()}>
-                              <Smile size={12} />
-                            </button>
-                          }
-                        />
-                      )}
-                      <button
-                        className="nav-row-action"
-                        title="Rename"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (row.kind === "folder") startRename({ kind: "folder", path: row.path }, row.name);
-                          else if (row.kind === "note") startRename({ kind: "note", id: row.id }, row.title);
-                          else startRename({ kind: "group", id: row.id }, row.name);
-                        }}
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      <button
-                        className="nav-row-action"
-                        title={row.kind === "group" ? "Delete group" : "Delete"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (row.kind === "folder") onRequestDeleteFolder(row.path, row.name, row.hasChildren);
-                          else if (row.kind === "note") onRequestDeleteNote(row.id, row.title);
-                          else onRequestDeleteGroup(row.id, row.name);
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  return (
+                    <ContextMenu key={rowKey}>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          className={cn(
+                            "nav-row-wrap",
+                            intentHere === "into" && "drag-over",
+                            intentHere === "before" && "reorder-before",
+                            intentHere === "after" && "reorder-after",
+                          )}
+                          data-testid="nav-row"
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            height: item.size,
+                            transform: `translateY(${item.start}px)`,
+                          }}
+                          // Keep the right-click from also reaching the tree
+                          // background's menu (this runs before Radix's own
+                          // handler, and doesn't preventDefault, so the row menu
+                          // still opens).
+                          onContextMenu={(e) => e.stopPropagation()}
+                          draggable={!isEditing}
+                          onDragStart={(e) => {
+                            if (row.kind === "folder") startDrag(e, { kind: "folder", path: row.path });
+                            else if (row.kind === "note") startDrag(e, { kind: "note", id: row.id });
+                            else startDrag(e, { kind: "group", id: row.id });
+                          }}
+                          onDragEnd={endDrag}
+                          onDragOver={(e) => dragOverRow(e, row)}
+                          onDrop={(e) => dropOnRow(e, row)}
+                        >
+                          {/* Invisible anchor the icon picker opens against when
+                              launched from the context menu (which closes on select). */}
+                          {iconTarget === rowKey && (
+                            <IconPicker
+                              open
+                              onOpenChange={(o) => {
+                                if (!o) setIconTarget(null);
+                              }}
+                              onChange={(icon) => applyIcon(row, icon)}
+                              trigger={<span className="nav-icon-anchor" aria-hidden />}
+                            />
+                          )}
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              className="nav-row-edit"
+                              style={{ marginLeft: editIndent }}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={commitRename}
+                              onKeyDown={renameKeyDown}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : row.kind === "group" ? (
+                            <div className="nav-row nav-row-group" style={{ paddingLeft: 8 }}>
+                              <button
+                                className="nav-folder-chevron"
+                                title={row.collapsed ? "Expand group" : "Collapse group"}
+                                onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
+                              >
+                                {row.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                              </button>
+                              <IconPicker
+                                onChange={(icon) => void setGroupIcon(row.id, icon)}
+                                trigger={
+                                  <button className="nav-group-icon" title="Set group icon" onClick={(e) => e.stopPropagation()}>
+                                    <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="group" className="h-4 w-4 shrink-0" />
+                                  </button>
+                                }
+                              />
+                              <button
+                                className="nav-group-label"
+                                onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
+                              >
+                                <span className="nav-row-label">{row.name}</span>
+                                <span className="nav-group-count">{row.folderCount}</span>
+                              </button>
+                            </div>
+                          ) : row.kind === "folder" ? (
+                            <div className="nav-row nav-row-folder" style={{ paddingLeft: row.depth * 16 + 8 }}>
+                              <button
+                                className="nav-folder-chevron"
+                                title={row.expanded ? "Collapse" : "Expand"}
+                                onClick={() => onToggleFolder(row.path)}
+                              >
+                                {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              </button>
+                              <IconPicker
+                                onChange={(icon) => void patch(row.path, { icon: icon ?? undefined })}
+                                trigger={
+                                  <button className="nav-folder-icon" title="Set folder icon" onClick={(e) => e.stopPropagation()}>
+                                    <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
+                                  </button>
+                                }
+                              />
+                              <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
+                                <span className="nav-row-label">{row.name}</span>
+                              </button>
+                            </div>
+                          ) : (
+                            // Icon and title are separate buttons (a button can't
+                            // nest in a button): the icon opens the picker, the
+                            // title opens the note — same split as folder rows.
+                            <div
+                              className={cn("nav-row nav-row-note", row.id === openNoteId && "active")}
+                              style={{ paddingLeft: row.depth * 16 + 28 }}
+                            >
+                              <IconPicker
+                                onChange={(icon) => onSetNoteIcon(row.id, icon)}
+                                trigger={
+                                  <button className="nav-note-icon" title="Set icon" onClick={(e) => e.stopPropagation()}>
+                                    <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
+                                  </button>
+                                }
+                              />
+                              <button
+                                className="nav-note-label"
+                                onClick={() => onSelectNote(row.id)}
+                                title={showModifiedOnHover ? formatModified(row.modified) : undefined}
+                              >
+                                <span className="nav-row-label">{row.title}</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </ContextMenuTrigger>
+                      <NavRowMenu row={row} actions={menuActions} />
+                    </ContextMenu>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </ContextMenuTrigger>
+        <NavRootMenu actions={menuActions} />
+      </ContextMenu>
     </>
   );
 }

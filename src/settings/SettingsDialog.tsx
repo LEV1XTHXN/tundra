@@ -1,11 +1,13 @@
 /**
- * The settings surface (CLAUDE.md §6.2 `settings`). First section is keybinding
- * rebinding; the left rail is structured so Appearance/Backup/etc. slot in later.
- * Preferences are owned by the keybindings store (persisted via Rust); React
- * only renders and captures the user's chosen combos.
+ * The settings surface (CLAUDE.md §6.2 `settings`): appearance, keybindings,
+ * dictionaries, backup, import, maintenance. Preferences are owned by their
+ * stores (persisted via Rust); React only renders and captures input.
+ *
+ * Tags and Templates are deliberately NOT here — each is a top-level view of its
+ * own, reached from the shell's icon ribbon.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -18,16 +20,8 @@ import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN, useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
-import { appSettings, attachments, backup, notes, pickDirectory, spellcheck, tags as tagsService, templates } from "@/services";
+import { appSettings, attachments, backup, notes, pickDirectory, spellcheck } from "@/services";
 import type { CleanupReport, SpellLanguages } from "@/services";
-import { useTemplates } from "@/store/templates";
-import {
-  kanbanTagChipStyle,
-  tagChipStyle,
-  useKanbanTags,
-  useTagColors,
-  useVaultTags,
-} from "@/store/tagColors";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -35,22 +29,14 @@ interface SettingsDialogProps {
   /** Called after a vault cleanup with the ids that were deleted, so the app can
    *  refresh the note tree and close the open note if it was one of them. */
   onCleaned?: (deletedIds: string[]) => void;
-  /** Open a template for editing in the main pane (closes the dialog); the
-   *  Templates section calls this for "New template" and "Edit". */
-  onEditTemplate?: (id: string) => void;
-  /** Called after a tag is deleted vault-wide, so the app can refresh the note
-   *  tree/summaries (the open note's chips, nav, etc. reflect the removal). */
-  onTagsChanged?: () => void;
-  /** Open the "Import from Obsidian" flow (closes this dialog first — it
-   *  needs the full window, same pattern as `onEditTemplate`). */
+  /** Open the "Import from Obsidian" flow (closes this dialog first — it needs
+   *  the full window). */
   onOpenImport?: () => void;
 }
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "keybindings", label: "Keybindings" },
-  { id: "templates", label: "Templates" },
-  { id: "tags", label: "Tags" },
   { id: "dictionaries", label: "Dictionaries" },
   { id: "backup", label: "Backup" },
   { id: "import", label: "Import" },
@@ -62,8 +48,6 @@ export function SettingsDialog({
   open,
   onOpenChange,
   onCleaned,
-  onEditTemplate,
-  onTagsChanged,
   onOpenImport,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("keybindings");
@@ -90,8 +74,6 @@ export function SettingsDialog({
           <div className="settings-pane">
             {section === "appearance" && <AppearanceSection />}
             {section === "keybindings" && <KeybindingsSection />}
-            {section === "templates" && <TemplatesSection onEditTemplate={onEditTemplate} />}
-            {section === "tags" && <TagsSection onChanged={onTagsChanged} />}
             {section === "dictionaries" && <DictionariesSection />}
             {section === "backup" && <BackupSection />}
             {section === "import" && <ImportSection onOpenImport={onOpenImport} />}
@@ -198,102 +180,6 @@ function AppearanceSection() {
         />
         Show last-modified date when hovering a note
       </label>
-    </div>
-  );
-}
-
-/**
- * Tags section: manage the vault's tags as first-class things (not per-note).
- * Lists every tag in use; deleting one removes it from *every* note it's on
- * (permanent, via `tags.delete`) and clears its color. Kanban-column tags are
- * shown but not deletable here — they're owned by their board column.
- */
-function TagsSection({ onChanged }: { onChanged?: () => void }) {
-  const vaultTags = useVaultTags((s) => s.tags);
-  const reloadVaultTags = useVaultTags((s) => s.load);
-  const tagColors = useTagColors((s) => s.colors);
-  const setTagColor = useTagColors((s) => s.setColor);
-  const kanbanTags = useKanbanTags((s) => s.tags);
-  const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-
-  const q = filter.trim().toLowerCase();
-  const visibleTags = q ? vaultTags.filter((t) => t.toLowerCase().includes(q)) : vaultTags;
-
-  const deleteTag = async (tag: string) => {
-    setError(null);
-    try {
-      await tagsService.delete(tag);
-      await setTagColor(tag, null); // the tag no longer exists — drop its color
-      await reloadVaultTags();
-      onChanged?.();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setPending(null);
-    }
-  };
-
-  return (
-    <div className="settings-section">
-      <h3 className="settings-section-title">Tags</h3>
-      <p className="muted settings-section-desc">
-        Every tag in the vault. Deleting a tag removes it from all notes and can’t be undone.
-      </p>
-
-      {vaultTags.length > 0 && (
-        <input
-          className="settings-tag-search"
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Search tags…"
-          aria-label="Search tags"
-        />
-      )}
-
-      {vaultTags.length === 0 ? (
-        <p className="muted">No tags yet — add tags to a note from its info panel.</p>
-      ) : visibleTags.length === 0 ? (
-        <p className="muted">No tags match “{filter.trim()}”.</p>
-      ) : (
-        <ul className="settings-taglist">
-          {visibleTags.map((t) => {
-            const isKanban = kanbanTags.has(t);
-            return (
-              <li key={t}>
-                <span
-                  className="settings-tag-chip"
-                  style={isKanban ? kanbanTagChipStyle(tagColors[t]) : tagChipStyle(tagColors[t])}
-                >
-                  #{t}
-                </span>
-                {isKanban ? (
-                  <span className="muted settings-tag-managed">Managed by a Kanban column</span>
-                ) : pending === t ? (
-                  <span className="settings-tag-confirm">
-                    <button className="settings-tag-danger" onClick={() => void deleteTag(t)}>
-                      Delete
-                    </button>
-                    <button onClick={() => setPending(null)}>Cancel</button>
-                  </span>
-                ) : (
-                  <button
-                    className="settings-tag-delete"
-                    onClick={() => setPending(t)}
-                    title={`Delete #${t} from all notes`}
-                    aria-label={`Delete tag ${t}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {error && <p className="error">{error}</p>}
     </div>
   );
 }
@@ -592,94 +478,6 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
         </p>
       )}
       {attError && <p className="error">{attError}</p>}
-    </div>
-  );
-}
-
-/**
- * Templates section: manage reusable note templates. Create a blank template
- * (opens it in the editor), edit an existing one, or delete it. Templates are
- * stored by Rust outside `notes/`, so they never appear in the tree/search/graph.
- * Note that a note can also be turned into a template from its header
- * ("Save as template"); this section is the from-scratch / management path.
- */
-function TemplatesSection({ onEditTemplate }: { onEditTemplate?: (id: string) => void }) {
-  const list = useTemplates((s) => s.list);
-  const loaded = useTemplates((s) => s.loaded);
-  const refresh = useTemplates((s) => s.refresh);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const newTemplate = async () => {
-    try {
-      const tpl = await templates.create("Untitled template");
-      await refresh();
-      onEditTemplate?.(tpl.id);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const remove = async (id: string) => {
-    try {
-      await templates.delete(id);
-      setConfirmId(null);
-      await refresh();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  return (
-    <div className="settings-section">
-      <h3 className="settings-section-title">Templates</h3>
-      <p className="muted settings-section-desc">
-        Reusable note layouts. Insert one into any note with the “Use template” button in its
-        header (or the shortcut). Create one here from scratch, or save an existing note as a
-        template from its header.
-      </p>
-
-      <div className="settings-actions">
-        <Button size="sm" onClick={() => void newTemplate()}>
-          <Plus className="h-4 w-4" /> New template
-        </Button>
-      </div>
-
-      {!loaded ? (
-        <div className="muted">Loading…</div>
-      ) : list.length === 0 ? (
-        <p className="muted">No templates yet.</p>
-      ) : (
-        <ul className="settings-wordlist settings-templatelist">
-          {list.map((t) => (
-            <li key={t.id}>
-              <span className="settings-template-name">{t.title || "Untitled template"}</span>
-              {confirmId === t.id ? (
-                <span className="settings-template-confirm">
-                  <button className="settings-template-danger" onClick={() => void remove(t.id)}>
-                    Delete
-                  </button>
-                  <button onClick={() => setConfirmId(null)}>Cancel</button>
-                </span>
-              ) : (
-                <span className="settings-template-actions">
-                  <button onClick={() => onEditTemplate?.(t.id)} title="Edit template" aria-label={`Edit ${t.title}`}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button onClick={() => setConfirmId(t.id)} title="Delete template" aria-label={`Delete ${t.title}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {error && <p className="error">{error}</p>}
     </div>
   );
 }

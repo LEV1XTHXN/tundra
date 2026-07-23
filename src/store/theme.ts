@@ -48,6 +48,9 @@ interface AppearanceConfig {
   /** Swap editor content to a dyslexia-friendly font (OpenDyslexic). Off by
    *  default; scoped to note/quick-note content only, not the app chrome. */
   dyslexiaFont?: boolean;
+  /** Whether the shell's icon ribbon is slid open (icons + labels) rather than
+   *  collapsed to icons only. Off by default — the ribbon is icon-first. */
+  ribbonExpanded?: boolean;
 }
 
 function systemDark(): boolean {
@@ -90,6 +93,8 @@ interface ThemeState {
   editorFontSize: EditorFontSizePref;
   /** Dyslexia-friendly editor content font; off by default. */
   dyslexiaFont: boolean;
+  /** Icon ribbon slid open (icons + labels); collapsed to icons by default. */
+  ribbonExpanded: boolean;
   /** Change the preference, apply it, and persist it. */
   setTheme: (theme: ThemePref) => void;
   /** Change the clock format and persist it. */
@@ -100,57 +105,66 @@ interface ThemeState {
   setEditorFontSize: (size: EditorFontSizePref) => void;
   /** Toggle the dyslexia-friendly editor content font and persist it. */
   setDyslexiaFont: (enabled: boolean) => void;
+  /** Slide the icon ribbon open/closed and persist it. */
+  setRibbonExpanded: (expanded: boolean) => void;
   /** Load the persisted preference and start tracking the OS theme. */
   load: () => Promise<void>;
 }
 
 let mediaWired = false;
 
-export const useTheme = create<ThemeState>((set, get) => ({
+export const useTheme = create<ThemeState>((set, get) => {
+  /** Write the whole appearance blob from current state — every setter calls
+   *  this after `set()`, so a new preference only has to be added in one place. */
+  const persist = () => {
+    const { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded } = get();
+    void appSettings
+      .write(SETTINGS_NAME, {
+        theme,
+        timeFormat,
+        showModifiedOnHover,
+        editorFontSize,
+        dyslexiaFont,
+        ribbonExpanded,
+      } satisfies AppearanceConfig)
+      .catch(() => {});
+  };
+
+  return {
   theme: "system",
   resolved: resolvePref("system"),
   timeFormat: "24h",
   showModifiedOnHover: false,
   editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   dyslexiaFont: false,
+  ribbonExpanded: false,
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     set({ theme, resolved });
-    const { timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } = get();
-    void appSettings
-      .write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } satisfies AppearanceConfig)
-      .catch(() => {});
+    persist();
   },
   setTimeFormat: (timeFormat) => {
     set({ timeFormat });
-    const { theme, showModifiedOnHover, editorFontSize, dyslexiaFont } = get();
-    void appSettings
-      .write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } satisfies AppearanceConfig)
-      .catch(() => {});
+    persist();
   },
   setShowModifiedOnHover: (showModifiedOnHover) => {
     set({ showModifiedOnHover });
-    const { theme, timeFormat, editorFontSize, dyslexiaFont } = get();
-    void appSettings
-      .write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } satisfies AppearanceConfig)
-      .catch(() => {});
+    persist();
   },
   setEditorFontSize: (editorFontSize) => {
     applyEditorFontSize(editorFontSize);
     set({ editorFontSize });
-    const { theme, timeFormat, showModifiedOnHover, dyslexiaFont } = get();
-    void appSettings
-      .write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } satisfies AppearanceConfig)
-      .catch(() => {});
+    persist();
   },
   setDyslexiaFont: (dyslexiaFont) => {
     applyDyslexiaFont(dyslexiaFont);
     set({ dyslexiaFont });
-    const { theme, timeFormat, showModifiedOnHover, editorFontSize } = get();
-    void appSettings
-      .write(SETTINGS_NAME, { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont } satisfies AppearanceConfig)
-      .catch(() => {});
+    persist();
+  },
+  setRibbonExpanded: (ribbonExpanded) => {
+    set({ ribbonExpanded });
+    persist();
   },
   load: async () => {
     // Track OS theme changes once, so "system" updates live without a restart.
@@ -176,10 +190,12 @@ export const useTheme = create<ThemeState>((set, get) => ({
           ? LEGACY_FONT_SIZE_PX[rawFontSize] ?? EDITOR_FONT_SIZE_DEFAULT
           : EDITOR_FONT_SIZE_DEFAULT;
     const dyslexiaFont = cfg?.dyslexiaFont ?? false;
+    const ribbonExpanded = cfg?.ribbonExpanded ?? false;
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     applyEditorFontSize(editorFontSize);
     applyDyslexiaFont(dyslexiaFont);
-    set({ theme, resolved, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont });
+    set({ theme, resolved, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded });
   },
-}));
+  };
+});

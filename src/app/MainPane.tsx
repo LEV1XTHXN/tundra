@@ -6,6 +6,8 @@ import { Home } from "@/home/Home";
 import { useViewState } from "@/store/viewState";
 import { EditorPane } from "./EditorPane";
 import { TemplateEditorPane } from "./TemplateEditorPane";
+import type { TemplateActions } from "./hooks/useTemplateActions";
+import type { Deletion } from "./hooks/useDeletion";
 
 // The graph pulls in sigma + graphology (WebGL); code-split it so those only
 // load when the user actually opens the graph view (Phase 2 step 4: "views
@@ -24,6 +26,12 @@ const KanbanView = lazy(() => import("@/kanban/KanbanView").then((m) => ({ defau
 const FolderTableView = lazy(() =>
   import("@/foldertable/FolderTableView").then((m) => ({ default: m.FolderTableView })),
 );
+// The tag browser and the template manager are ribbon destinations of their own
+// (not sidebar sections) — code-split like every other non-editor view.
+const TagsView = lazy(() => import("@/tags/TagsView").then((m) => ({ default: m.TagsView })));
+const TemplatesView = lazy(() =>
+  import("@/templates/TemplatesView").then((m) => ({ default: m.TemplatesView })),
+);
 
 interface MainPaneProps {
   vaultInfo: VaultInfo;
@@ -33,7 +41,8 @@ interface MainPaneProps {
   setError: (msg: string | null) => void;
   editorRefreshToken: number;
   bumpEditor: () => void;
-  onDoneEditingTemplate: () => void;
+  templateActions: TemplateActions;
+  deletion: Deletion;
 }
 
 /**
@@ -50,7 +59,8 @@ export function MainPane({
   setError,
   editorRefreshToken,
   bumpEditor,
-  onDoneEditingTemplate,
+  templateActions,
+  deletion,
 }: MainPaneProps) {
   const view = useViewState((s) => s.view);
   const openNoteId = useViewState((s) => s.openNoteId);
@@ -128,12 +138,47 @@ export function MainPane({
         </Suspense>
       )}
 
+      {view === "tags" && (
+        <Suspense
+          fallback={
+            <ViewFrame title="Tags">
+              <div className="centered muted">Loading tags…</div>
+            </ViewFrame>
+          }
+        >
+          <TagsView
+            vaultPath={vaultInfo.path}
+            noteSummaries={noteSummaries}
+            onOpenNote={openNote}
+            onChanged={() => void refreshTree()}
+            onError={setError}
+          />
+        </Suspense>
+      )}
+
+      {view === "templates" && (
+        <Suspense
+          fallback={
+            <ViewFrame title="Templates">
+              <div className="centered muted">Loading templates…</div>
+            </ViewFrame>
+          }
+        >
+          <TemplatesView
+            vaultPath={vaultInfo.path}
+            onOpenTemplate={templateActions.onOpenTemplate}
+            onNewTemplate={() => void templateActions.onNewTemplate()}
+            onRequestDeleteTemplate={deletion.onRequestDeleteTemplate}
+          />
+        </Suspense>
+      )}
+
       {view === "template" && templateEditId && (
         <TemplateEditorPane
           templateEditId={templateEditId}
           vaultPath={vaultInfo.path}
           noteSummaries={noteSummaries}
-          onDone={onDoneEditingTemplate}
+          onDone={templateActions.onDoneEditingTemplate}
           setError={setError}
         />
       )}
