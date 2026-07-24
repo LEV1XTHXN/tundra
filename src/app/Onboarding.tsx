@@ -11,6 +11,7 @@ interface OnboardingProps {
 export function Onboarding({ onChooseFolder, onUseDefault, error }: OnboardingProps) {
   return (
     <div className="centered onboarding">
+      <img className="onboarding-logo" src="/bison-logo.svg" alt="" width={72} height={72} />
       <h1>Tundra</h1>
       <p className="muted">Choose where your notes live.</p>
       <div className="actions">
