@@ -1,8 +1,9 @@
 /**
- * "Import from Obsidian" (step 1 of the multi-app import feature). Always
+ * "Import from <source app>" (the multi-app import feature's UI — one dialog,
+ * parameterized by `adapter` so Obsidian/Notion/AnyType all share it). Always
  * imports into a NEW, empty Tundra vault — reuses the multi-vault flow's
  * `switchVault` to create/open the destination, then runs the generic
- * pipeline (`pipeline.ts`) with the Obsidian adapter. Never touches whatever
+ * pipeline (`pipeline.ts`) with the given adapter. Never touches whatever
  * vault was open before this dialog opened.
  */
 import { useState } from "react";
@@ -18,14 +19,17 @@ import { notes, pickVaultFolder, vault } from "@/services";
 import type { VaultInfo } from "@/services";
 import { errorMessage } from "@/lib/errorMessage";
 import { runImport } from "./pipeline";
-import { obsidianAdapter } from "./obsidianAdapter";
-import type { ImportProgress, ImportReport } from "./types";
+import type { ImportProgress, ImportReport, SourceAdapter } from "./types";
 
 type Step = "source" | "destination" | "confirm-nonempty" | "importing" | "report";
 
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Which app to import from — determines classification/parsing; the
+   *  dialog flow itself (source → destination → progress → report) is
+   *  identical for every adapter. */
+  adapter: SourceAdapter;
   /** Open (or create) the vault at `path` and make it active — from
    *  `useVaultSession`, the same function the sidebar's vault switcher uses. */
   onSwitchVault: (path: string) => Promise<void>;
@@ -34,11 +38,11 @@ interface ImportDialogProps {
   onImported: () => void;
 }
 
-function progressLabel(p: ImportProgress | null): string {
+function progressLabel(p: ImportProgress | null, sourceLabel: string): string {
   if (!p) return "";
   switch (p.phase) {
     case "scanning":
-      return "Scanning the Obsidian vault…";
+      return `Scanning the ${sourceLabel} export…`;
     case "copying-attachments":
       return `Copying attachments… (${p.done}/${p.total})`;
     case "creating-notes":
@@ -50,7 +54,7 @@ function progressLabel(p: ImportProgress | null): string {
   }
 }
 
-export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, adapter, onSwitchVault, onImported }: ImportDialogProps) {
   const [step, setStep] = useState<Step>("source");
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [destVault, setDestVault] = useState<VaultInfo | null>(null);
@@ -79,7 +83,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
 
   const chooseSource = async () => {
     setError(null);
-    const path = await pickVaultFolder("Choose your Obsidian vault folder");
+    const path = await pickVaultFolder(`Choose your ${adapter.label} export folder`);
     if (path) {
       setSourcePath(path);
       setStep("destination");
@@ -113,7 +117,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
     setStep("importing");
     setProgress({ phase: "scanning" });
     try {
-      const result = await runImport(sourcePath, obsidianAdapter, setProgress);
+      const result = await runImport(sourcePath, adapter, setProgress);
       setReport(result);
       setStep("report");
     } catch (e) {
@@ -126,7 +130,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close(false))}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import from Obsidian</DialogTitle>
+          <DialogTitle>Import from {adapter.label}</DialogTitle>
           <DialogDescription>
             Always imports into a new, empty vault — your currently open vault is never touched.
           </DialogDescription>
@@ -135,9 +139,9 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
         {step === "source" && (
           <div className="settings-section">
             <p className="muted settings-section-desc">
-              First, choose the Obsidian vault folder you want to import.
+              First, choose the {adapter.label} export folder you want to import.
             </p>
-            <Button onClick={() => void chooseSource()}>Choose Obsidian vault folder…</Button>
+            <Button onClick={() => void chooseSource()}>Choose {adapter.label} export folder…</Button>
           </div>
         )}
 
@@ -177,7 +181,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
 
         {step === "importing" && (
           <div className="settings-section">
-            <p className="muted">{progressLabel(progress)}</p>
+            <p className="muted">{progressLabel(progress, adapter.label)}</p>
           </div>
         )}
 
@@ -186,6 +190,12 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
             <ul className="import-report-stats">
               <li>{report.notesImported} note{report.notesImported === 1 ? "" : "s"} imported</li>
               <li>{report.attachmentsCopied} attachment{report.attachmentsCopied === 1 ? "" : "s"} copied</li>
+              {report.pagesBecameFolders > 0 && (
+                <li>
+                  {report.pagesBecameFolders} page{report.pagesBecameFolders === 1 ? "" : "s"} had children and became a
+                  folder with an index note
+                </li>
+              )}
               {report.unresolvedLinks > 0 && (
                 <li>{report.unresolvedLinks} link{report.unresolvedLinks === 1 ? "" : "s"} couldn't be resolved (kept as plain text)</li>
               )}
@@ -196,7 +206,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
                 </li>
               )}
               {report.pluginNotes.length > 0 && (
-                <li>{report.pluginNotes.length} note{report.pluginNotes.length === 1 ? "" : "s"} used a plugin format (imported as plain headings/checklists)</li>
+                <li>{report.pluginNotes.length} note{report.pluginNotes.length === 1 ? "" : "s"} imported at reduced fidelity (see below)</li>
               )}
               {report.skippedFiles.length > 0 && (
                 <li>{report.skippedFiles.length} file{report.skippedFiles.length === 1 ? "" : "s"} skipped entirely</li>
@@ -220,7 +230,7 @@ export function ImportDialog({ open, onOpenChange, onSwitchVault, onImported }: 
             )}
             {report.pluginNotes.length > 0 && (
               <details>
-                <summary>Plugin-format notes</summary>
+                <summary>Reduced-fidelity notes</summary>
                 <ul className="import-report-detail">
                   {report.pluginNotes.map((t) => (
                     <li key={t}>{t}</li>

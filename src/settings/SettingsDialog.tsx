@@ -29,9 +29,9 @@ interface SettingsDialogProps {
   /** Called after a vault cleanup with the ids that were deleted, so the app can
    *  refresh the note tree and close the open note if it was one of them. */
   onCleaned?: (deletedIds: string[]) => void;
-  /** Open the "Import from Obsidian" flow (closes this dialog first — it needs
-   *  the full window). */
-  onOpenImport?: () => void;
+  /** Open the import flow for the given source app (closes this dialog first
+   *  — it needs the full window). */
+  onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void;
 }
 
 const SECTIONS = [
@@ -348,11 +348,12 @@ function BackupSection() {
 }
 
 /**
- * Import section (step 1 of the multi-app import feature): the entry point
- * for `import/ImportDialog.tsx`. Always imports into a NEW, empty vault —
- * the dialog itself owns that flow; this section is just the launch button.
+ * Import section (the multi-app import feature's entry point in Settings):
+ * launch buttons for `import/ImportDialog.tsx`, one per source app. Always
+ * imports into a NEW, empty vault — the dialog itself owns that flow; this
+ * section is just the launch points.
  */
-function ImportSection({ onOpenImport }: { onOpenImport?: () => void }) {
+function ImportSection({ onOpenImport }: { onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void }) {
   return (
     <div className="settings-section">
       <h3 className="settings-section-title">Import</h3>
@@ -361,8 +362,14 @@ function ImportSection({ onOpenImport }: { onOpenImport?: () => void }) {
         currently open vault is never touched or merged into.
       </p>
       <div className="settings-actions">
-        <Button size="sm" onClick={() => onOpenImport?.()}>
+        <Button size="sm" onClick={() => onOpenImport?.("obsidian")}>
           Import from Obsidian…
+        </Button>
+        <Button size="sm" onClick={() => onOpenImport?.("notion")}>
+          Import from Notion…
+        </Button>
+        <Button size="sm" onClick={() => onOpenImport?.("anytype")}>
+          Import from Anytype…
         </Button>
       </div>
     </div>

@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 import { SearchPalette } from "@/search/SearchPalette";
 import { SettingsDialog } from "@/settings/SettingsDialog";
 import { ImportDialog } from "@/import/ImportDialog";
+import { obsidianAdapter } from "@/import/obsidianAdapter";
+import { notionAdapter } from "@/import/notionAdapter";
+import { anytypeAdapter } from "@/import/anytypeAdapter";
+import type { SourceAdapter } from "@/import/types";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
 import { Onboarding } from "./Onboarding";
@@ -44,6 +48,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importAdapter, setImportAdapter] = useState<SourceAdapter>(obsidianAdapter);
 
   const noteActions = useNoteActions({ refreshTree, setError, bumpEditor });
   const creation = useCreationDialogs({ refreshTree, setError });
@@ -97,8 +102,11 @@ export default function App() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         onCleaned={noteActions.onVaultCleaned}
-        onOpenImport={() => {
+        onOpenImport={(source) => {
           setSettingsOpen(false);
+          setImportAdapter(
+            source === "notion" ? notionAdapter : source === "anytype" ? anytypeAdapter : obsidianAdapter,
+          );
           setImportOpen(true);
         }}
       />
@@ -106,6 +114,7 @@ export default function App() {
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
+        adapter={importAdapter}
         onSwitchVault={switchVault}
         onImported={() => void refreshTree()}
       />

@@ -55,7 +55,7 @@ interface CreatedNote {
   id: string;
   blocks: Block[];
   pending: import("./types").PendingRef[];
-  flags?: { kanbanPlugin?: boolean };
+  flags?: { note?: string };
 }
 
 /**
@@ -74,6 +74,7 @@ export async function runImport(
     attachmentsCopied: 0,
     unresolvedLinks: 0,
     unresolvedAttachments: 0,
+    pagesBecameFolders: 0,
     skippedFiles: [],
     pluginNotes: [],
     errors: [],
@@ -81,6 +82,7 @@ export async function runImport(
 
   onProgress({ phase: "scanning" });
   const files = await sourceImport.scanFolder(sourcePath);
+  adapter.prepare?.(files);
 
   const noteFiles: string[] = [];
   const attachmentFiles: { relPath: string; kind: AttachmentKind }[] = [];
@@ -131,7 +133,8 @@ export async function runImport(
       noteIdMap.set(stripExt(basename(relPath)).toLowerCase(), resolved);
 
       created.push({ relPath, title: pre.title, id: note.id, blocks, pending: pre.pending, flags: pre.flags });
-      if (pre.flags?.kanbanPlugin) report.pluginNotes.push(pre.title);
+      if (pre.flags?.note) report.pluginNotes.push(`${pre.title} — ${pre.flags.note}`);
+      if (pre.isContainerIndex) report.pagesBecameFolders++;
     } catch (e) {
       report.errors.push({ relPath, message: errorMessage(e) });
     }
@@ -147,6 +150,7 @@ export async function runImport(
         rec.pending,
         noteIdMap,
         attachmentMap,
+        rec.relPath,
       );
       report.unresolvedLinks += unresolvedLinks;
       report.unresolvedAttachments += unresolvedAttachments;

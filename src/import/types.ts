@@ -63,8 +63,17 @@ export interface PreprocessedNote {
    *  `![alt](path)` images) is left untouched — BlockNote parses that natively. */
   body: string;
   pending: PendingRef[];
-  /** Adapter-specific report flags — e.g. Obsidian's Kanban-plugin seam. */
-  flags?: { kanbanPlugin?: boolean };
+  /** Set when this note is a reduced-fidelity import of something richer in
+   *  the source (e.g. Obsidian's Kanban-plugin boards, a Notion database's
+   *  filters/sorts/formulas) — the pipeline surfaces `note` in the report so
+   *  the user knows to check the original app for anything not captured here. */
+  flags?: { note?: string };
+  /** Set when this note is a CONTAINER's own content — Notion has no folders,
+   *  so a page (or database) that has children is both content and a
+   *  container; `folder` above already points this note INSIDE the folder
+   *  named after it (its children land there too), and this flag just tells
+   *  the pipeline to count it for the report ("N pages became a folder"). */
+  isContainerIndex?: boolean;
 }
 
 /**
@@ -75,6 +84,13 @@ export interface PreprocessedNote {
 export interface SourceAdapter {
   id: string;
   label: string;
+  /** Optional one-time hook, called with the full scanned file list right
+   *  after scanning (before classification or any note is read) — for an
+   *  adapter that needs the WHOLE tree's shape up front, e.g. Notion
+   *  determining which pages have children (a same-named sibling folder)
+   *  before it can decide any single note's destination folder. Obsidian has
+   *  no use for this and doesn't implement it. */
+  prepare?(files: SourceFile[]): void;
   /** Classify one scanned file — note / attachment (+ which library) / skip
    *  (+ a human reason for the report). Extension/filename rules only; never
    *  reads file content (the pipeline does that for notes, once). */
@@ -86,12 +102,18 @@ export interface SourceAdapter {
   /** Turn a note's placeholder-laden, freshly-parsed blocks into final blocks:
    *  resolved links become `noteLink` inline nodes, resolved image embeds
    *  become `image` blocks, and anything that never resolves is restored as
-   *  plain text (never dropped) — see `obsidianAdapter.ts` for the algorithm. */
+   *  plain text (never dropped) — see `obsidianAdapter.ts` for the algorithm.
+   *  `sourceRelPath` is this note's own path in the source tree — adapters
+   *  whose references are relative to the LINKING file (Notion's exported
+   *  Markdown links, unlike Obsidian's vault-root-relative wikilinks) need it
+   *  to resolve a reference back to the source-root-relative form the id/
+   *  attachment maps are keyed by. */
   resolveNote(
     blocks: Block[],
     pending: PendingRef[],
     noteIdMap: Map<string, ResolvedNote>,
     attachmentMap: Map<string, string>,
+    sourceRelPath: string,
   ): ResolveResult;
 }
 
@@ -102,9 +124,14 @@ export interface ImportReport {
   attachmentsCopied: number;
   unresolvedLinks: number;
   unresolvedAttachments: number;
+  /** Pages (or databases) that had children and so became a folder + index
+   *  note (`PreprocessedNote.isContainerIndex`) instead of a plain note. */
+  pagesBecameFolders: number;
   skippedFiles: { relPath: string; reason: string }[];
-  /** Notes carrying an adapter-flagged plugin format (e.g. Obsidian's Kanban
-   *  plugin) that were imported as plain content, not the plugin's real view. */
+  /** Notes an adapter flagged as reduced-fidelity (`PreprocessedNote.flags.note`)
+   *  — each entry is `"<title> — <why>"`, e.g. an Obsidian Kanban board imported
+   *  as plain headings/checklists, or a Notion database that lost its filters/
+   *  sorts/formulas when flattened to a table. */
   pluginNotes: string[];
   errors: { relPath: string; message: string }[];
 }

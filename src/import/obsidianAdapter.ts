@@ -106,7 +106,7 @@ function preprocessNote(relPath: string, rawText: string): PreprocessedNote {
     folder,
     body: text,
     pending,
-    flags: kanbanPlugin ? { kanbanPlugin: true } : undefined,
+    flags: kanbanPlugin ? { note: "Kanban-plugin board (imported as plain headings/checklists)" } : undefined,
   };
 }
 
@@ -120,7 +120,11 @@ function resolveNote(
   pending: PendingRef[],
   noteIdMap: Map<string, ResolvedNote>,
   attachmentMap: Map<string, string>,
+  _sourceRelPath: string,
 ): ResolveResult {
+  // Obsidian's wikilinks are already vault-root-relative (unlike Notion's,
+  // which are relative to the linking file) — this adapter has no use for
+  // the note's own source path.
   const byToken = new Map(pending.map((p) => [p.token, p]));
   let unresolvedLinks = 0;
   let unresolvedAttachments = 0;
