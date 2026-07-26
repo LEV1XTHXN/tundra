@@ -94,6 +94,11 @@ export interface FolderView {
   /** User-set column widths in px, keyed by column key string (`"name"`, `"modified"`,
    *  `"prop:<id>"` — see `columnKeyStr`). Absent columns use a per-type default. */
   columnWidths?: Record<string, number>;
+  /** How this folder's notes are presented: a card gallery (default, absent =
+   *  `"gallery"`) or the dense sortable table. Per-folder, like everything
+   *  else here — a "Recipes" folder and a "Work" folder can each keep their
+   *  own preferred view. */
+  viewMode?: "gallery" | "list";
 }
 
 export type FolderViews = Record<string, FolderView>;

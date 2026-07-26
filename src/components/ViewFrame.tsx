@@ -26,13 +26,24 @@ interface ViewFrameProps {
   /** Skip the body's padding/scroll for views that manage their own full-bleed
    * layout and scrolling (Graph's canvas, Kanban's columns). */
   fullBleed?: boolean;
+  /** Extra class on the header only (e.g. Home's frosted-glass look when a
+   * background is set) — every other view's header is untouched. */
+  headerClassName?: string;
   children: ReactNode;
 }
 
-export function ViewFrame({ title, subtitle, actions, toolbar, fullBleed, children }: ViewFrameProps) {
+export function ViewFrame({
+  title,
+  subtitle,
+  actions,
+  toolbar,
+  fullBleed,
+  headerClassName,
+  children,
+}: ViewFrameProps) {
   return (
     <div className="view-frame">
-      <header className="view-frame-header">
+      <header className={`view-frame-header${headerClassName ? ` ${headerClassName}` : ""}`}>
         <div className="view-frame-header-row">
           {/* Browser-style back/forward, top-left of every framed view. */}
           <NavHistoryButtons />

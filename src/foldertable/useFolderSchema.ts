@@ -33,6 +33,7 @@ export function useFolderSchema(path: string) {
   const columns = useMemo(() => view?.columns ?? [], [view]);
   const tableSort = useMemo(() => view?.tableSort ?? [], [view]);
   const columnWidths = useMemo(() => view?.columnWidths ?? {}, [view]);
+  const viewMode = view?.viewMode ?? "gallery";
   const propsById = useMemo(
     () => Object.fromEntries(properties.map((p) => [p.id, p])) as Record<string, PropertyDef>,
     [properties],
@@ -149,6 +150,13 @@ export function useFolderSchema(path: string) {
     [columnWidths, patch, path],
   );
 
+  const setViewMode = useCallback(
+    (mode: "gallery" | "list") => {
+      void patch(path, { viewMode: mode });
+    },
+    [patch, path],
+  );
+
   const currentSort = tableSort[0];
 
   return {
@@ -156,9 +164,11 @@ export function useFolderSchema(path: string) {
     columns,
     tableSort,
     columnWidths,
+    viewMode,
     propsById,
     currentSort,
     setColumnWidth,
+    setViewMode,
     addBuiltinColumn,
     createProperty,
     updateProperty,

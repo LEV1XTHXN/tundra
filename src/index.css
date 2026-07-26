@@ -603,6 +603,14 @@ body,
   padding: 1.75rem var(--view-padding-x) 1.1rem;
   border-bottom: 1px solid var(--border);
 }
+/* Home's own header, when a background is set (`headerClassName="home-glass"`
+   in Home.tsx) — same frosted-glass scrim as the widgets/ribbon/sidebar.
+   Scoped to this one class rather than `.view-frame-header` itself, so it
+   never leaks into Graph/Calendar/Kanban/etc.'s headers. */
+.view-frame-header.home-glass {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
 .view-frame-header-row {
   display: flex;
   align-items: center;
@@ -649,20 +657,22 @@ body,
   position: relative;
 }
 
-/* Home dashboard (Phase 2 step 6) — configurable widgets, the landing view.
-   Title/header now come from ViewFrame; these are just the widget-grid bits. */
-.home-add {
+/* Home dashboard — configurable widgets, the landing view. Title/header come
+   from ViewFrame; these are the widget-grid + toolbar bits. The grid itself
+   is `react-grid-layout` (`.react-grid-layout`/`.react-grid-item`, styled by
+   its own imported stylesheet) — `.home-widgets`/`.widget` below are our
+   classes layered on top of it (see Home.tsx). */
+.home-actions {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
-.home-add-btn {
+.home-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.6rem;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--card);
@@ -670,29 +680,120 @@ body,
   font-size: 0.8rem;
   cursor: pointer;
 }
-.home-add-btn:hover {
+.home-toolbar-btn:hover:not(:disabled) {
   border-color: var(--primary);
 }
-
-/* Invisible resize grid: fixed columns/rows (set inline from JS) that stay
-   hidden until you drag a widget's bottom-right corner. */
-.home-widgets {
-  display: grid;
-  gap: 1rem;
-  align-items: stretch;
+.home-toolbar-btn.active {
+  border-color: var(--primary);
+  background: var(--accent);
 }
-/* Faint cell guides appear only while a resize drag is in progress. */
-.home-widgets.resizing {
+.home-toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The "Add a widget" popover (`WidgetAddMenu.tsx`) — mirrors
+   `.vault-switcher-*`'s list-item pattern (icon + title/description row,
+   hover highlight) rather than inventing a new one. */
+.widget-add-popover {
+  width: 18rem;
+}
+.widget-add-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  padding: 0 0.2rem 0.3rem;
+}
+.widget-add-empty {
+  font-size: 0.85rem;
+  padding: 0.2rem;
+}
+.widget-add-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.widget-add-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  padding: 0.4rem 0.4rem;
+  cursor: pointer;
+  color: var(--foreground);
+}
+.widget-add-item:hover {
+  background: var(--accent);
+}
+.widget-add-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.widget-add-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.05rem;
+}
+.widget-add-item-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.widget-add-item-description {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-style-toggles {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.home-grid-container {
+  width: 100%;
+}
+
+/* Faint cell guides while customizing, so drag/resize targets are visible —
+   sized from the same cols/rowHeight/gap fed to react-grid-layout's
+   gridConfig (Home.tsx sets --home-cols/--home-row/--home-gap inline, the
+   last of which drops to 0 in `flush` mode so the guide still lines up). */
+.home-widgets.editing {
   background-image:
     linear-gradient(to right, var(--border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--border) 1px, transparent 1px);
-  background-size: calc((100% + 1rem) / var(--home-cols, 1)) calc(var(--home-row, 200px) + 1rem);
-  background-position: -0.5rem -0.5rem;
-  opacity: 1;
+  background-size:
+    calc((100% + var(--home-gap, 16px)) / var(--home-cols, 1))
+    calc(var(--home-row, 200px) + var(--home-gap, 16px));
+  background-position: calc(var(--home-gap, 16px) / -2) calc(var(--home-gap, 16px) / -2);
+}
+.home-widgets.editing .widget-header {
+  cursor: grab;
+}
+.home-widgets.editing .widget-header:active {
+  cursor: grabbing;
 }
 
 .widget {
-  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -701,9 +802,60 @@ body,
   background: var(--card);
   overflow: hidden;
 }
-.widget.is-resizing {
+/* Once a background is set, widgets go slightly translucent so it reads
+   through — `color-mix` blends toward the THEME's own card color (not the
+   background's), so contrast stays governed by light/dark theme, not by
+   whichever pastel/image was picked. Gaps between widgets show the
+   background at full strength, which is what makes it visible at all. */
+.home-widgets.has-background .widget {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+/* The Home background bleeds behind the WHOLE app shell, not just the
+   widget grid — `App.tsx` paints it on `.app` itself (toggling `.home-bg`)
+   only while the Home view is showing, so the ribbon and sidebar (siblings
+   of Home in the shell, outside its own markup) go frosted glass over it
+   here, same scrim as the widgets above. Reverts to the plain `.ribbon`/
+   `.sidebar` rules the instant `.home-bg` is gone — leaving Home (or
+   clearing its background) never leaves a stale tint on other views. */
+.app.home-bg .ribbon,
+.app.home-bg .sidebar {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.widget.resizing,
+.widget.react-draggable-dragging {
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
+}
+
+/* "Stick together": flush (no gap, set via gridConfig.margin) drops the
+   rounded corners so touching edges don't leave rounded-corner notches.
+   Frameless drops the card's own border/background/padding but KEEPS the
+   radius — `.widget` still clips its content to that shape (`overflow:
+   hidden`, set on `.widget` itself), so a transparent widget reads as a
+   rounded window onto the page rather than a hard rectangle. When both are
+   on, flush's radius:0 still wins (so touching edges stay notch-free) —
+   independent otherwise, either works alone. */
+.home-widgets.flush .widget {
+  border-radius: 0;
+}
+.home-widgets.frameless .widget {
+  border: none;
+  background: none;
+}
+.home-widgets.frameless .widget-body {
+  padding: 0;
+}
+/* Frameless still needs SOME scrim over a custom background — without the
+   opaque card, content would otherwise sit directly on it with no
+   contrast floor. Higher specificity than either single-class rule above,
+   so it wins whenever both are set. */
+.home-widgets.has-background.frameless .widget {
+  background: color-mix(in oklch, var(--card) 55%, transparent);
+  backdrop-filter: blur(6px);
 }
 .widget-header {
   display: flex;
@@ -759,34 +911,29 @@ body,
   padding: 0.25rem;
 }
 
-/* Bottom-right corner grabber — the only visible bit of the invisible grid. */
-.widget-resize {
-  position: absolute;
-  right: 0;
-  bottom: 0;
+/* Theme the library's default resize handle (hardcoded black in its own
+   stylesheet) to match the app, and only draw it in edit mode — cheaper than
+   conditionally rendering it, since react-grid-layout hides it via
+   `.react-resizable-hide` when `resizeConfig.enabled` is false. */
+.react-grid-item > .react-resizable-handle {
   width: 16px;
   height: 16px;
-  cursor: nwse-resize;
-  touch-action: none;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-  background:
-    linear-gradient(
-      135deg,
-      transparent 0%,
-      transparent 45%,
-      var(--muted-foreground) 45%,
-      var(--muted-foreground) 55%,
-      transparent 55%,
-      transparent 70%,
-      var(--muted-foreground) 70%,
-      var(--muted-foreground) 80%,
-      transparent 80%
-    );
 }
-.widget:hover .widget-resize,
-.widget.is-resizing .widget-resize {
-  opacity: 0.7;
+.react-grid-item > .react-resizable-handle::after {
+  right: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--muted-foreground);
+  border-bottom: 2px solid var(--muted-foreground);
+}
+
+/* The drag/resize preview (the "ghost" box showing where a widget will
+   land) is hardcoded red in the library's own stylesheet — swap it for a
+   neutral, theme-aware gray so it reads as "this is where it goes," not an
+   error/warning. */
+.react-grid-item.react-grid-placeholder {
+  background: var(--muted-foreground);
 }
 
 .home-note-list {
@@ -1041,6 +1188,43 @@ body,
 .streak-label {
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+/* Home dashboard's Clock widget — local time + date, no network. */
+.clock-widget {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  position: relative;
+}
+.clock-time {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.clock-date {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.clock-format-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.clock-format-toggle:hover {
+  border-color: var(--primary);
+  color: var(--foreground);
 }
 
 /* Home dashboard's mini Graph widget — a small, non-interactive-camera preview
@@ -1396,6 +1580,16 @@ body,
 .banner-picker-actions {
   border-top: 1px solid var(--border);
   padding-top: 0.4rem;
+}
+
+/* The Home background picker's "no background" swatch — reuses
+   .banner-picker-swatch's box but centers an icon instead of a fill. */
+.home-bg-swatch-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .editor-pane {
@@ -3647,7 +3841,6 @@ body,
   padding: 0 0.75rem;
   display: flex;
   align-items: center;
-  border-right: 1px solid var(--border);
   overflow: hidden;
   position: relative;
 }
@@ -3672,7 +3865,6 @@ body,
 .ft-td-add {
   flex: 0 0 44px;
   min-width: 44px;
-  border-right: none;
   justify-content: center;
 }
 
@@ -3741,9 +3933,6 @@ body,
   overflow: auto;
 }
 
-.ft-row {
-  border-bottom: 1px solid var(--border);
-}
 .ft-row:hover {
   background: var(--accent);
 }
@@ -4236,6 +4425,164 @@ body.ft-resizing * {
 /* Divider between the pinned group and the rest, so the grouping is obvious. */
 .ft-row.last-pinned {
   border-bottom: 2px solid color-mix(in oklch, var(--primary) 45%, var(--border));
+}
+
+/* Gallery/List segmented toggle, in the folder view's toolbar next to Sort. */
+.ft-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.ft-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.ft-view-toggle-btn + .ft-view-toggle-btn {
+  border-left: 1px solid var(--border);
+}
+.ft-view-toggle-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ft-view-toggle-btn.active {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+/* Gallery view (FolderGallery.tsx) — a virtualized, responsive card grid.
+   Shares `.ft-empty`/breathing-room conventions with the List view; the
+   scroll region itself is the virtualizer's target. */
+.ft-gallery-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+}
+.gallery-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.gallery-error {
+  padding: 0.4rem 0.2rem;
+  font-size: 0.82rem;
+  color: var(--destructive);
+}
+.gallery-row {
+  display: grid;
+  gap: 14px;
+  padding: 7px 2px;
+  align-items: start;
+}
+
+.gallery-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.gallery-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 1px 6px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+/* The icon strip — a colored band (per-note hue, blended toward the theme's
+   own card color so it stays readable in both) with the note's icon large
+   and centered. Folders get a plain neutral strip instead (a category cue:
+   "this row is a folder", not an individually-colored item). */
+.gallery-card-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84px;
+  flex-shrink: 0;
+  background: color-mix(in oklch, var(--card-accent, var(--muted)) 24%, var(--card));
+  border-bottom: 1px solid var(--border);
+}
+.gallery-card-strip-folder {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.gallery-card-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--primary);
+}
+
+.gallery-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem 0.8rem;
+  flex: 1;
+}
+.gallery-card-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gallery-card-preview {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(0.8rem * 1.4 * 2);
+  line-height: 1.4;
+}
+.gallery-card-preview-loading {
+  opacity: 0.4;
+}
+.gallery-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.gallery-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gallery-card-footer {
+  padding: 0.45rem 0.8rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
 }
 
 /* A plain header action button for views that need one (Templates' "New

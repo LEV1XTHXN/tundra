@@ -16,6 +16,8 @@ import { anytypeAdapter } from "@/import/anytypeAdapter";
 import type { SourceAdapter } from "@/import/types";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
+import { useHomeBackground } from "@/store/homeBackground";
+import { homeBackgroundStyle } from "@/home/HomeBackgroundPicker";
 import { Onboarding } from "./Onboarding";
 import { Ribbon } from "./Ribbon";
 import { AppSidebar } from "./AppSidebar";
@@ -41,9 +43,24 @@ export default function App() {
   useAppStores(vaultInfo);
 
   const openNote = useViewState((s) => s.openNote);
+  const currentView = useViewState((s) => s.view);
   // The ribbon's width is a grid track on `.app`, so the shell owns the class
   // that widens it when the ribbon is slid open.
   const ribbonExpanded = useTheme((s) => s.ribbonExpanded);
+  // Home's background customization (`store/homeBackground.ts`, written by
+  // `Home.tsx`) bleeds behind the WHOLE shell — ribbon + sidebar, not just
+  // Home's own body — but only while Home is actually showing; every other
+  // view keeps the plain theme background (CLAUDE.md-style: the shell reads
+  // shared UI state, it doesn't own it). Also only while the value actually
+  // belongs to the CURRENTLY open vault: right after a vault switch, Home
+  // unmounts/remounts and re-reads `home.json` asynchronously, and until
+  // that resolves this store would otherwise still carry the PREVIOUS
+  // vault's background — rendering it against the new vault's path produces
+  // a URL that can never resolve (a real 404 seen in testing).
+  const homeBackground = useHomeBackground((s) => s.background);
+  const homeBackgroundVault = useHomeBackground((s) => s.vaultPath);
+  const isHomeWithBackground =
+    currentView === "home" && homeBackground !== null && homeBackgroundVault === vaultInfo?.path;
   const [editorRefreshToken, bumpEditor] = useEditorRefresh();
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -69,7 +86,10 @@ export default function App() {
   }
 
   return (
-    <div className={cn("app", ribbonExpanded && "ribbon-open")}>
+    <div
+      className={cn("app", ribbonExpanded && "ribbon-open", isHomeWithBackground && "home-bg")}
+      style={isHomeWithBackground ? homeBackgroundStyle(homeBackground, vaultInfo.path) : undefined}
+    >
       <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
 
       <AppSidebar

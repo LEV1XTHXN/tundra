@@ -10,6 +10,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // react-draggable (a react-grid-layout dependency) reads the bare Node
+  // global `process.env.DRAGGABLE_DEBUG` at runtime for its debug logging —
+  // Vite doesn't polyfill `process` in the browser, so without this shim
+  // every drag throws `ReferenceError: process is not defined` before it can
+  // start. The standard Vite fix for this class of legacy-library assumption.
+  define: {
+    "process.env": {},
+  },
+
   // Mirrors tsconfig.json's "@/*" path mapping (shadcn/ui's import alias) —
   // TS `paths` only affects type-checking, so Vite needs its own resolver.
   resolve: {

@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
@@ -163,21 +164,13 @@ function AppearanceSection() {
 
       <h3 className="settings-section-title settings-section-title-spaced">Accessibility</h3>
       <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={dyslexiaFont}
-          onChange={(e) => setDyslexiaFont(e.target.checked)}
-        />
+        <Switch checked={dyslexiaFont} onCheckedChange={setDyslexiaFont} />
         Use a dyslexia-friendly font (OpenDyslexic) in the editor
       </label>
 
       <h3 className="settings-section-title settings-section-title-spaced">Note hover</h3>
       <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={showModifiedOnHover}
-          onChange={(e) => setShowModifiedOnHover(e.target.checked)}
-        />
+        <Switch checked={showModifiedOnHover} onCheckedChange={setShowModifiedOnHover} />
         Show last-modified date when hovering a note
       </label>
     </div>
@@ -231,10 +224,9 @@ function DictionariesSection() {
         ) : (
           langs.available.map((code) => (
             <label key={code} className="settings-check">
-              <input
-                type="checkbox"
+              <Switch
                 checked={langs.enabled.includes(code)}
-                onChange={(e) => toggleLang(code, e.target.checked)}
+                onCheckedChange={(checked) => toggleLang(code, checked)}
               />
               {code}
             </label>

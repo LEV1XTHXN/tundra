@@ -1,19 +1,42 @@
 /**
- * Home dashboard (Phase 2 step 6) — the landing view. Shows user-configurable
- * widgets (Pinned / Recent / Quick capture / Calendar) that can be added,
- * removed, reordered, and RESIZED on an invisible grid: drag a widget's
- * bottom-right corner to make it span more columns/rows (e.g. 1×1 → 2×2). The
- * layout (order + per-widget sizes) is vault-scoped UI state persisted to
- * `.vault/config/home.json` THROUGH RUST (`services.config`) — never
+ * Home dashboard — the landing view. Shows user-configurable widgets
+ * (Search / Pinned / Recent / Quick capture / Calendar / Clock / Storage /
+ * Streak / Graph) laid out on a real draggable + resizable grid (in an
+ * explicit "Customize" edit mode) via `react-grid-layout` (MIT). Every
+ * widget's position (x/y/w/h in grid cells) persists to
+ * `.vault/config/home.json` alongside which widgets are enabled and the
+ * page's background customization — THROUGH RUST (`services.config`), never
  * localStorage. React renders; all data + persistence go through `services`.
  */
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { Suspense, lazy, useEffect, useState } from "react";
+import {
+  CalendarDays,
+  Clock as ClockIcon,
+  Database,
+  Flame,
+  History,
+  LayoutGrid,
+  NotebookPen,
+  Palette,
+  Pin,
+  Plus,
+  Search as SearchIcon,
+  Waypoints,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import GridLayout, { useContainerWidth } from "react-grid-layout";
+import type { Layout } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
 
 import { config } from "@/services";
 import { ViewFrame } from "@/components/ViewFrame";
+import { useHomeBackground } from "@/store/homeBackground";
+import { HomeBackgroundPicker, type HomeBackground } from "./HomeBackgroundPicker";
+import { WidgetAddMenu } from "./WidgetAddMenu";
 import {
   CalendarWidget,
+  ClockWidget,
   PinnedWidget,
   QuickCaptureWidget,
   RecentWidget,
@@ -35,48 +58,123 @@ type WidgetId =
   | "recent"
   | "quickCapture"
   | "calendar"
+  | "clock"
   | "storage"
   | "streak"
   | "miniGraph";
 
-/** Widget span on the invisible grid, in whole cells. */
-interface WidgetSize {
+/** One widget's position + span on the grid, in whole cells. */
+interface GridPos {
+  x: number;
+  y: number;
   w: number;
   h: number;
 }
 
 interface HomeConfig {
   widgets: WidgetId[];
-  /** Per-widget span; absent = 1×1. */
-  sizes?: Partial<Record<WidgetId, WidgetSize>>;
+  /** Explicit per-widget grid position; a widget without an entry here (a
+   *  brand-new vault, or a freshly re-added widget) falls back to `DEFAULT_POS`. */
+  layout: Partial<Record<WidgetId, GridPos>>;
+  background: HomeBackground | null;
+  /** No gap between widgets (react-grid-layout margin → 0), so adjacent ones
+   *  sit edge-to-edge. Independent of `frameless` — the two combine for a
+   *  "stuck together, one surface" look, but either works alone. */
+  flush: boolean;
+  /** Widgets lose their card border/background/padding, so they blend into
+   *  the page (and into each other, when also `flush`) instead of reading as
+   *  separate boxes. */
+  frameless: boolean;
 }
 
 const HOME_CONFIG_FILE = "home.json";
 
-/** Invisible-grid geometry. A cell is sized to comfortably hold a whole widget
- *  (CELL_MIN wide, ~square tall) — the board fits as many such columns as the
- *  window allows, and every column is an equal `1fr` so widgets scale
- *  proportionally with the window. Drag a widget's corner to span more cells.
- *  GAP must match the CSS grid `gap`. */
-const CELL_MIN = 300; // px — minimum width of one cell (drives the column count)
+/** Grid geometry. A cell is sized to comfortably hold a SMALL widget at its
+ *  minimum span (CELL_MIN wide, ~square tall) — the board fits as many such
+ *  columns as the window allows, and every column is an equal `1fr` so
+ *  widgets scale proportionally with the window. GAP feeds
+ *  `react-grid-layout`'s own `margin` config, so there's no separate CSS gap
+ *  to keep in sync. Half the size of an earlier pass at this constant (300/
+ *  240) — halved together with `DEFAULT_POS` below (every span doubled) so
+ *  the default dashboard still LOOKS the same at a given window width, while
+ *  every widget's resize floor (~half its default span, see `MIN_SIZE`) now
+ *  bottoms out at roughly half the physical size it used to. */
+const CELL_MIN = 150; // px — minimum width of one cell (drives the column count)
 const ROW_RATIO = 1.15; // row height per cell-width unit (tall enough for the calendar)
-const ROW_MIN = 240; // px — floor so a 1×1 cell always fits a whole widget
+const ROW_MIN = 120; // px — floor so a 1×1 cell always fits a small widget
 const ROW_MAX = 460; // px — cap so a wide single-column layout can't fill the screen
-const GAP = 16; // px — must equal `.home-widgets` gap (1rem)
-const MAX_W_SPAN = 6; // cap on how many columns a widget may store
-const MAX_H_SPAN = 4; // cap on how many rows a widget can span
+const GAP = 16; // px — react-grid-layout margin
 
-const WIDGET_META: { id: WidgetId; title: string; render: (p: WidgetProps) => React.ReactElement }[] = [
-  { id: "search", title: "Search", render: (p) => <SearchWidget {...p} /> },
-  { id: "pinned", title: "Pinned", render: (p) => <PinnedWidget {...p} /> },
-  { id: "recent", title: "Recent", render: (p) => <RecentWidget {...p} /> },
-  { id: "quickCapture", title: "Quick capture", render: (p) => <QuickCaptureWidget {...p} /> },
-  { id: "calendar", title: "Calendar", render: (p) => <CalendarWidget {...p} /> },
-  { id: "storage", title: "Storage", render: (p) => <StorageWidget {...p} /> },
-  { id: "streak", title: "Streak", render: (p) => <StreakWidget {...p} /> },
+interface WidgetMeta {
+  id: WidgetId;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  render: (p: WidgetProps) => React.ReactElement;
+}
+
+const WIDGET_META: WidgetMeta[] = [
+  {
+    id: "search",
+    title: "Search",
+    description: "Find notes by text or #tag",
+    icon: SearchIcon,
+    render: (p) => <SearchWidget {...p} />,
+  },
+  {
+    id: "pinned",
+    title: "Pinned",
+    description: "Notes you've pinned",
+    icon: Pin,
+    render: (p) => <PinnedWidget {...p} />,
+  },
+  {
+    id: "recent",
+    title: "Recent",
+    description: "Recently edited notes",
+    icon: History,
+    render: (p) => <RecentWidget {...p} />,
+  },
+  {
+    id: "quickCapture",
+    title: "Quick capture",
+    description: "Jot a thought into Quick notes",
+    icon: NotebookPen,
+    render: (p) => <QuickCaptureWidget {...p} />,
+  },
+  {
+    id: "calendar",
+    title: "Calendar",
+    description: "A compact month view",
+    icon: CalendarDays,
+    render: (p) => <CalendarWidget {...p} />,
+  },
+  {
+    id: "clock",
+    title: "Clock",
+    description: "Local time and date",
+    icon: ClockIcon,
+    render: (p) => <ClockWidget {...p} />,
+  },
+  {
+    id: "storage",
+    title: "Storage",
+    description: "Note, tag, and group counts",
+    icon: Database,
+    render: (p) => <StorageWidget {...p} />,
+  },
+  {
+    id: "streak",
+    title: "Streak",
+    description: "Consecutive days logged in",
+    icon: Flame,
+    render: (p) => <StreakWidget {...p} />,
+  },
   {
     id: "miniGraph",
     title: "Graph",
+    description: "A preview of your link graph",
+    icon: Waypoints,
     render: (p) => (
       <Suspense fallback={<div className="centered muted">Loading…</div>}>
         <MiniGraphWidget {...p} />
@@ -91,29 +189,60 @@ const DEFAULT_WIDGETS: WidgetId[] = [
   "recent",
   "quickCapture",
   "calendar",
+  "clock",
   "storage",
   "streak",
   "miniGraph",
 ];
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
+/** Seed position for a widget with no saved layout yet (a brand-new vault, or
+ *  a widget just re-added via "+ Add widget") — hand-authored against a
+ *  6-column baseline (every span DOUBLED from a 3-column original, matching
+ *  CELL_MIN/ROW_MIN being halved above, so the default dashboard still looks
+ *  the same at a given window width). Not pixel-perfect at every window
+ *  width: RGL's own bounds-correction + vertical compaction (see
+ *  `synchronizeLayoutWithChildren` in the library) re-pack anything that
+ *  doesn't fit the ACTUAL column count on mount, so this only has to be a
+ *  reasonable starting arrangement, not a responsive one. */
+const DEFAULT_POS: Partial<Record<WidgetId, GridPos>> = {
+  search: { x: 0, y: 0, w: 6, h: 2 },
+  pinned: { x: 0, y: 2, w: 2, h: 4 },
+  recent: { x: 2, y: 2, w: 2, h: 4 },
+  quickCapture: { x: 4, y: 2, w: 2, h: 2 },
+  clock: { x: 4, y: 4, w: 2, h: 2 },
+  calendar: { x: 0, y: 6, w: 2, h: 4 },
+  storage: { x: 2, y: 6, w: 2, h: 2 },
+  streak: { x: 4, y: 6, w: 2, h: 2 },
+  miniGraph: { x: 2, y: 8, w: 4, h: 4 },
+};
+
+/** A widget can be resized down to ~half its default span (rounded, floored
+ *  at 1 cell — the grid's resolution itself stays as coarse as `DEFAULT_POS`;
+ *  this is a resize FLOOR, not a finer grid). Derived from `DEFAULT_POS`
+ *  rather than hand-duplicated so the two can never drift apart. */
+function halfFloor(n: number): number {
+  return Math.max(1, Math.round(n / 2));
 }
+const MIN_SIZE: Partial<Record<WidgetId, { minW: number; minH: number }>> = Object.fromEntries(
+  Object.entries(DEFAULT_POS).map(([id, pos]) => [id, { minW: halfFloor(pos!.w), minH: halfFloor(pos!.h) }]),
+);
 
 /** Keep only known widget ids, de-duplicated; fall back to the default layout
  *  when there's no saved config (vs. an explicitly emptied one). */
-function sanitize(ids: WidgetId[] | undefined): WidgetId[] {
+function sanitizeWidgets(ids: WidgetId[] | undefined): WidgetId[] {
   if (!ids) return DEFAULT_WIDGETS;
   const known = new Set(WIDGET_META.map((w) => w.id));
   const seen = new Set<WidgetId>();
   return ids.filter((id) => known.has(id) && !seen.has(id) && (seen.add(id), true));
 }
 
-/** Coerce a stored/edited size into whole cells within the board's bounds. */
-function normSize(s: WidgetSize | undefined): WidgetSize {
+function sanitizeConfig(raw: Partial<HomeConfig> | null): HomeConfig {
   return {
-    w: clamp(Math.round(s?.w ?? 1), 1, MAX_W_SPAN),
-    h: clamp(Math.round(s?.h ?? 1), 1, MAX_H_SPAN),
+    widgets: sanitizeWidgets(raw?.widgets),
+    layout: raw?.layout ?? {},
+    background: raw?.background ?? null,
+    flush: raw?.flush ?? false,
+    frameless: raw?.frameless ?? false,
   };
 }
 
@@ -125,39 +254,20 @@ function renderWidget(id: WidgetId, props: WidgetProps): React.ReactElement | nu
   return WIDGET_META.find((w) => w.id === id)?.render(props) ?? null;
 }
 
-/** Grid layout for a given container width: the number of equal columns that
- *  fit at CELL_MIN, and the resulting cell width/height. Row height tracks cell
- *  width (so widgets scale with the window) but is bounded to [ROW_MIN, ROW_MAX]
- *  so a whole widget always fits yet a single wide column can't fill the
- *  screen. Falls back to one column until the width has been measured. */
-function gridMetricsFor(gridWidth: number): { cols: number; cellWidth: number; rowHeight: number } {
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+/** Column count + row height for a given container width: as many equal
+ *  columns as fit at CELL_MIN, each an equal share of the width. Row height
+ *  tracks cell width (so widgets scale with the window) but is bounded to
+ *  [ROW_MIN, ROW_MAX] so a whole widget always fits yet a single wide column
+ *  can't fill the screen. */
+function gridMetricsFor(gridWidth: number): { cols: number; rowHeight: number } {
   const cols = gridWidth > 0 ? Math.max(1, Math.floor((gridWidth + GAP) / (CELL_MIN + GAP))) : 1;
   const cellWidth = Math.max(0, (gridWidth - (cols - 1) * GAP) / cols);
   const rowHeight = clamp(cellWidth * ROW_RATIO, ROW_MIN, ROW_MAX);
-  return { cols, cellWidth, rowHeight };
-}
-
-/** Track the widget grid's pixel width so column count + row height follow the
- *  window (rendering) and resize drags can snap to whole cells (startResize).
- *  Uses a callback ref so the ResizeObserver attaches whenever the grid mounts
- *  — the grid renders only after the layout loads, so a plain mount effect
- *  would fire while the node is still absent and never measure it. */
-function useGridMetrics(): { ref: (node: HTMLDivElement | null) => void; node: React.RefObject<HTMLDivElement | null>; cols: number; rowHeight: number } {
-  const node = useRef<HTMLDivElement | null>(null);
-  const observer = useRef<ResizeObserver | null>(null);
-  const [width, setWidth] = useState(0);
-
-  const ref = useCallback((el: HTMLDivElement | null) => {
-    node.current = el;
-    observer.current?.disconnect();
-    if (!el) return;
-    observer.current = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
-    observer.current.observe(el);
-    setWidth(el.clientWidth);
-  }, []);
-
-  const { cols, rowHeight } = gridMetricsFor(width);
-  return { ref, node, cols, rowHeight };
+  return { cols, rowHeight };
 }
 
 export function Home({
@@ -171,82 +281,42 @@ export function Home({
   onOpenNote: (id: string) => void;
   onError: (message: string) => void;
 }) {
-  // null = still loading the saved layout.
-  const [widgets, setWidgets] = useState<WidgetId[] | null>(null);
-  const [sizes, setSizes] = useState<Partial<Record<WidgetId, WidgetSize>>>({});
-  // Live span while dragging a resize handle (not yet persisted).
-  const [drag, setDrag] = useState<{ id: WidgetId; w: number; h: number } | null>(null);
+  // null = still loading the saved config.
+  const [cfg, setCfg] = useState<HomeConfig | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const setSharedBackground = useHomeBackground((s) => s.setBackground);
 
-  const { ref: gridRef, node: gridNode, cols, rowHeight } = useGridMetrics();
+  const { width, mounted: widthMeasured, containerRef } = useContainerWidth();
+  const { cols, rowHeight } = gridMetricsFor(width);
 
   useEffect(() => {
     let cancelled = false;
+    // Clear whatever the PREVIOUS vault (or nothing, on first load) left in
+    // shared state immediately, rather than leaving it stale until this read
+    // resolves — `App.tsx` also checks the value's own `vaultPath` before
+    // using it, but clearing here means there's never even a flash of the
+    // wrong vault's background while this read is in flight.
+    setSharedBackground(null, vaultPath);
     config
       .read<HomeConfig>(HOME_CONFIG_FILE)
-      .then((cfg) => {
+      .then((raw) => {
         if (cancelled) return;
-        setWidgets(sanitize(cfg?.widgets));
-        setSizes(cfg?.sizes ?? {});
+        const sanitized = sanitizeConfig(raw);
+        setCfg(sanitized);
+        // Mirrored into shared UI state so the app SHELL (ribbon + sidebar,
+        // outside this component tree) can go frosted-over-background too —
+        // see `store/homeBackground.ts`.
+        setSharedBackground(sanitized.background, vaultPath);
       })
       .catch(() => {
-        if (!cancelled) setWidgets(DEFAULT_WIDGETS);
+        if (!cancelled) setCfg(sanitizeConfig(null));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setSharedBackground, vaultPath]);
 
-  const persist = useCallback(
-    (nextWidgets: WidgetId[], nextSizes: Partial<Record<WidgetId, WidgetSize>>) => {
-      setWidgets(nextWidgets);
-      setSizes(nextSizes);
-      void config
-        .write(HOME_CONFIG_FILE, { widgets: nextWidgets, sizes: nextSizes } satisfies HomeConfig)
-        .catch((e) => onError(String(e)));
-    },
-    [onError],
-  );
-
-  // Drag-to-resize: the widget's bottom-right corner snaps to whichever cell the
-  // cursor is over. Spans are measured from the widget's fixed top-left origin
-  // (which doesn't move as it grows) using the grid's live pixel size — so a
-  // cell only changes when the cursor actually crosses into the next cell.
-  const startResize = useCallback(
-    (id: WidgetId, e: React.PointerEvent) => {
-      if (!widgets) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      const widgetEl = (e.currentTarget as HTMLElement).parentElement;
-      const gridEl = gridNode.current;
-      if (!widgetEl || !gridEl) return;
-      const origin = widgetEl.getBoundingClientRect();
-      const { cols: liveCols, cellWidth, rowHeight } = gridMetricsFor(gridEl.getBoundingClientRect().width);
-      if (cellWidth <= 0) return;
-
-      const move = (ev: PointerEvent) => {
-        // Which cell (1-based) from the origin the cursor currently sits in.
-        const w = clamp(Math.floor((ev.clientX - origin.left) / (cellWidth + GAP)) + 1, 1, liveCols);
-        const h = clamp(Math.floor((ev.clientY - origin.top) / (rowHeight + GAP)) + 1, 1, MAX_H_SPAN);
-        setDrag({ id, w, h });
-      };
-      const up = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        setDrag((d) => {
-          if (d && widgets.includes(d.id)) {
-            persist(widgets, { ...sizes, [d.id]: { w: d.w, h: d.h } });
-          }
-          return null;
-        });
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    },
-    [widgets, sizes, gridNode, persist],
-  );
-
-  if (widgets === null) {
+  if (cfg === null) {
     return (
       <ViewFrame title="Home">
         <div className="centered muted">Loading…</div>
@@ -254,92 +324,164 @@ export function Home({
     );
   }
 
-  const move = (index: number, delta: number) => {
-    const target = index + delta;
-    if (target < 0 || target >= widgets.length) return;
-    const next = [...widgets];
-    [next[index], next[target]] = [next[target], next[index]];
-    persist(next, sizes);
+  const persist = (next: HomeConfig) => {
+    setCfg(next);
+    setSharedBackground(next.background, vaultPath);
+    void config.write(HOME_CONFIG_FILE, next).catch((e) => onError(String(e)));
   };
+
+  const rglLayout: Layout = cfg.widgets.map((id, index) => {
+    const pos = cfg.layout[id] ?? DEFAULT_POS[id] ?? { x: 0, y: index, w: 1, h: 1 };
+    const min = MIN_SIZE[id] ?? { minW: 1, minH: 1 };
+    return {
+      i: id,
+      x: pos.x,
+      y: pos.y,
+      // Clamp a saved size that predates this floor (or an older, smaller
+      // per-widget default) up to the current minimum.
+      w: Math.max(pos.w, min.minW),
+      h: Math.max(pos.h, min.minH),
+      minW: min.minW,
+      minH: min.minH,
+    };
+  });
+
+  const handleLayoutChange = (layout: Layout) => {
+    if (layout.length === 0) return;
+    const nextLayout: Partial<Record<WidgetId, GridPos>> = {};
+    for (const item of layout) {
+      nextLayout[item.i as WidgetId] = { x: item.x, y: item.y, w: item.w, h: item.h };
+    }
+    persist({ ...cfg, layout: nextLayout });
+  };
+
   const remove = (id: WidgetId) => {
-    const { [id]: _dropped, ...rest } = sizes;
-    persist(
-      widgets.filter((w) => w !== id),
-      rest,
-    );
+    const { [id]: _dropped, ...restLayout } = cfg.layout;
+    persist({ ...cfg, widgets: cfg.widgets.filter((w) => w !== id), layout: restLayout });
   };
-  const add = (id: WidgetId) => persist([...widgets, id], sizes);
-  const available = WIDGET_META.filter((w) => !widgets.includes(w.id));
+  const add = (id: WidgetId) => persist({ ...cfg, widgets: [...cfg.widgets, id] });
+  const setBackground = (background: HomeBackground | null) => persist({ ...cfg, background });
+  const toggleFlush = () => persist({ ...cfg, flush: !cfg.flush });
+  const toggleFrameless = () => persist({ ...cfg, frameless: !cfg.frameless });
 
+  const available = WIDGET_META.filter((w) => !cfg.widgets.includes(w.id));
   const widgetProps: WidgetProps = { vaultPath, refreshKey, onOpenNote, onError };
+  const gap = cfg.flush ? 0 : GAP;
 
-  const addWidgetActions = available.length > 0 && (
-    <div className="home-add">
-      <span className="muted">Add widget:</span>
-      {available.map((w) => (
-        <button key={w.id} className="home-add-btn" onClick={() => add(w.id)}>
-          <Plus className="h-3.5 w-3.5" />
-          {w.title}
-        </button>
-      ))}
+  const actions = (
+    <div className="home-actions">
+      {editMode && (
+        <WidgetAddMenu
+          available={available}
+          onAdd={(id) => add(id as WidgetId)}
+          trigger={
+            <button className="home-toolbar-btn" title="Add widget" disabled={available.length === 0}>
+              <Plus className="h-3.5 w-3.5" />
+              Add widget
+            </button>
+          }
+        />
+      )}
+      {editMode && (
+        <div className="home-style-toggles">
+          <button
+            className={`home-toolbar-btn${cfg.flush ? " active" : ""}`}
+            onClick={toggleFlush}
+            title="No gap between widgets"
+          >
+            Flush
+          </button>
+          <button
+            className={`home-toolbar-btn${cfg.frameless ? " active" : ""}`}
+            onClick={toggleFrameless}
+            title="No card border/background around widgets"
+          >
+            Frameless
+          </button>
+        </div>
+      )}
+      <HomeBackgroundPicker
+        vaultPath={vaultPath}
+        background={cfg.background}
+        onChange={setBackground}
+        onError={onError}
+        trigger={
+          <button className="home-toolbar-btn" title="Home background" aria-label="Home background">
+            <Palette className="h-3.5 w-3.5" />
+          </button>
+        }
+      />
+      <button
+        className={`home-toolbar-btn${editMode ? " active" : ""}`}
+        onClick={() => setEditMode((v) => !v)}
+        title={editMode ? "Done customizing" : "Customize layout"}
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+        {editMode ? "Done" : "Customize"}
+      </button>
     </div>
   );
 
   return (
-    <ViewFrame title="Home" actions={addWidgetActions || undefined}>
-      {widgets.length === 0 ? (
-        <div className="centered muted">No widgets — add one above.</div>
+    <ViewFrame title="Home" actions={actions} headerClassName={cfg.background ? "home-glass" : undefined}>
+      {cfg.widgets.length === 0 ? (
+        <div className="centered muted">No widgets — turn on Customize to add one.</div>
       ) : (
-        <div
-          ref={gridRef}
-          className={`home-widgets${drag ? " resizing" : ""}`}
-          style={{
-            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-            gridAutoRows: `${rowHeight}px`,
-            ["--home-cols" as string]: cols,
-            ["--home-row" as string]: `${rowHeight}px`,
-          }}
-        >
-          {widgets.map((id, index) => {
-            const size = drag?.id === id ? drag : normSize(sizes[id]);
-            return (
-              <section
-                key={id}
-                className={`widget${drag?.id === id ? " is-resizing" : ""}`}
-                style={{
-                  gridColumn: `span ${Math.min(size.w, cols)}`,
-                  gridRow: `span ${size.h}`,
-                }}
-              >
-                <div className="widget-header">
-                  <h2 className="widget-title">{titleOf(id)}</h2>
-                  <div className="widget-controls">
-                    <button onClick={() => move(index, -1)} disabled={index === 0} title="Move up" aria-label="Move up">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => move(index, 1)}
-                      disabled={index === widgets.length - 1}
-                      title="Move down"
-                      aria-label="Move down"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => remove(id)} title="Remove widget" aria-label="Remove widget">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+        <div ref={containerRef} className="home-grid-container">
+          {/* Wait for a REAL measurement before mounting the grid at all — react-grid-layout
+              bounds-corrects/compacts its layout against whatever `width`/`cols` it mounts
+              with, and (like any other layout change) auto-persists that correction via
+              `onLayoutChange`. Mounting against `useContainerWidth`'s width-before-measured
+              fallback would silently persist a layout recomputed for the WRONG column count —
+              this is what was scrambling saved positions on every fresh Home mount (e.g. right
+              after switching vaults, since Home unmounts/remounts on every view change). */}
+          {!widthMeasured ? (
+            <div className="centered muted">Loading…</div>
+          ) : (
+            // `key={cols}` forces a clean remount when the column count changes
+            // (window resized past a breakpoint): GridLayout only bounds-corrects
+            // its saved layout against `cols` on mount, so a stale wide layout
+            // would otherwise stay un-clamped after the window narrows.
+            <GridLayout
+              key={cols}
+              width={width}
+              layout={rglLayout}
+              gridConfig={{ cols, rowHeight, margin: [gap, gap], containerPadding: [0, 0] }}
+              dragConfig={{ enabled: editMode, handle: ".widget-header", cancel: ".widget-controls" }}
+              resizeConfig={{ enabled: editMode }}
+              onLayoutChange={handleLayoutChange}
+              className={[
+                "home-widgets",
+                editMode && "editing",
+                cfg.background && "has-background",
+                cfg.flush && "flush",
+                cfg.frameless && "frameless",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              style={{
+                ["--home-cols" as string]: cols,
+                ["--home-row" as string]: `${rowHeight}px`,
+                ["--home-gap" as string]: `${gap}px`,
+              }}
+            >
+              {cfg.widgets.map((id) => (
+                <section key={id} className="widget">
+                  <div className="widget-header">
+                    <h2 className="widget-title">{titleOf(id)}</h2>
+                    {editMode && (
+                      <div className="widget-controls">
+                        <button onClick={() => remove(id)} title="Remove widget" aria-label="Remove widget">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="widget-body">{renderWidget(id, widgetProps)}</div>
-                <div
-                  className="widget-resize"
-                  title="Drag to resize"
-                  aria-label="Resize widget"
-                  onPointerDown={(e) => startResize(id, e)}
-                />
-              </section>
-            );
-          })}
+                  <div className="widget-body">{renderWidget(id, widgetProps)}</div>
+                </section>
+              ))}
+            </GridLayout>
+          )}
         </div>
       )}
     </ViewFrame>

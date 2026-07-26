@@ -22,7 +22,7 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
 
-import { calendar, notes, quickNote, search, tags as tagsService } from "@/services";
+import { calendar, config, notes, quickNote, search, tags as tagsService } from "@/services";
 import type { Block, NoteSummary, SearchHit } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
@@ -408,6 +408,58 @@ export function StreakWidget({}: WidgetProps) {
       <Flame className="streak-icon h-8 w-8" />
       <span className="streak-count">{loaded ? currentStreak : "–"}</span>
       <span className="streak-label">day{currentStreak === 1 ? "" : "s"} in a row</span>
+    </div>
+  );
+}
+
+const CLOCK_CONFIG_FILE = "home-clock.json";
+
+interface ClockConfig {
+  format24h: boolean;
+}
+
+/** Local time + date, no network. Deliberately self-contained: it reads and
+ *  persists its OWN tiny vault-config file rather than routing its one
+ *  setting (12h/24h) through `Home`'s widget config, so adding the next
+ *  widget with its own settings never means teaching `Home` a new shape —
+ *  same pattern every other widget already follows for its data (Pinned/
+ *  Recent call `notes.list()` directly, Calendar calls `calendar.range()`
+ *  directly, etc.). */
+export function ClockWidget({}: WidgetProps) {
+  const [now, setNow] = useState(() => new Date());
+  const [format24h, setFormat24h] = useState(true);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    config
+      .read<ClockConfig>(CLOCK_CONFIG_FILE)
+      .then((cfg) => {
+        if (!cancelled && cfg) setFormat24h(cfg.format24h);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleFormat = () => {
+    const next = !format24h;
+    setFormat24h(next);
+    void config.write(CLOCK_CONFIG_FILE, { format24h: next } satisfies ClockConfig);
+  };
+
+  return (
+    <div className="clock-widget">
+      <span className="clock-time">{format(now, format24h ? "HH:mm:ss" : "h:mm:ss a")}</span>
+      <span className="clock-date">{format(now, "EEEE, MMMM d, yyyy")}</span>
+      <button className="clock-format-toggle" onClick={toggleFormat} title="Toggle 12h/24h time">
+        {format24h ? "24h" : "12h"}
+      </button>
     </div>
   );
 }
