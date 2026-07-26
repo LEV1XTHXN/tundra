@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { spellcheck } from "@/services";
+import { localizeError } from "@/i18n/errors";
 import { attachSpellcheckPlugin, type SpellContext, type SpellcheckController } from "./spellcheckPlugin";
 import type { NoteBlockEditor } from "./useNoteBlockEditor";
 
@@ -30,6 +32,7 @@ export interface EditorContextMenus {
  * `preventDefault`, so its menu takes priority over the format one.
  */
 export function useEditorContextMenus({ editor, editorPaneRef, onError }: Params): EditorContextMenus {
+  const { t } = useTranslation();
   const [spellMenu, setSpellMenu] = useState<SpellContext | null>(null);
   const [formatMenu, setFormatMenu] = useState<{ x: number; y: number } | null>(null);
   const spellCtl = useRef<SpellcheckController | null>(null);
@@ -86,7 +89,7 @@ export function useEditorContextMenus({ editor, editorPaneRef, onError }: Params
     spellcheck
       .addWord(ctx.word)
       .then(() => spellCtl.current?.recheckAll())
-      .catch((e) => onError(String(e)));
+      .catch((e) => onError(localizeError(e, t)));
   }
 
   return { spellMenu, setSpellMenu, replaceMisspelling, addToDictionary, formatMenu, setFormatMenu };

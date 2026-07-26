@@ -17,14 +17,18 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { formatDistanceToNow, parseISO } from "date-fns";
+import { formatDistanceToNow, parseISO, type Locale } from "date-fns";
 import { Folder as FolderIcon, Pin } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { notes } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { tagChipStyle } from "@/store/tagColors";
 import type { PropertyDef } from "@/store/folderViews";
 import { propertyValue, type TableRow } from "./ordering";
 import { notePreview } from "./notePreview";
+import { useDateLocale } from "@/i18n/dateLocale";
+import { localizeError } from "@/i18n/errors";
 import type { useFolderSchema } from "./useFolderSchema";
 
 const CARD_MIN_WIDTH = 220; // px
@@ -49,11 +53,11 @@ function accentHue(seed: string): number {
   return h % 360;
 }
 
-function formatModified(iso: string): string {
+function formatModified(iso: string, locale: Locale | undefined, t: TFunction): string {
   try {
-    return `Modified ${formatDistanceToNow(parseISO(iso), { addSuffix: true })}`;
+    return t("folderView.modified", { time: formatDistanceToNow(parseISO(iso), { addSuffix: true, locale }) });
   } catch {
-    return "Modified —";
+    return t("folderView.modifiedUnknown");
   }
 }
 
@@ -95,6 +99,8 @@ function NoteCard({
   onOpen: () => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const s = row.summary;
   const [preview, setPreview] = useState<string | null>(previewCache.get(s.id) ?? null);
 
@@ -113,7 +119,7 @@ function NoteCard({
         if (cancelled) return;
         previewCache.set(s.id, "");
         setPreview("");
-        onError(e instanceof Error ? e.message : String(e));
+        onError(localizeError(e, t));
       });
     return () => {
       cancelled = true;
@@ -137,7 +143,7 @@ function NoteCard({
         {row.pinned && <Pin size={13} className="gallery-card-pin" />}
       </div>
       <div className="gallery-card-body">
-        <div className="gallery-card-title">{s.title || "Untitled"}</div>
+        <div className="gallery-card-title">{s.title || t("common.untitled")}</div>
         {preview ? (
           <p className="gallery-card-preview">{preview}</p>
         ) : preview === null ? (
@@ -155,7 +161,7 @@ function NoteCard({
           </div>
         )}
       </div>
-      <div className="gallery-card-footer muted">{formatModified(s.modified)}</div>
+      <div className="gallery-card-footer muted">{formatModified(s.modified, dateLocale, t)}</div>
     </button>
   );
 }

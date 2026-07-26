@@ -1,6 +1,8 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 import { attachments } from "@/services";
+import { localizeError } from "@/i18n/errors";
 import { attachmentKindFromMime } from "./attachmentKind";
 import type { NoteBlockEditor } from "./useNoteBlockEditor";
 
@@ -16,6 +18,7 @@ interface Params {
  * open a clicked file block. Both attach to the editor pane element; effects only.
  */
 export function useEditorClipboard({ editor, editorPaneRef, vaultPath, onError }: Params): void {
+  const { t } = useTranslation();
   // Windows Explorer's "copy" on a file puts BOTH a file entry and a
   // text/plain path onto the clipboard. BlockNote's own paste handler picks
   // among clipboard types by a fixed priority list that ranks text/plain
@@ -69,9 +72,9 @@ export function useEditorClipboard({ editor, editorPaneRef, vaultPath, onError }
       if (!blockId) return;
       const block = editor.getBlock(blockId);
       if (block?.type !== "file" || !block.props.url) return;
-      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(String(e)));
+      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(localizeError(e, t)));
     }
     container.addEventListener("click", onClick);
     return () => container.removeEventListener("click", onClick);
-  }, [editor, vaultPath, onError]);
+  }, [editor, vaultPath, onError, t]);
 }

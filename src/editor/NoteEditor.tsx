@@ -7,6 +7,7 @@
  * `@tauri-apps/api` (checked by `npm run check:layering`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FormattingToolbar,
   getFormattingToolbarItems,
@@ -17,6 +18,7 @@ import "@blocknote/shadcn/style.css";
 
 import type { Note, NoteSummary } from "@/services";
 import { useTheme } from "@/store/theme";
+import { localizeError } from "@/i18n/errors";
 import { FileOpenButton } from "./FileOpenButton";
 import { NoteBanner } from "./NoteBanner";
 import { TemplatePicker } from "@/templates/TemplatePicker";
@@ -72,6 +74,7 @@ export function NoteEditor({
   onSaved,
   onNeedsReload,
 }: NoteEditorProps) {
+  const { t } = useTranslation();
   const [note, setNote] = useState<Note | null>(null);
 
   useEffect(() => {
@@ -82,16 +85,16 @@ export function NoteEditor({
         const loaded = await persistence.read(noteId);
         if (!cancelled) setNote(loaded);
       } catch (e) {
-        if (!cancelled) onError(String(e));
+        if (!cancelled) onError(localizeError(e, t));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [noteId, persistence, onError]);
+  }, [noteId, persistence, onError, t]);
 
   if (!note) {
-    return <div className="centered muted">Loading…</div>;
+    return <div className="centered muted">{t("common.loading")}</div>;
   }
   return (
     <LoadedNoteEditor

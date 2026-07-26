@@ -1,13 +1,14 @@
+import type { TFunction } from "i18next";
 import type { NoteSummary, PropertyValue } from "@/services";
 import type { ColumnKey, PropertyDef, TableSort, TableSortKey } from "@/store/folderViews";
 
 /** Human label for a column (Name plus built-ins and custom properties). */
-export function columnLabel(key: TableSortKey, propsById: Record<string, PropertyDef>): string {
-  if (key === "name") return "Name";
-  if (key === "modified") return "Last modified";
-  if (key === "created") return "Created";
-  if (key === "size") return "Size";
-  return propsById[key.prop]?.name ?? "Property";
+export function columnLabel(key: TableSortKey, propsById: Record<string, PropertyDef>, t: TFunction): string {
+  if (key === "name") return t("folderView.columnName");
+  if (key === "modified") return t("folderView.columnModified");
+  if (key === "created") return t("folderView.columnCreated");
+  if (key === "size") return t("folderView.columnSize");
+  return propsById[key.prop]?.name ?? t("folderView.columnProperty");
 }
 
 /** A stable string key (for React lists / dedupe) for any column or sort key. */

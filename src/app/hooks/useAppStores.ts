@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { VaultInfo } from "@/services";
 import { useKeybindings } from "@/store/keybindings";
 import { useTheme } from "@/store/theme";
+import { useLocale } from "@/store/locale";
 import { useActivity } from "@/store/activity";
 import { useTagColors, useKanbanTags, useVaultTags } from "@/store/tagColors";
 import { useFolderViews } from "@/store/folderViews";
@@ -23,6 +24,9 @@ export function useAppStores(vaultInfo: VaultInfo | null): void {
   }, []);
   useEffect(() => {
     void useTheme.getState().load();
+  }, []);
+  useEffect(() => {
+    void useLocale.getState().load();
   }, []);
   useEffect(() => {
     void useActivity.getState().load();

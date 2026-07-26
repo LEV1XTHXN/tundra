@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { LayoutGrid, List } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { TreeNode } from "@/services";
 import { cn } from "@/lib/utils";
 import { type TableSort } from "@/store/folderViews";
@@ -52,6 +53,7 @@ export function FolderTableView({
   onError,
   onChanged,
 }: FolderTableViewProps) {
+  const { t } = useTranslation();
   const schema = useFolderSchema(folderPath);
   const { tableSort, propsById, viewMode, setViewMode } = schema;
 
@@ -69,14 +71,14 @@ export function FolderTableView({
   }, [tree, folderPath, tableSort, propsById]);
 
   const crumbs = folderPath === "" ? [] : folderPath.split("/");
-  const title = crumbs.length ? crumbs[crumbs.length - 1] : vaultName || "All notes";
+  const title = crumbs.length ? crumbs[crumbs.length - 1] : vaultName || t("folderView.allNotes");
 
   return (
     <div className="ft-root">
       <div className="ft-header">
         <nav className="ft-breadcrumbs">
           <button className="ft-crumb" onClick={() => onOpenFolder("")}>
-            {vaultName || "All notes"}
+            {vaultName || t("folderView.allNotes")}
           </button>
           {crumbs.map((seg, i) => (
             <span key={i} className="ft-crumb-wrap">
@@ -90,22 +92,22 @@ export function FolderTableView({
         <div className="ft-title-row">
           <h1 className="ft-title">{title}</h1>
           <div className="ft-toolbar">
-            <div className="ft-view-toggle" role="group" aria-label="View">
+            <div className="ft-view-toggle" role="group" aria-label={t("folderView.view")}>
               <button
                 className={cn("ft-view-toggle-btn", viewMode === "gallery" && "active")}
                 onClick={() => setViewMode("gallery")}
-                title="Gallery view"
+                title={t("folderView.galleryView")}
               >
                 <LayoutGrid size={14} />
-                Gallery
+                {t("folderView.gallery")}
               </button>
               <button
                 className={cn("ft-view-toggle-btn", viewMode === "list" && "active")}
                 onClick={() => setViewMode("list")}
-                title="List view"
+                title={t("folderView.listView")}
               >
                 <List size={14} />
-                List
+                {t("folderView.list")}
               </button>
             </div>
             <SortMenu schema={schema} />

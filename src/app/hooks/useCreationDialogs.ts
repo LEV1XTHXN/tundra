@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { folders } from "@/services";
 import type { NoteSummary } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { useFolderGroups } from "@/store/folderGroups";
 import { useViewState } from "@/store/viewState";
 
@@ -52,6 +53,7 @@ export interface CreationDialogs {
  * components, while `onNewFolder`/`onNewGroup` open them.
  */
 export function useCreationDialogs({ refreshTree, setError }: Params): CreationDialogs {
+  const { t } = useTranslation();
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [folderTarget, setFolderTarget] = useState<FolderTarget>({ parent: "" });
@@ -87,9 +89,9 @@ export function useCreationDialogs({ refreshTree, setError }: Params): CreationD
       }
       setNewFolderOpen(false);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     }
-  }, [newFolderName, folderTarget, refreshTree, setError]);
+  }, [newFolderName, folderTarget, refreshTree, setError, t]);
 
   const createGroup = useCallback(async () => {
     const name = newGroupName.trim();
@@ -98,9 +100,9 @@ export function useCreationDialogs({ refreshTree, setError }: Params): CreationD
       await useFolderGroups.getState().create(name);
       setNewGroupOpen(false);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     }
-  }, [newGroupName, setError]);
+  }, [newGroupName, setError, t]);
 
   return {
     onNewFolder,

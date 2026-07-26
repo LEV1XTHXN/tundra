@@ -5,9 +5,9 @@
  * here.
  */
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { GraphColorMode } from "./nodeColor";
-import type { NodeStyle } from "./GraphView";
 
 export interface GraphStats {
   /** Total notes (nodes). */
@@ -18,18 +18,10 @@ export interface GraphStats {
   leaves: number;
 }
 
-const COLOR_MODE_OPTIONS: { id: GraphColorMode; label: string }[] = [
-  { id: "folder", label: "Folder" },
-  { id: "tag", label: "Tag" },
-  { id: "cluster", label: "Cluster" },
-];
-
-/** Node-style presets — "glossy" is the default; more (e.g. "glow") can be
- *  added here later alongside a matching `nodeProgramClasses` entry in
- *  `GraphView.tsx`. */
-const NODE_STYLE_OPTIONS: { id: NodeStyle; label: string }[] = [
-  { id: "glossy", label: "Glossy sphere" },
-  { id: "flat", label: "Flat" },
+const COLOR_MODE_OPTIONS: { id: GraphColorMode; labelKey: string }[] = [
+  { id: "folder", labelKey: "graph.colorByFolder" },
+  { id: "tag", labelKey: "graph.colorByTag" },
+  { id: "cluster", labelKey: "graph.colorByCluster" },
 ];
 
 interface GraphInfoPanelProps {
@@ -39,13 +31,11 @@ interface GraphInfoPanelProps {
   edgeLength: number;
   colorMode: GraphColorMode;
   sizeByDegree: boolean;
-  nodeStyle: NodeStyle;
   onToggleLabels: (next: boolean) => void;
   onNodeSize: (scale: number) => void;
   onEdgeLength: (length: number) => void;
   onColorMode: (mode: GraphColorMode) => void;
   onSizeByDegree: (next: boolean) => void;
-  onNodeStyle: (style: NodeStyle) => void;
   onClose: () => void;
 }
 
@@ -56,20 +46,19 @@ export function GraphInfoPanel({
   edgeLength,
   colorMode,
   sizeByDegree,
-  nodeStyle,
   onToggleLabels,
   onNodeSize,
   onEdgeLength,
   onColorMode,
   onSizeByDegree,
-  onNodeStyle,
   onClose,
 }: GraphInfoPanelProps) {
+  const { t } = useTranslation();
   return (
     <aside className="graph-panel" aria-label="Graph info and settings">
       <div className="graph-panel-header">
-        <span className="graph-panel-title">Graph</span>
-        <button className="graph-panel-close" onClick={onClose} title="Close (Alt+I)" aria-label="Close panel">
+        <span className="graph-panel-title">{t("graph.title")}</span>
+        <button className="graph-panel-close" onClick={onClose} title={t("graph.closePanel")} aria-label={t("common.close")}>
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -77,45 +66,29 @@ export function GraphInfoPanel({
       <div className="graph-panel-section graph-panel-stats">
         <div className="graph-stat">
           <span className="graph-stat-value">{stats.nodes}</span>
-          <span className="graph-stat-label muted">Notes</span>
+          <span className="graph-stat-label muted">{t("graph.notes")}</span>
         </div>
         <div className="graph-stat">
           <span className="graph-stat-value">{stats.links}</span>
-          <span className="graph-stat-label muted">Links</span>
+          <span className="graph-stat-label muted">{t("graph.links")}</span>
         </div>
         <div className="graph-stat">
           <span className="graph-stat-value">{stats.leaves}</span>
-          <span className="graph-stat-label muted">Leaves</span>
+          <span className="graph-stat-label muted">{t("graph.leaves")}</span>
         </div>
       </div>
 
       <div className="graph-panel-section graph-panel-settings">
         <label className="graph-setting graph-setting-row">
-          <span>Node style</span>
-          <Select value={nodeStyle} onValueChange={(v) => onNodeStyle(v as NodeStyle)}>
-            <SelectTrigger className="graph-setting-select" size="sm" aria-label="Node style">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {NODE_STYLE_OPTIONS.map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        <label className="graph-setting graph-setting-row">
-          <span>Color by</span>
+          <span>{t("graph.colorBy")}</span>
           <Select value={colorMode} onValueChange={(v) => onColorMode(v as GraphColorMode)}>
-            <SelectTrigger className="graph-setting-select" size="sm" aria-label="Color nodes by">
+            <SelectTrigger className="graph-setting-select" size="sm" aria-label={t("graph.colorBy")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {COLOR_MODE_OPTIONS.map((o) => (
                 <SelectItem key={o.id} value={o.id}>
-                  {o.label}
+                  {t(o.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -123,7 +96,7 @@ export function GraphInfoPanel({
         </label>
 
         <label className="graph-setting graph-setting-row">
-          <span>Show names</span>
+          <span>{t("graph.showNames")}</span>
           <input
             type="checkbox"
             checked={showLabels}
@@ -132,7 +105,7 @@ export function GraphInfoPanel({
         </label>
 
         <label className="graph-setting graph-setting-row">
-          <span>Size by connections</span>
+          <span>{t("graph.sizeByConnections")}</span>
           <input
             type="checkbox"
             checked={sizeByDegree}
@@ -142,7 +115,7 @@ export function GraphInfoPanel({
 
         <label className="graph-setting">
           <span className="graph-setting-head">
-            Node size <span className="muted">{nodeSizeScale.toFixed(1)}×</span>
+            {t("graph.nodeSize")} <span className="muted">{nodeSizeScale.toFixed(1)}×</span>
           </span>
           <input
             type="range"
@@ -156,7 +129,7 @@ export function GraphInfoPanel({
 
         <label className="graph-setting">
           <span className="graph-setting-head">
-            Line length <span className="muted">{edgeLength.toFixed(1)}×</span>
+            {t("graph.lineLength")} <span className="muted">{edgeLength.toFixed(1)}×</span>
           </span>
           <input
             type="range"

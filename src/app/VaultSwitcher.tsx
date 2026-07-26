@@ -8,11 +8,12 @@
  */
 import { useEffect, useState } from "react";
 import { Check, FolderOpen, FolderPlus, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { pickVaultFolder } from "@/services";
 import type { VaultInfo } from "@/services";
 import { useKnownVaults } from "@/store/knownVaults";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 
 interface VaultSwitcherProps {
   vaultInfo: VaultInfo;
@@ -23,6 +24,7 @@ interface VaultSwitcherProps {
 }
 
 export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const knownVaults = useKnownVaults((s) => s.vaults);
@@ -45,19 +47,19 @@ export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherPro
       await onSwitch(path);
       setOpen(false);
     } catch (e) {
-      onError(errorMessage(e));
+      onError(localizeError(e, t));
     } finally {
       setBusy(false);
     }
   };
 
   const openExisting = async () => {
-    const path = await pickVaultFolder("Open a vault folder");
+    const path = await pickVaultFolder(t("vaultSwitcher.openVaultFolder"));
     if (path) await switchTo(path);
   };
 
   const createNew = async () => {
-    const path = await pickVaultFolder("Choose or create a folder for the new vault");
+    const path = await pickVaultFolder(t("vaultSwitcher.chooseOrCreateFolder"));
     if (path) await switchTo(path);
   };
 
@@ -65,7 +67,7 @@ export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherPro
     try {
       await forget(path);
     } catch (e) {
-      onError(errorMessage(e));
+      onError(localizeError(e, t));
     }
   };
 
@@ -77,7 +79,7 @@ export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherPro
         </button>
       </PopoverTrigger>
       <PopoverContent className="vault-switcher-popover" align="start">
-        <div className="vault-switcher-heading">Vaults</div>
+        <div className="vault-switcher-heading">{t("vaultSwitcher.title")}</div>
         {knownVaults.length > 0 && (
           <div className="vault-switcher-list">
             {knownVaults.map((v) => {
@@ -100,8 +102,8 @@ export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherPro
                   {!active && (
                     <button
                       className="vault-switcher-item-forget"
-                      title="Remove from this list (keeps the vault's files on disk)"
-                      aria-label={`Remove ${v.name} from the list`}
+                      title={t("vaultSwitcher.removeFromList")}
+                      aria-label={t("vaultSwitcher.removeFromListAria", { name: v.name })}
                       onClick={() => void handleForget(v.path)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -114,10 +116,10 @@ export function VaultSwitcher({ vaultInfo, onSwitch, onError }: VaultSwitcherPro
         )}
         <div className="vault-switcher-actions">
           <button onClick={() => void openExisting()} disabled={busy}>
-            <FolderOpen className="h-3.5 w-3.5" /> Open vault…
+            <FolderOpen className="h-3.5 w-3.5" /> {t("vaultSwitcher.openVault")}
           </button>
           <button onClick={() => void createNew()} disabled={busy}>
-            <FolderPlus className="h-3.5 w-3.5" /> Create new vault
+            <FolderPlus className="h-3.5 w-3.5" /> {t("vaultSwitcher.createNewVault")}
           </button>
         </div>
       </PopoverContent>

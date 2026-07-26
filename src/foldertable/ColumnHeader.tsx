@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, EyeOff, Pencil, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sameColumnKey, type ColumnKey, type PropertyDef } from "@/store/folderViews";
 import { columnLabel } from "./ordering";
@@ -23,10 +24,11 @@ interface ColumnHeaderProps {
  * Name column is rendered separately (it's fixed and always present).
  */
 export function ColumnHeader({ columnKey, schema, width, onResizeStart }: ColumnHeaderProps) {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const { propsById, tableSort, toggleSort, sortBy, removeColumn, removeProperty } = schema;
-  const label = columnLabel(columnKey, propsById);
+  const label = columnLabel(columnKey, propsById, t);
   // Reflect this column's sort at ANY level (multi-level sort), plus its rank.
   const sortIndex = tableSort.findIndex((s) => sameColumnKey(s.key, columnKey));
   const mySort = sortIndex >= 0 ? tableSort[sortIndex] : undefined;
@@ -42,35 +44,35 @@ export function ColumnHeader({ columnKey, schema, width, onResizeStart }: Column
 
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
-          <button className="ft-th-caret" title="Column options">⋯</button>
+          <button className="ft-th-caret" title={t("folderView.columnOptions")}>⋯</button>
         </PopoverTrigger>
         <PopoverContent className="ft-col-menu" align="end">
           <button className="ft-menu-item" onClick={() => { sortBy(columnKey, "asc"); setMenuOpen(false); }}>
-            <ArrowUp size={13} /> Sort ascending
+            <ArrowUp size={13} /> {t("folderView.sortAscending")}
           </button>
           <button className="ft-menu-item" onClick={() => { sortBy(columnKey, "desc"); setMenuOpen(false); }}>
-            <ArrowDown size={13} /> Sort descending
+            <ArrowDown size={13} /> {t("folderView.sortDescending")}
           </button>
           {def && (
             <button className="ft-menu-item" onClick={() => { setEditing(true); setMenuOpen(false); }}>
-              <Pencil size={13} /> Edit property
+              <Pencil size={13} /> {t("folderView.editProperty")}
             </button>
           )}
           <button className="ft-menu-item" onClick={() => { removeColumn(columnKey); setMenuOpen(false); }}>
-            <EyeOff size={13} /> Hide column
+            <EyeOff size={13} /> {t("folderView.hideColumn")}
           </button>
           {def && (
             <button
               className="ft-menu-item ft-menu-danger"
               onClick={() => { removeProperty(def.id); setMenuOpen(false); }}
             >
-              <Trash2 size={13} /> Delete property
+              <Trash2 size={13} /> {t("folderView.deleteProperty")}
             </button>
           )}
         </PopoverContent>
       </Popover>
 
-      <div className="ft-col-resize" onMouseDown={onResizeStart} title="Drag to resize" />
+      <div className="ft-col-resize" onMouseDown={onResizeStart} title={t("folderView.dragToResize")} />
 
       {def && editing && (
         <PropertyEditor def={def} schema={schema} open={editing} onOpenChange={setEditing} />

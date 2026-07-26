@@ -10,6 +10,7 @@
  * returns the full board list, which we drop straight into state.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ChevronsLeftRight,
   ChevronsRightLeft,
@@ -61,7 +62,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 
 /** The board-name dialog: creating a new board or renaming the active one. */
 type BoardDialog = { mode: "create" } | { mode: "rename"; boardId: string; name: string };
@@ -91,6 +92,7 @@ export function KanbanView({
   onOpenNote: (id: string) => void;
   onError: (msg: string) => void;
 }) {
+  const { t } = useTranslation();
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<Map<string, NoteSummary>>(new Map());
@@ -145,7 +147,7 @@ export function KanbanView({
         setActiveId(b[0]?.id ?? null);
         setCollapsed(new Set(view?.collapsed ?? []));
       } catch (e) {
-        if (!cancelled) onError(errorMessage(e));
+        if (!cancelled) onError(localizeError(e, t));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -197,10 +199,10 @@ export function KanbanView({
         // Card moves change note tags in the core; refresh so card chips stay current.
         await refreshSummaries();
       } catch (e) {
-        onError(errorMessage(e));
+        onError(localizeError(e, t));
       }
     },
-    [refreshSummaries, onError],
+    [refreshSummaries, onError, t],
   );
 
   // --- board tab actions -------------------------------------------------
@@ -239,7 +241,7 @@ export function KanbanView({
   const submitColumnDialog = () => {
     if (!board || !columnDialog) return;
     const boardId = board.id;
-    const name = columnNameDraft.trim() || "New column";
+    const name = columnNameDraft.trim() || t("kanban.newColumnDefault");
     // The row's name IS the tag it assigns; `assignTag` off means a plain,
     // tag-free row (like the seeded Open/Closed bookends).
     const tag = columnAssignTag ? name : null;
@@ -376,7 +378,7 @@ export function KanbanView({
   );
 
   const boardTabs = (
-    <div className="kanban-tabs" role="tablist" aria-label="Kanban boards">
+    <div className="kanban-tabs" role="tablist" aria-label={t("kanban.boardsAriaLabel")}>
       {boards.map((b) => (
         <button
           key={b.id}
@@ -388,26 +390,26 @@ export function KanbanView({
           {b.name}
         </button>
       ))}
-      <button className="kanban-tab-add" onClick={openCreateBoard} title="New board" aria-label="New board">
+      <button className="kanban-tab-add" onClick={openCreateBoard} title={t("kanban.newBoard")} aria-label={t("kanban.newBoard")}>
         <Plus className="h-4 w-4" />
       </button>
       <div className="kanban-tabs-spacer" />
       {board && (
         <Popover>
           <PopoverTrigger asChild>
-            <button className="kanban-board-menu" title="Board options" aria-label="Board options">
+            <button className="kanban-board-menu" title={t("kanban.boardOptions")} aria-label={t("kanban.boardOptions")}>
               <MoreHorizontal className="h-4 w-4" />
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="kanban-menu">
             <button className="kanban-menu-item" onClick={openRenameBoard}>
-              <Pencil className="h-4 w-4" /> Rename board
+              <Pencil className="h-4 w-4" /> {t("kanban.renameBoard")}
             </button>
             <button
               className="kanban-menu-item danger"
               onClick={() => setPendingDelete({ kind: "board", boardId: board.id, name: board.name })}
             >
-              <Trash2 className="h-4 w-4" /> Delete board
+              <Trash2 className="h-4 w-4" /> {t("kanban.deleteBoard")}
             </button>
           </PopoverContent>
         </Popover>
@@ -417,20 +419,20 @@ export function KanbanView({
 
   if (loading) {
     return (
-      <ViewFrame title="Kanban" fullBleed>
-        <div className="centered muted">Loading kanban…</div>
+      <ViewFrame title={t("kanban.title")} fullBleed>
+        <div className="centered muted">{t("kanban.loading")}</div>
       </ViewFrame>
     );
   }
 
   return (
-    <ViewFrame title="Kanban" toolbar={boardTabs} fullBleed>
+    <ViewFrame title={t("kanban.title")} toolbar={boardTabs} fullBleed>
     <div className="kanban">
       {!board ? (
         <div className="centered muted kanban-empty">
-          <p>No boards yet.</p>
+          <p>{t("kanban.noBoardsYet")}</p>
           <Button onClick={openCreateBoard}>
-            <Plus className="h-4 w-4" /> Create your first board
+            <Plus className="h-4 w-4" /> {t("kanban.createFirstBoard")}
           </Button>
         </div>
       ) : (
@@ -443,8 +445,8 @@ export function KanbanView({
                 draggable
                 onDragStart={(e) => onColumnHeaderDragStart(e, col.id)}
                 onDragEnd={onColumnHeaderDragEnd}
-                title="Drag to reorder"
-                aria-label="Drag to reorder column"
+                title={t("kanban.dragToReorder")}
+                aria-label={t("kanban.dragToReorderColumn")}
               >
                 <GripVertical className="h-4 w-4" />
               </span>
@@ -473,8 +475,8 @@ export function KanbanView({
                     <button
                       className="kanban-icon-btn"
                       onClick={() => toggleCollapse(col.id)}
-                      title="Expand column"
-                      aria-label="Expand column"
+                      title={t("kanban.expandColumn")}
+                      aria-label={t("kanban.expandColumn")}
                     >
                       <ChevronsLeftRight className="h-4 w-4" />
                     </button>
@@ -483,7 +485,7 @@ export function KanbanView({
                       <span
                         className="kanban-column-tagdot"
                         style={{ background: tagColors[col.tag] ?? "var(--muted-foreground)" }}
-                        title={`Tags notes #${col.tag}`}
+                        title={t("kanban.tagsNotesWith", { tag: col.tag })}
                       />
                     )}
                     <span className="kanban-collapsed-name" title={col.name}>
@@ -500,7 +502,7 @@ export function KanbanView({
                           <span
                             className="kanban-column-tagdot"
                             style={{ background: tagColors[col.tag] ?? "var(--muted-foreground)" }}
-                            title={`Tags notes #${col.tag}`}
+                            title={t("kanban.tagsNotesWith", { tag: col.tag })}
                           />
                         )}
                         <span className="kanban-column-name">{col.name}</span>
@@ -509,16 +511,16 @@ export function KanbanView({
                       <button
                         className="kanban-icon-btn"
                         onClick={() => toggleCollapse(col.id)}
-                        title="Collapse column"
-                        aria-label="Collapse column"
+                        title={t("kanban.collapseColumn")}
+                        aria-label={t("kanban.collapseColumn")}
                       >
                         <ChevronsRightLeft className="h-3.5 w-3.5" />
                       </button>
                       <button
                         className="kanban-icon-btn"
                         onClick={() => openEditColumn(col)}
-                        title="Edit column"
-                        aria-label="Edit column"
+                        title={t("kanban.editColumn")}
+                        aria-label={t("kanban.editColumn")}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -527,8 +529,8 @@ export function KanbanView({
                         onClick={() =>
                           setPendingDelete({ kind: "column", boardId: board.id, columnId: col.id, name: col.name })
                         }
-                        title="Delete column"
-                        aria-label="Delete column"
+                        title={t("kanban.deleteColumn")}
+                        aria-label={t("kanban.deleteColumn")}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -536,7 +538,7 @@ export function KanbanView({
 
                     <div className="kanban-cards">
                       {col.note_ids.length === 0 && dropTarget?.columnId !== col.id && (
-                        <p className="kanban-column-empty muted">Drop or add notes here.</p>
+                        <p className="kanban-column-empty muted">{t("kanban.dropOrAddNotes")}</p>
                       )}
                       {col.note_ids.map((noteId, index) => {
                         const summary = summaries.get(noteId);
@@ -558,14 +560,14 @@ export function KanbanView({
                                   <button
                                     className="kanban-card-open"
                                     onClick={() => onOpenNote(noteId)}
-                                    title="Open note"
+                                    title={t("kanban.openNote")}
                                   >
                                     <NoteIcon icon={summary.icon} vaultPath={vaultPath} className="h-4 w-4" />
-                                    <span className="kanban-card-title">{summary.title || "Untitled"}</span>
+                                    <span className="kanban-card-title">{summary.title || t("common.untitled")}</span>
                                   </button>
                                 ) : (
                                   <span className="kanban-card-open kanban-card-missing muted">
-                                    Missing note
+                                    {t("kanban.missingNote")}
                                   </span>
                                 )}
                                 {cardTags.length > 0 && (
@@ -589,8 +591,8 @@ export function KanbanView({
                               <button
                                 className="kanban-card-remove"
                                 onClick={() => removeCard(noteId)}
-                                title="Remove from board"
-                                aria-label="Remove from board"
+                                title={t("kanban.removeFromBoard")}
+                                aria-label={t("kanban.removeFromBoard")}
                               >
                                 <X className="h-3.5 w-3.5" />
                               </button>
@@ -605,7 +607,7 @@ export function KanbanView({
                     </div>
 
                     <button className="kanban-add-card" onClick={() => setPickerColumnId(col.id)}>
-                      <Plus className="h-4 w-4" /> Add note
+                      <Plus className="h-4 w-4" /> {t("kanban.addNote")}
                     </button>
                   </>
                 )}
@@ -614,7 +616,7 @@ export function KanbanView({
           })}
 
           <button className="kanban-add-column" onClick={openAddColumn}>
-            <Plus className="h-4 w-4" /> Add column
+            <Plus className="h-4 w-4" /> {t("kanban.addColumn")}
           </button>
         </div>
       )}
@@ -623,18 +625,18 @@ export function KanbanView({
       <CommandDialog
         open={pickerColumnId !== null}
         onOpenChange={(open) => !open && setPickerColumnId(null)}
-        title="Add note to board"
-        description="Search for a note to place in this column."
+        title={t("kanban.addNoteToBoard")}
+        description={t("kanban.searchForNote")}
       >
         <Command>
-          <CommandInput placeholder="Search notes to add…" />
+          <CommandInput placeholder={t("kanban.searchNotesPlaceholder")} />
           <CommandList>
             <CommandEmpty>
               {pickableNotes.length === 0
-                ? "Every note is already on this board."
-                : "No notes found."}
+                ? t("kanban.everyNoteOnBoard")
+                : t("kanban.noNotesFound")}
             </CommandEmpty>
-            <CommandGroup heading="Notes">
+            <CommandGroup heading={t("kanban.notesHeading")}>
               {pickableNotes.map((n) => (
                 <CommandItem
                   key={n.id}
@@ -642,7 +644,7 @@ export function KanbanView({
                   onSelect={() => pickerColumnId && addCardFromPicker(pickerColumnId, n.id)}
                 >
                   <NoteIcon icon={n.icon} vaultPath={vaultPath} className="h-4 w-4" />
-                  <span>{n.title || "Untitled"}</span>
+                  <span>{n.title || t("common.untitled")}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -654,7 +656,7 @@ export function KanbanView({
       <Dialog open={boardDialog !== null} onOpenChange={(open) => !open && setBoardDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{boardDialog?.mode === "rename" ? "Rename board" : "New board"}</DialogTitle>
+            <DialogTitle>{boardDialog?.mode === "rename" ? t("kanban.renameBoard") : t("kanban.newBoardTitle")}</DialogTitle>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -666,14 +668,14 @@ export function KanbanView({
               autoFocus
               value={boardNameDraft}
               onChange={(e) => setBoardNameDraft(e.target.value)}
-              placeholder="Board name (e.g. Work)"
+              placeholder={t("kanban.boardNamePlaceholder")}
             />
             <DialogFooter className="mt-4">
               <Button type="button" variant="outline" onClick={() => setBoardDialog(null)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={!boardNameDraft.trim()}>
-                {boardDialog?.mode === "rename" ? "Rename" : "Create"}
+                {boardDialog?.mode === "rename" ? t("kanban.rename") : t("kanban.create")}
               </Button>
             </DialogFooter>
           </form>
@@ -684,7 +686,7 @@ export function KanbanView({
       <Dialog open={columnDialog !== null} onOpenChange={(open) => !open && setColumnDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{columnDialog?.mode === "edit" ? "Edit column" : "New column"}</DialogTitle>
+            <DialogTitle>{columnDialog?.mode === "edit" ? t("kanban.editColumn") : t("kanban.newColumnTitle")}</DialogTitle>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -692,12 +694,12 @@ export function KanbanView({
               submitColumnDialog();
             }}
           >
-            <label className="kanban-field-label">Row name</label>
+            <label className="kanban-field-label">{t("kanban.rowName")}</label>
             <Input
               autoFocus
               value={columnNameDraft}
               onChange={(e) => setColumnNameDraft(e.target.value)}
-              placeholder="Row name (e.g. todo)"
+              placeholder={t("kanban.rowNamePlaceholder")}
             />
             <label className="kanban-checkbox-row">
               <input
@@ -705,25 +707,19 @@ export function KanbanView({
                 checked={columnAssignTag}
                 onChange={(e) => setColumnAssignTag(e.target.checked)}
               />
-              <span>
-                Tag notes with this row's name (<code>#{columnNameDraft.trim() || "…"}</code>)
-              </span>
+              <span>{t("kanban.tagNotesCheckbox", { tag: columnNameDraft.trim() || "…" })}</span>
             </label>
-            <p className="kanban-field-hint muted">
-              When on, a note dragged into this row gains the <code>#{columnNameDraft.trim() || "…"}</code>{" "}
-              tag and loses it when moved out. Leave off for a plain row (like <code>open</code>/
-              <code>closed</code>).
-            </p>
+            <p className="kanban-field-hint muted">{t("kanban.tagHint", { tag: columnNameDraft.trim() || "…" })}</p>
             {columnAssignTag && (
               <>
-                <label className="kanban-field-label">Tag color</label>
+                <label className="kanban-field-label">{t("kanban.tagColor")}</label>
                 <div className="kanban-swatches">
                   <button
                     type="button"
                     className={`kanban-swatch none${columnColorDraft === null ? " selected" : ""}`}
                     onClick={() => setColumnColorDraft(null)}
-                    title="No color"
-                    aria-label="No color"
+                    title={t("kanban.noColor")}
+                    aria-label={t("kanban.noColor")}
                   />
                   {TAG_PALETTE.map((c) => (
                     <button
@@ -732,7 +728,7 @@ export function KanbanView({
                       className={`kanban-swatch${columnColorDraft === c ? " selected" : ""}`}
                       style={{ background: c }}
                       onClick={() => setColumnColorDraft(c)}
-                      aria-label={`Color ${c}`}
+                      aria-label={t("kanban.colorLabel", { color: c })}
                     />
                   ))}
                 </div>
@@ -740,9 +736,9 @@ export function KanbanView({
             )}
             <DialogFooter className="mt-4">
               <Button type="button" variant="outline" onClick={() => setColumnDialog(null)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
-              <Button type="submit">{columnDialog?.mode === "edit" ? "Save" : "Add column"}</Button>
+              <Button type="submit">{columnDialog?.mode === "edit" ? t("kanban.save") : t("kanban.addColumn")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -754,18 +750,16 @@ export function KanbanView({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingDelete?.kind === "board"
-                ? `Delete board "${pendingDelete.name}"?`
-                : `Delete column "${pendingDelete?.name}"?`}
+                ? t("kanban.deleteBoardConfirm", { name: pendingDelete.name })
+                : t("kanban.deleteColumnConfirm", { name: pendingDelete?.name })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingDelete?.kind === "board"
-                ? "The board and its columns are removed. Your notes and their tags are not deleted."
-                : "The column is removed and its cards drop off the board. Your notes and their tags are not deleted."}
+              {pendingDelete?.kind === "board" ? t("kanban.deleteBoardDesc") : t("kanban.deleteColumnDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t("common.delete")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

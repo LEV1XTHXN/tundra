@@ -8,6 +8,7 @@
  * React renders only; all IO goes through `services` (never `@tauri-apps/api`).
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
@@ -18,6 +19,8 @@ import { toInitialContent } from "@/editor/blockContent";
 import { createDebouncedFlush, type DebouncedFlush } from "@/editor/debouncedFlush";
 import { useTheme } from "@/store/theme";
 import { useActivity } from "@/store/activity";
+import { useBlockNoteDictionary } from "@/i18n/blockNoteDictionary";
+import { localizeError } from "@/i18n/errors";
 import { ViewFrame } from "@/components/ViewFrame";
 import { quickNoteSchema } from "./quickNoteSchema";
 
@@ -38,6 +41,7 @@ export function QuickNoteView({
   vaultPath: string;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [note, setNote] = useState<Note | null>(null);
 
   useEffect(() => {
@@ -48,17 +52,17 @@ export function QuickNoteView({
         if (!cancelled) setNote(n);
       })
       .catch((e) => {
-        if (!cancelled) onError(String(e));
+        if (!cancelled) onError(localizeError(e, t));
       });
     return () => {
       cancelled = true;
     };
-  }, [onError]);
+  }, [onError, t]);
 
   if (!note) {
     return (
-      <ViewFrame title="Quick notes">
-        <div className="centered muted">Loading…</div>
+      <ViewFrame title={t("quicknotes.title")}>
+        <div className="centered muted">{t("common.loading")}</div>
       </ViewFrame>
     );
   }
@@ -74,18 +78,24 @@ function LoadedQuickNote({
   vaultPath: string;
   onError: (message: string) => void;
 }) {
-  const editor = useCreateBlockNote({
-    schema: quickNoteSchema,
-    initialContent: toInitialContent(note.blocks) as never,
-    // Attachments still route through Rust's content-addressed store (same as
-    // the main editor) — quick notes can hold images/videos/files.
-    uploadFile: async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
+  const { t } = useTranslation();
+  const dictionary = useBlockNoteDictionary();
+  const editor = useCreateBlockNote(
+    {
+      schema: quickNoteSchema,
+      initialContent: toInitialContent(note.blocks) as never,
+      dictionary,
+      // Attachments still route through Rust's content-addressed store (same as
+      // the main editor) — quick notes can hold images/videos/files.
+      uploadFile: async (file: File) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        return attachments.import(attachmentKindFromMime(file.type), file.name, bytes);
+      },
+      resolveFileUrl: async (url: string) =>
+        url.startsWith("attachments/") ? attachments.resolveUrl(vaultPath, url) : url,
     },
-    resolveFileUrl: async (url: string) =>
-      url.startsWith("attachments/") ? attachments.resolveUrl(vaultPath, url) : url,
-  });
+    [dictionary],
+  );
 
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   // Preserves the scratchpad's id/created across saves.
@@ -106,7 +116,7 @@ function LoadedQuickNote({
       setSaveState("saved");
       useActivity.getState().recordActivity();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   };
   const flushRef = useRef(flush);
@@ -135,8 +145,8 @@ function LoadedQuickNote({
   return (
     <>
     <ViewFrame
-      title="Quick notes"
-      subtitle="A scratchpad for fast capture — jot ideas here, then move them into notes."
+      title={t("quicknotes.title")}
+      subtitle={t("quicknotes.subtitle")}
       fullBleed
     >
       <div className="editor-pane quicknote">
@@ -154,7 +164,7 @@ function LoadedQuickNote({
     {/* Anchored to the non-scrolling .main-pane — pinned to its bottom-left
         corner, matching NoteEditor (see .status). */}
     <div className="status" aria-live="polite">
-      {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
+      {saveState === "saving" ? t("quicknotes.saving") : saveState === "saved" ? t("quicknotes.saved") : ""}
     </div>
     </>
   );

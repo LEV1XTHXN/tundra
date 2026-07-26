@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { folders, notes, templates as templatesService } from "@/services";
 import type { NoteSummary } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { useViewState } from "@/store/viewState";
 import { useTemplates } from "@/store/templates";
 import { useFolderGroups } from "@/store/folderGroups";
@@ -34,6 +35,7 @@ export interface Deletion {
  * group. Reads view state from `useViewState`.
  */
 export function useDeletion({ refreshTree, setError, returnFromTemplate }: Params): Deletion {
+  const { t } = useTranslation();
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const openNoteId = useViewState((s) => s.openNoteId);
   const setOpenNoteId = useViewState((s) => s.setOpenNoteId);
@@ -88,11 +90,11 @@ export function useDeletion({ refreshTree, setError, returnFromTemplate }: Param
         setOpenNoteId(null);
       }
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     } finally {
       setPendingDelete(null);
     }
-  }, [pendingDelete, openNoteId, refreshTree, setOpenNoteId, templateEditId, returnFromTemplate, setError]);
+  }, [pendingDelete, openNoteId, refreshTree, setOpenNoteId, templateEditId, returnFromTemplate, setError, t]);
 
   return {
     pendingDelete,

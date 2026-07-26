@@ -9,6 +9,8 @@
  * localStorage. React renders; all data + persistence go through `services`.
  */
 import { Suspense, lazy, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   CalendarDays,
   Clock as ClockIcon,
@@ -32,6 +34,8 @@ import "react-grid-layout/css/styles.css";
 import { config } from "@/services";
 import { ViewFrame } from "@/components/ViewFrame";
 import { useHomeBackground } from "@/store/homeBackground";
+import { localizeError } from "@/i18n/errors";
+import { i18next } from "@/i18n";
 import { HomeBackgroundPicker, type HomeBackground } from "./HomeBackgroundPicker";
 import { WidgetAddMenu } from "./WidgetAddMenu";
 import {
@@ -107,8 +111,8 @@ const GAP = 16; // px — react-grid-layout margin
 
 interface WidgetMeta {
   id: WidgetId;
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
   icon: LucideIcon;
   render: (p: WidgetProps) => React.ReactElement;
 }
@@ -116,67 +120,67 @@ interface WidgetMeta {
 const WIDGET_META: WidgetMeta[] = [
   {
     id: "search",
-    title: "Search",
-    description: "Find notes by text or #tag",
+    titleKey: "home.widgets.search.title",
+    descriptionKey: "home.widgets.search.description",
     icon: SearchIcon,
     render: (p) => <SearchWidget {...p} />,
   },
   {
     id: "pinned",
-    title: "Pinned",
-    description: "Notes you've pinned",
+    titleKey: "home.widgets.pinned.title",
+    descriptionKey: "home.widgets.pinned.description",
     icon: Pin,
     render: (p) => <PinnedWidget {...p} />,
   },
   {
     id: "recent",
-    title: "Recent",
-    description: "Recently edited notes",
+    titleKey: "home.widgets.recent.title",
+    descriptionKey: "home.widgets.recent.description",
     icon: History,
     render: (p) => <RecentWidget {...p} />,
   },
   {
     id: "quickCapture",
-    title: "Quick capture",
-    description: "Jot a thought into Quick notes",
+    titleKey: "home.widgets.quickCapture.title",
+    descriptionKey: "home.widgets.quickCapture.description",
     icon: NotebookPen,
     render: (p) => <QuickCaptureWidget {...p} />,
   },
   {
     id: "calendar",
-    title: "Calendar",
-    description: "A compact month view",
+    titleKey: "home.widgets.calendar.title",
+    descriptionKey: "home.widgets.calendar.description",
     icon: CalendarDays,
     render: (p) => <CalendarWidget {...p} />,
   },
   {
     id: "clock",
-    title: "Clock",
-    description: "Local time and date",
+    titleKey: "home.widgets.clock.title",
+    descriptionKey: "home.widgets.clock.description",
     icon: ClockIcon,
     render: (p) => <ClockWidget {...p} />,
   },
   {
     id: "storage",
-    title: "Storage",
-    description: "Note, tag, and group counts",
+    titleKey: "home.widgets.storage.title",
+    descriptionKey: "home.widgets.storage.description",
     icon: Database,
     render: (p) => <StorageWidget {...p} />,
   },
   {
     id: "streak",
-    title: "Streak",
-    description: "Consecutive days logged in",
+    titleKey: "home.widgets.streak.title",
+    descriptionKey: "home.widgets.streak.description",
     icon: Flame,
     render: (p) => <StreakWidget {...p} />,
   },
   {
     id: "miniGraph",
-    title: "Graph",
-    description: "A preview of your link graph",
+    titleKey: "home.widgets.miniGraph.title",
+    descriptionKey: "home.widgets.miniGraph.description",
     icon: Waypoints,
     render: (p) => (
-      <Suspense fallback={<div className="centered muted">Loading…</div>}>
+      <Suspense fallback={<div className="centered muted">{i18next.t("home.loading")}</div>}>
         <MiniGraphWidget {...p} />
       </Suspense>
     ),
@@ -246,8 +250,9 @@ function sanitizeConfig(raw: Partial<HomeConfig> | null): HomeConfig {
   };
 }
 
-function titleOf(id: WidgetId): string {
-  return WIDGET_META.find((w) => w.id === id)?.title ?? id;
+function titleOf(id: WidgetId, t: TFunction): string {
+  const key = WIDGET_META.find((w) => w.id === id)?.titleKey;
+  return key ? t(key) : id;
 }
 
 function renderWidget(id: WidgetId, props: WidgetProps): React.ReactElement | null {
@@ -281,6 +286,7 @@ export function Home({
   onOpenNote: (id: string) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   // null = still loading the saved config.
   const [cfg, setCfg] = useState<HomeConfig | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -318,8 +324,8 @@ export function Home({
 
   if (cfg === null) {
     return (
-      <ViewFrame title="Home">
-        <div className="centered muted">Loading…</div>
+      <ViewFrame title={t("home.title")}>
+        <div className="centered muted">{t("home.loading")}</div>
       </ViewFrame>
     );
   }
@@ -327,7 +333,7 @@ export function Home({
   const persist = (next: HomeConfig) => {
     setCfg(next);
     setSharedBackground(next.background, vaultPath);
-    void config.write(HOME_CONFIG_FILE, next).catch((e) => onError(String(e)));
+    void config.write(HOME_CONFIG_FILE, next).catch((e) => onError(localizeError(e, t)));
   };
 
   const rglLayout: Layout = cfg.widgets.map((id, index) => {
@@ -364,7 +370,12 @@ export function Home({
   const toggleFlush = () => persist({ ...cfg, flush: !cfg.flush });
   const toggleFrameless = () => persist({ ...cfg, frameless: !cfg.frameless });
 
-  const available = WIDGET_META.filter((w) => !cfg.widgets.includes(w.id));
+  const available = WIDGET_META.filter((w) => !cfg.widgets.includes(w.id)).map((w) => ({
+    id: w.id,
+    title: t(w.titleKey),
+    description: t(w.descriptionKey),
+    icon: w.icon,
+  }));
   const widgetProps: WidgetProps = { vaultPath, refreshKey, onOpenNote, onError };
   const gap = cfg.flush ? 0 : GAP;
 
@@ -375,9 +386,9 @@ export function Home({
           available={available}
           onAdd={(id) => add(id as WidgetId)}
           trigger={
-            <button className="home-toolbar-btn" title="Add widget" disabled={available.length === 0}>
+            <button className="home-toolbar-btn" title={t("home.addWidget")} disabled={available.length === 0}>
               <Plus className="h-3.5 w-3.5" />
-              Add widget
+              {t("home.addWidget")}
             </button>
           }
         />
@@ -387,16 +398,16 @@ export function Home({
           <button
             className={`home-toolbar-btn${cfg.flush ? " active" : ""}`}
             onClick={toggleFlush}
-            title="No gap between widgets"
+            title={t("home.noGapTitle")}
           >
-            Flush
+            {t("home.flush")}
           </button>
           <button
             className={`home-toolbar-btn${cfg.frameless ? " active" : ""}`}
             onClick={toggleFrameless}
-            title="No card border/background around widgets"
+            title={t("home.noBorderTitle")}
           >
-            Frameless
+            {t("home.frameless")}
           </button>
         </div>
       )}
@@ -406,7 +417,7 @@ export function Home({
         onChange={setBackground}
         onError={onError}
         trigger={
-          <button className="home-toolbar-btn" title="Home background" aria-label="Home background">
+          <button className="home-toolbar-btn" title={t("home.background")} aria-label={t("home.background")}>
             <Palette className="h-3.5 w-3.5" />
           </button>
         }
@@ -414,18 +425,18 @@ export function Home({
       <button
         className={`home-toolbar-btn${editMode ? " active" : ""}`}
         onClick={() => setEditMode((v) => !v)}
-        title={editMode ? "Done customizing" : "Customize layout"}
+        title={editMode ? t("home.doneCustomizing") : t("home.customizeLayout")}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
-        {editMode ? "Done" : "Customize"}
+        {editMode ? t("home.done") : t("home.customize")}
       </button>
     </div>
   );
 
   return (
-    <ViewFrame title="Home" actions={actions} headerClassName={cfg.background ? "home-glass" : undefined}>
+    <ViewFrame title={t("home.title")} actions={actions} headerClassName={cfg.background ? "home-glass" : undefined}>
       {cfg.widgets.length === 0 ? (
-        <div className="centered muted">No widgets — turn on Customize to add one.</div>
+        <div className="centered muted">{t("home.noWidgets")}</div>
       ) : (
         <div ref={containerRef} className="home-grid-container">
           {/* Wait for a REAL measurement before mounting the grid at all — react-grid-layout
@@ -436,7 +447,7 @@ export function Home({
               this is what was scrambling saved positions on every fresh Home mount (e.g. right
               after switching vaults, since Home unmounts/remounts on every view change). */}
           {!widthMeasured ? (
-            <div className="centered muted">Loading…</div>
+            <div className="centered muted">{t("home.loading")}</div>
           ) : (
             // `key={cols}` forces a clean remount when the column count changes
             // (window resized past a breakpoint): GridLayout only bounds-corrects
@@ -468,10 +479,10 @@ export function Home({
               {cfg.widgets.map((id) => (
                 <section key={id} className="widget">
                   <div className="widget-header">
-                    <h2 className="widget-title">{titleOf(id)}</h2>
+                    <h2 className="widget-title">{titleOf(id, t)}</h2>
                     {editMode && (
                       <div className="widget-controls">
-                        <button onClick={() => remove(id)} title="Remove widget" aria-label="Remove widget">
+                        <button onClick={() => remove(id)} title={t("home.removeWidget")} aria-label={t("home.removeWidget")}>
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>

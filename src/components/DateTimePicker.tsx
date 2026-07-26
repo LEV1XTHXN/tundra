@@ -15,6 +15,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "@/store/theme";
+import { useDateLocale } from "@/i18n/dateLocale";
 
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 
@@ -31,12 +32,13 @@ interface DateTimePickerProps {
 
 export function DateTimePicker({ value, onChange, showTime = true, disabled }: DateTimePickerProps) {
   const timeFormat = useTheme((s) => s.timeFormat);
+  const dateLocale = useDateLocale();
 
   const label = useMemo(() => {
-    const datePart = format(value, "MMM d, yyyy");
+    const datePart = format(value, "MMM d, yyyy", { locale: dateLocale });
     if (!showTime) return datePart;
-    return `${datePart}, ${format(value, timeFormat === "24h" ? "HH:mm" : "h:mm a")}`;
-  }, [value, showTime, timeFormat]);
+    return `${datePart}, ${format(value, timeFormat === "24h" ? "HH:mm" : "h:mm a", { locale: dateLocale })}`;
+  }, [value, showTime, timeFormat, dateLocale]);
 
   const hourOptions = useMemo(() => {
     if (timeFormat === "24h") return Array.from({ length: 24 }, (_, i) => i);

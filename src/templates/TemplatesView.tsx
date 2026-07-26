@@ -9,6 +9,7 @@
  * decides — CLAUDE.md §2).
  */
 import { FilePlus, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { ViewFrame } from "@/components/ViewFrame";
 import {
   ContextMenu,
@@ -32,40 +33,39 @@ export function TemplatesView({
   onNewTemplate,
   onRequestDeleteTemplate,
 }: TemplatesViewProps) {
+  const { t } = useTranslation();
   const templates = useTemplates((s) => s.list);
 
   return (
     <ViewFrame
-      title="Templates"
-      subtitle={`${templates.length} ${templates.length === 1 ? "template" : "templates"}`}
+      title={t("templates.title")}
+      subtitle={t("templates.count", { count: templates.length })}
       actions={
         <button className="view-action" onClick={onNewTemplate}>
-          <FilePlus className="h-4 w-4" /> New template
+          <FilePlus className="h-4 w-4" /> {t("templates.newTemplate")}
         </button>
       }
     >
       {templates.length === 0 ? (
-        <p className="muted">
-          No templates yet. Create one here, or save any note as a template from its editor.
-        </p>
+        <p className="muted">{t("templates.empty")}</p>
       ) : (
         <ul className="template-list">
-          {templates.map((t) => (
-            <li key={t.id}>
+          {templates.map((tpl) => (
+            <li key={tpl.id}>
               <ContextMenu>
                 <ContextMenuTrigger asChild>
-                  <button className="template-card" onClick={() => onOpenTemplate(t.id)}>
-                    <NoteIcon icon={t.icon} vaultPath={vaultPath} className="h-5 w-5 shrink-0" />
-                    <span className="template-card-title">{t.title || "Untitled template"}</span>
+                  <button className="template-card" onClick={() => onOpenTemplate(tpl.id)}>
+                    <NoteIcon icon={tpl.icon} vaultPath={vaultPath} className="h-5 w-5 shrink-0" />
+                    <span className="template-card-title">{tpl.title || t("templates.untitled")}</span>
                   </button>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
-                  <ContextMenuItem onSelect={() => onOpenTemplate(t.id)}>Edit</ContextMenuItem>
+                  <ContextMenuItem onSelect={() => onOpenTemplate(tpl.id)}>{t("templates.edit")}</ContextMenuItem>
                   <ContextMenuItem
                     variant="destructive"
-                    onSelect={() => onRequestDeleteTemplate(t.id, t.title)}
+                    onSelect={() => onRequestDeleteTemplate(tpl.id, tpl.title)}
                   >
-                    <Trash2 /> Delete
+                    <Trash2 /> {t("common.delete")}
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>

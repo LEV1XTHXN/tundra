@@ -10,8 +10,10 @@
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { ImagePlus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { banners } from "@/services";
+import { localizeError } from "@/i18n/errors";
 
 export type HomeBackground = { type: "preset"; id: string } | { type: "image"; path: string };
 
@@ -57,6 +59,7 @@ export function HomeBackgroundPicker({
   onChange: (background: HomeBackground | null) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   async function handleUpload() {
@@ -71,7 +74,7 @@ export function HomeBackgroundPicker({
       onChange({ type: "image", path: rel });
       setOpen(false);
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   }
 
@@ -79,12 +82,12 @@ export function HomeBackgroundPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="banner-picker-content" align="end">
-        <div className="banner-picker-label">Background</div>
+        <div className="banner-picker-label">{t("home.backgroundLabel")}</div>
         <div className="banner-picker-swatches">
           <button
             className={`banner-picker-swatch home-bg-swatch-none${!background ? " active" : ""}`}
-            title="No background"
-            aria-label="No background"
+            title={t("home.noBackground")}
+            aria-label={t("home.noBackground")}
             aria-pressed={!background}
             onClick={() => {
               onChange(null);
@@ -97,8 +100,8 @@ export function HomeBackgroundPicker({
             <button
               className="banner-picker-swatch active"
               style={homeBackgroundStyle(background, vaultPath)}
-              title="Custom background image"
-              aria-label="Custom background image"
+              title={t("home.customBackgroundImage")}
+              aria-label={t("home.customBackgroundImage")}
               aria-pressed
             />
           )}
@@ -122,7 +125,7 @@ export function HomeBackgroundPicker({
         </div>
         <div className="banner-picker-actions">
           <button className="icon-picker-action" onClick={() => void handleUpload()}>
-            <ImagePlus size={14} /> Upload image…
+            <ImagePlus size={14} /> {t("home.uploadImage")}
           </button>
         </div>
       </PopoverContent>

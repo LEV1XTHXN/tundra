@@ -7,6 +7,7 @@
  * vault was open before this dialog opened.
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { notes, pickVaultFolder, vault } from "@/services";
 import type { VaultInfo } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { runImport } from "./pipeline";
 import type { ImportProgress, ImportReport, SourceAdapter } from "./types";
 
@@ -55,6 +56,7 @@ function progressLabel(p: ImportProgress | null, sourceLabel: string): string {
 }
 
 export function ImportDialog({ open, onOpenChange, adapter, onSwitchVault, onImported }: ImportDialogProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>("source");
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [destVault, setDestVault] = useState<VaultInfo | null>(null);
@@ -106,7 +108,7 @@ export function ImportDialog({ open, onOpenChange, adapter, onSwitchVault, onImp
       }
       await beginImport();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     } finally {
       setBusy(false);
     }
@@ -121,7 +123,7 @@ export function ImportDialog({ open, onOpenChange, adapter, onSwitchVault, onImp
       setReport(result);
       setStep("report");
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
       setStep("destination");
     }
   };

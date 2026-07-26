@@ -10,10 +10,11 @@
  */
 import { useMemo, useState } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { tags as tagsService } from "@/services";
 import type { NoteSummary } from "@/services";
 import { cn } from "@/lib/utils";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { ViewFrame } from "@/components/ViewFrame";
 import {
   ContextMenu,
@@ -51,6 +52,7 @@ export function TagsView({
   onChanged,
   onError,
 }: TagsViewProps) {
+  const { t } = useTranslation();
   const vaultTags = useVaultTags((s) => s.tags);
   const reloadVaultTags = useVaultTags((s) => s.load);
   const colors = useTagColors((s) => s.colors);
@@ -102,7 +104,7 @@ export function TagsView({
       onChanged();
       setSelected(to);
     } catch (e) {
-      onError(errorMessage(e));
+      onError(localizeError(e, t));
     }
   };
 
@@ -114,14 +116,14 @@ export function TagsView({
       onChanged();
       if (selected === tag) setSelected(null);
     } catch (e) {
-      onError(errorMessage(e));
+      onError(localizeError(e, t));
     }
   };
 
   return (
     <ViewFrame
-      title="Tags"
-      subtitle={`${vaultTags.length} ${vaultTags.length === 1 ? "tag" : "tags"} in this vault`}
+      title={t("tags.title")}
+      subtitle={t("tags.count", { count: vaultTags.length })}
       fullBleed
     >
       <div className="tags-view">
@@ -132,17 +134,15 @@ export function TagsView({
               type="text"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Search tags…"
-              aria-label="Search tags"
+              placeholder={t("tags.searchPlaceholder")}
+              aria-label={t("tags.searchAriaLabel")}
             />
           )}
 
           {vaultTags.length === 0 ? (
-            <p className="muted tags-empty">
-              No tags yet — add tags to a note from its info panel.
-            </p>
+            <p className="muted tags-empty">{t("tags.empty")}</p>
           ) : visibleTags.length === 0 ? (
-            <p className="muted tags-empty">No tags match “{filter.trim()}”.</p>
+            <p className="muted tags-empty">{t("tags.noMatch", { filter: filter.trim() })}</p>
           ) : (
             <ul className="tags-list">
               {visibleTags.map((tag) => {
@@ -175,7 +175,7 @@ export function TagsView({
                           </button>
                         </ContextMenuTrigger>
                         <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-                          <ContextMenuLabel>Color</ContextMenuLabel>
+                          <ContextMenuLabel>{t("tags.color")}</ContextMenuLabel>
                           <div className="tags-swatches">
                             {TAG_PALETTE.map((c) => (
                               <button
@@ -183,7 +183,7 @@ export function TagsView({
                                 className="tags-swatch"
                                 style={{ backgroundColor: c }}
                                 title={c}
-                                aria-label={`Color #${tag} ${c}`}
+                                aria-label={t("tags.colorFor", { tag, color: c })}
                                 onClick={() => void setColor(tag, c)}
                               >
                                 {colors[tag] === c && <Check className="h-3 w-3" />}
@@ -191,8 +191,8 @@ export function TagsView({
                             ))}
                             <button
                               className="tags-swatch tags-swatch-clear"
-                              title="No color"
-                              aria-label={`Clear color for #${tag}`}
+                              title={t("tags.noColor")}
+                              aria-label={t("tags.clearColorFor", { tag })}
                               onClick={() => void setColor(tag, null)}
                             >
                               ✕
@@ -205,16 +205,16 @@ export function TagsView({
                               setRenaming(tag);
                             }}
                           >
-                            <Pencil /> Rename
+                            <Pencil /> {t("tags.rename")}
                           </ContextMenuItem>
                           {managed ? (
-                            <ContextMenuItem disabled>Managed by a Kanban column</ContextMenuItem>
+                            <ContextMenuItem disabled>{t("tags.managedByKanban")}</ContextMenuItem>
                           ) : (
                             <ContextMenuItem
                               variant="destructive"
                               onSelect={() => void deleteTag(tag)}
                             >
-                              <Trash2 /> Delete from all notes
+                              <Trash2 /> {t("tags.deleteFromAllNotes")}
                             </ContextMenuItem>
                           )}
                         </ContextMenuContent>
@@ -229,9 +229,9 @@ export function TagsView({
 
         <div className="tags-notes-pane">
           {!activeTag ? (
-            <p className="muted">Select a tag to see the notes carrying it.</p>
+            <p className="muted">{t("tags.selectTagPrompt")}</p>
           ) : activeNotes.length === 0 ? (
-            <p className="muted">No notes carry #{activeTag}.</p>
+            <p className="muted">{t("tags.noNotesCarry", { tag: activeTag })}</p>
           ) : (
             <ul className="tags-notes">
               {activeNotes.map((note) => (

@@ -1,7 +1,8 @@
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { folders, notes } from "@/services";
 import type { Icon, NoteSummary } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { useViewState } from "@/store/viewState";
 import { useFolderGroups } from "@/store/folderGroups";
 
@@ -31,6 +32,7 @@ export interface NoteActions {
  * and navigation actions from `useViewState` rather than taking them as props.
  */
 export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): NoteActions {
+  const { t } = useTranslation();
   const openNoteId = useViewState((s) => s.openNoteId);
   const setOpenNoteId = useViewState((s) => s.setOpenNoteId);
   const openNote = useViewState((s) => s.openNote);
@@ -40,7 +42,7 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
       try {
         // The vault root unless the caller named a folder (the nav tree's
         // context menu does; the global shortcut doesn't).
-        const note = await notes.createIn("Untitled", folder);
+        const note = await notes.createIn(t("common.untitled"), folder);
         await refreshTree();
         // Reveal it in the tree — a collapsed parent would hide the new note.
         if (folder) {
@@ -49,10 +51,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         }
         openNote(note.id);
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [refreshTree, openNote, setError],
+    [refreshTree, openNote, setError, t],
   );
 
   const onMoveNote = useCallback(
@@ -61,10 +63,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         await notes.move(id, folder);
         await refreshTree();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [refreshTree, setError],
+    [refreshTree, setError, t],
   );
 
   const onMoveFolder = useCallback(
@@ -76,10 +78,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         if (newParent !== "") await useFolderGroups.getState().dropFolder(path);
         await refreshTree();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [refreshTree, setError],
+    [refreshTree, setError, t],
   );
 
   const onRenameNote = useCallback(
@@ -90,10 +92,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         await refreshTree();
         if (id === openNoteId) bumpEditor();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [openNoteId, refreshTree, bumpEditor, setError],
+    [openNoteId, refreshTree, bumpEditor, setError, t],
   );
 
   const onRenameFolder = useCallback(
@@ -107,10 +109,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         }
         await refreshTree();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [refreshTree, setError],
+    [refreshTree, setError, t],
   );
 
   const onSetNoteIcon = useCallback(
@@ -121,10 +123,10 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         await refreshTree();
         if (id === openNoteId) bumpEditor();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [openNoteId, refreshTree, bumpEditor, setError],
+    [openNoteId, refreshTree, bumpEditor, setError, t],
   );
 
   // After a settings "vault cleanup", refresh the tree and close the open note

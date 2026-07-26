@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { templates as templatesService } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { useViewState, type AppView } from "@/store/viewState";
 import { useTemplates } from "@/store/templates";
 
@@ -24,6 +25,7 @@ export interface TemplateActions {
  * — normally the Templates view, which is where templates are managed.
  */
 export function useTemplateActions({ setError }: Params): TemplateActions {
+  const { t } = useTranslation();
   const openTemplate = useViewState((s) => s.openTemplate);
   const setView = useViewState((s) => s.setView);
 
@@ -47,13 +49,13 @@ export function useTemplateActions({ setError }: Params): TemplateActions {
 
   const onNewTemplate = useCallback(async () => {
     try {
-      const tpl = await templatesService.create("Untitled template");
+      const tpl = await templatesService.create(t("templates.untitled"));
       await useTemplates.getState().refresh();
       onOpenTemplate(tpl.id);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     }
-  }, [onOpenTemplate, setError]);
+  }, [onOpenTemplate, setError, t]);
 
   const returnFromTemplate = useCallback(() => {
     setView(templateReturn.current);

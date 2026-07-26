@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { attachments, notes, watcher } from "@/services";
 import type { Banner, Icon, Note } from "@/services";
 import { useActivity } from "@/store/activity";
+import { localizeError } from "@/i18n/errors";
 import { createDebouncedFlush, type DebouncedFlush } from "./debouncedFlush";
 import { decideReconciliation, type ReconcileDecision } from "./reconcile";
 import { mergeNote, type NotePatch } from "./noteMerge";
@@ -104,6 +106,7 @@ export function useNoteEditorPersistence({
   onSaved,
   onNeedsReload,
 }: Params): NoteEditorPersistence {
+  const { t } = useTranslation();
   const [title, setTitleState] = useState(note.title);
   const [icon, setIconState] = useState<Icon | null | undefined>(note.icon);
   const [pinned, setPinned] = useState<boolean>(note.meta?.pinned ?? false);
@@ -139,7 +142,7 @@ export function useNoteEditorPersistence({
       if (countsTowardActivity) useActivity.getState().recordActivity();
       onSaved?.();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   };
 
@@ -200,7 +203,7 @@ export function useNoteEditorPersistence({
       setSaveState("saved");
       onSaved?.();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   }
 

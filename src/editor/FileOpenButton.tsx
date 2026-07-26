@@ -8,11 +8,14 @@
  */
 import { useCallback } from "react";
 import { ExternalLink } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { blockHasType, type BlockSchema, type InlineContentSchema, type StyleSchema } from "@blocknote/core";
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { attachments } from "@/services";
+import { localizeError } from "@/i18n/errors";
 
 export function FileOpenButton({ vaultPath, onError }: { vaultPath: string; onError: (message: string) => void }) {
+  const { t } = useTranslation();
   const Components = useComponentsContext()!;
   const editor = useBlockNoteEditor<BlockSchema, InlineContentSchema, StyleSchema>();
 
@@ -30,17 +33,17 @@ export function FileOpenButton({ vaultPath, onError }: { vaultPath: string; onEr
   const onClick = useCallback(() => {
     if (block !== undefined && block.props.url) {
       editor.focus();
-      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(String(e)));
+      attachments.openFile(vaultPath, block.props.url as string).catch((e) => onError(localizeError(e, t)));
     }
-  }, [block, editor, vaultPath, onError]);
+  }, [block, editor, vaultPath, onError, t]);
 
   if (block === undefined) return null;
 
   return (
     <Components.FormattingToolbar.Button
       className="bn-button"
-      label="Open file"
-      mainTooltip="Open file"
+      label={t("editor.openFile")}
+      mainTooltip={t("editor.openFile")}
       icon={<ExternalLink size={16} />}
       onClick={onClick}
     />

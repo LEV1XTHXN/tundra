@@ -38,7 +38,7 @@ describe("flattenTree", () => {
     const rows = flattenTree(tree, new Set(), noViews); // nothing expanded
     expect(rows).toEqual([
       { kind: "folder", path: "Biology", name: "Biology", icon: undefined, parent: "", depth: 0, expanded: false, hasChildren: true, groupId: null },
-      { kind: "note", id: "n2", title: "Root Note", icon: null, parent: "", depth: 0 },
+      { kind: "note", id: "n2", title: "Root Note", icon: null, parent: "", depth: 0, modified: "2026-01-01T00:00:00Z" },
     ]);
   });
 
@@ -48,7 +48,7 @@ describe("flattenTree", () => {
     const rows = flattenTree(tree, new Set(["Biology"]), noViews);
     expect(rows).toEqual([
       { kind: "folder", path: "Biology", name: "Biology", icon: undefined, parent: "", depth: 0, expanded: true, hasChildren: true, groupId: null },
-      { kind: "note", id: "n1", title: "Cell", icon: null, parent: "Biology", depth: 1 },
+      { kind: "note", id: "n1", title: "Cell", icon: null, parent: "Biology", depth: 1, modified: "2026-01-01T00:00:00Z" },
     ]);
   });
 
@@ -70,7 +70,9 @@ describe("flattenTree", () => {
   it("falls back to 'Untitled' for a blank note title", () => {
     const tree: TreeNode[] = [note("n1", "")];
     const rows = flattenTree(tree, new Set(), noViews);
-    expect(rows).toEqual([{ kind: "note", id: "n1", title: "Untitled", icon: null, parent: "", depth: 0 }]);
+    expect(rows).toEqual([
+      { kind: "note", id: "n1", title: "Untitled", icon: null, parent: "", depth: 0, modified: "2026-01-01T00:00:00Z" },
+    ]);
   });
 
   it("produces one row per node when fully collapsed, regardless of how deep the tree is", () => {

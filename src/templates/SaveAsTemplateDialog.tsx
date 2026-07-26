@@ -5,6 +5,7 @@
  * folder" dialog.
  */
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Dialog,
@@ -26,6 +27,7 @@ interface SaveAsTemplateDialogProps {
 }
 
 export function SaveAsTemplateDialog({ open, onOpenChange, defaultName, onSave }: SaveAsTemplateDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
 
   // Re-seed the field each time the dialog opens with the current note's title.
@@ -37,11 +39,8 @@ export function SaveAsTemplateDialog({ open, onOpenChange, defaultName, onSave }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Save as template</DialogTitle>
-          <DialogDescription>
-            Creates a reusable template from this note's current content. It won't appear in your
-            notes tree, search, or graph.
-          </DialogDescription>
+          <DialogTitle>{t("templates.saveAsTemplate")}</DialogTitle>
+          <DialogDescription>{t("templates.saveDescription")}</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -56,14 +55,14 @@ export function SaveAsTemplateDialog({ open, onOpenChange, defaultName, onSave }
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Template name"
+            placeholder={t("templates.namePlaceholder")}
           />
           <DialogFooter className="mt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={!name.trim()}>
-              Save template
+              {t("templates.saveTemplate")}
             </Button>
           </DialogFooter>
         </form>

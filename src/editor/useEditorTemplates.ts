@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { templates } from "@/services";
 import type { Icon, Note } from "@/services";
 import { useTemplates } from "@/store/templates";
+import { localizeError } from "@/i18n/errors";
 import { isEmptyDocument, stripBlockIds, type RawBlock } from "@/templates/applyTemplate";
 import { mergeNote } from "./noteMerge";
 import type { NoteBlockEditor } from "./useNoteBlockEditor";
@@ -36,6 +38,7 @@ export interface EditorTemplates {
  * with no special-case command.
  */
 export function useEditorTemplates({ editor, icon, scheduleSave, markSaved, onError }: Params): EditorTemplates {
+  const { t } = useTranslation();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
 
@@ -56,7 +59,7 @@ export function useEditorTemplates({ editor, icon, scheduleSave, markSaved, onEr
       }
       scheduleSave();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   }
 
@@ -70,7 +73,7 @@ export function useEditorTemplates({ editor, icon, scheduleSave, markSaved, onEr
       await useTemplates.getState().refresh();
       markSaved();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   }
 

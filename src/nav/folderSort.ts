@@ -7,13 +7,13 @@
  */
 import { useFolderViews, type SortDir, type TreeSort, type TreeSortField } from "@/store/folderViews";
 
-/** The sort fields, in menu order, with human labels. */
-export const SORT_FIELDS: { field: TreeSortField; label: string }[] = [
-  { field: "manual", label: "Manual (drag)" },
-  { field: "name", label: "Name" },
-  { field: "modified", label: "Date modified" },
-  { field: "created", label: "Date created" },
-  { field: "size", label: "Size" },
+/** The sort fields, in menu order, with i18n label keys (under `nav.sort`). */
+export const SORT_FIELDS: { field: TreeSortField; labelKey: string }[] = [
+  { field: "manual", labelKey: "nav.sort.manual" },
+  { field: "name", labelKey: "nav.sort.name" },
+  { field: "modified", labelKey: "nav.sort.modified" },
+  { field: "created", labelKey: "nav.sort.created" },
+  { field: "size", labelKey: "nav.sort.size" },
 ];
 
 /** The folder's current sort plus the "pick this field" action. */

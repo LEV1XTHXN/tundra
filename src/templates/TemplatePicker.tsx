@@ -4,6 +4,7 @@
  * Mirrors the note-link picker's cmdk pattern; all data flows through `services`.
  */
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   CommandDialog,
@@ -24,6 +25,7 @@ interface TemplatePickerProps {
 }
 
 export function TemplatePicker({ open, onOpenChange, onPick }: TemplatePickerProps) {
+  const { t } = useTranslation();
   const [list, setList] = useState<TemplateSummary[]>([]);
 
   useEffect(() => {
@@ -46,28 +48,25 @@ export function TemplatePicker({ open, onOpenChange, onPick }: TemplatePickerPro
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Use template"
-      description="Choose a template to insert into this note"
+      title={t("templates.useTemplate")}
+      description={t("templates.chooseToInsert")}
     >
       <Command>
-        <CommandInput placeholder="Search templates…" />
+        <CommandInput placeholder={t("templates.searchPlaceholder")} />
         <CommandList>
-          <CommandEmpty>
-            No templates. Create one with “Save as template” in a note’s header, or in
-            Settings ▸ Templates.
-          </CommandEmpty>
+          <CommandEmpty>{t("templates.emptyPicker")}</CommandEmpty>
           {list.length > 0 && (
-            <CommandGroup heading="Templates">
-              {list.map((t) => (
+            <CommandGroup heading={t("templates.title")}>
+              {list.map((tpl) => (
                 <CommandItem
-                  key={t.id}
-                  value={`${t.title} ${t.id}`}
+                  key={tpl.id}
+                  value={`${tpl.title} ${tpl.id}`}
                   onSelect={() => {
-                    onPick(t);
+                    onPick(tpl);
                     onOpenChange(false);
                   }}
                 >
-                  {t.title || "Untitled template"}
+                  {tpl.title || t("templates.untitled")}
                 </CommandItem>
               ))}
             </CommandGroup>

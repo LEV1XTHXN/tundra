@@ -1,8 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, type Locale } from "date-fns";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { cn } from "@/lib/utils";
+import { useDateLocale } from "@/i18n/dateLocale";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { Icon, TreeNode } from "@/services";
 import { folderKey, noteKey, useFolderViews } from "@/store/folderViews";
@@ -16,9 +19,9 @@ import { canDropOnFolder, DRAG_MIME, serializeDragPayload, type DragPayload } fr
 
 const ROW_HEIGHT = 28;
 
-function formatModified(iso: string): string {
+function formatModified(iso: string, locale: Locale | undefined, t: TFunction): string {
   try {
-    return `Edited ${format(parseISO(iso), "MMM d, yyyy, h:mm a")}`;
+    return t("nav.editedAt", { date: format(parseISO(iso), "MMM d, yyyy, h:mm a", { locale }) });
   } catch {
     return iso;
   }
@@ -108,6 +111,8 @@ export function NavTree({
   onNewFolderInGroup,
   onNewGroup,
 }: NavTreeProps) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const parentRef = useRef<HTMLDivElement>(null);
   const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   const views = useFolderViews((s) => s.views);
@@ -491,7 +496,7 @@ export function NavTree({
                             <div className="nav-row nav-row-group" style={{ paddingLeft: 8 }}>
                               <button
                                 className="nav-folder-chevron"
-                                title={row.collapsed ? "Expand group" : "Collapse group"}
+                                title={row.collapsed ? t("nav.expandGroup") : t("nav.collapseGroup")}
                                 onClick={() => void setGroupCollapsed(row.id, !row.collapsed)}
                               >
                                 {row.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
@@ -499,7 +504,7 @@ export function NavTree({
                               <IconPicker
                                 onChange={(icon) => void setGroupIcon(row.id, icon)}
                                 trigger={
-                                  <button className="nav-group-icon" title="Set group icon" onClick={(e) => e.stopPropagation()}>
+                                  <button className="nav-group-icon" title={t("nav.setGroupIcon")} onClick={(e) => e.stopPropagation()}>
                                     <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="group" className="h-4 w-4 shrink-0" />
                                   </button>
                                 }
@@ -516,7 +521,7 @@ export function NavTree({
                             <div className="nav-row nav-row-folder" style={{ paddingLeft: row.depth * 16 + 8 }}>
                               <button
                                 className="nav-folder-chevron"
-                                title={row.expanded ? "Collapse" : "Expand"}
+                                title={row.expanded ? t("nav.collapse") : t("nav.expand")}
                                 onClick={() => onToggleFolder(row.path)}
                               >
                                 {row.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -524,12 +529,12 @@ export function NavTree({
                               <IconPicker
                                 onChange={(icon) => void patch(row.path, { icon: icon ?? undefined })}
                                 trigger={
-                                  <button className="nav-folder-icon" title="Set folder icon" onClick={(e) => e.stopPropagation()}>
+                                  <button className="nav-folder-icon" title={t("nav.setFolderIcon")} onClick={(e) => e.stopPropagation()}>
                                     <NoteIcon icon={row.icon} vaultPath={vaultPath} fallback="folder" className="h-4 w-4 shrink-0" />
                                   </button>
                                 }
                               />
-                              <button className="nav-folder-label" title="Open folder table" onClick={() => onOpenFolder(row.path)}>
+                              <button className="nav-folder-label" title={t("nav.openFolderTable")} onClick={() => onOpenFolder(row.path)}>
                                 <span className="nav-row-label">{row.name}</span>
                               </button>
                             </div>
@@ -544,7 +549,7 @@ export function NavTree({
                               <IconPicker
                                 onChange={(icon) => onSetNoteIcon(row.id, icon)}
                                 trigger={
-                                  <button className="nav-note-icon" title="Set icon" onClick={(e) => e.stopPropagation()}>
+                                  <button className="nav-note-icon" title={t("nav.setIcon")} onClick={(e) => e.stopPropagation()}>
                                     <NoteIcon icon={row.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
                                   </button>
                                 }
@@ -552,7 +557,7 @@ export function NavTree({
                               <button
                                 className="nav-note-label"
                                 onClick={() => onSelectNote(row.id)}
-                                title={showModifiedOnHover ? formatModified(row.modified) : undefined}
+                                title={showModifiedOnHover ? formatModified(row.modified, dateLocale, t) : undefined}
                               >
                                 <span className="nav-row-label">{row.title}</span>
                               </button>

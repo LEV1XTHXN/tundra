@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -17,10 +18,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COMMANDS, type CommandId } from "@/keybindings/registry";
 import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN, useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
+import { useLocale } from "@/store/locale";
+import { SUPPORTED_LANGUAGES, NEEDS_REVIEW } from "@/i18n";
+import { localizeError } from "@/i18n/errors";
 import { appSettings, attachments, backup, notes, pickDirectory, spellcheck } from "@/services";
 import type { CleanupReport, SpellLanguages } from "@/services";
 
@@ -35,15 +40,8 @@ interface SettingsDialogProps {
   onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void;
 }
 
-const SECTIONS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "keybindings", label: "Keybindings" },
-  { id: "dictionaries", label: "Dictionaries" },
-  { id: "backup", label: "Backup" },
-  { id: "import", label: "Import" },
-  { id: "maintenance", label: "Maintenance" },
-] as const;
-type SectionId = (typeof SECTIONS)[number]["id"];
+const SECTION_IDS = ["appearance", "keybindings", "dictionaries", "backup", "import", "maintenance"] as const;
+type SectionId = (typeof SECTION_IDS)[number];
 
 export function SettingsDialog({
   open,
@@ -51,24 +49,25 @@ export function SettingsDialog({
   onCleaned,
   onOpenImport,
 }: SettingsDialogProps) {
+  const { t } = useTranslation();
   const [section, setSection] = useState<SectionId>("keybindings");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="settings-dialog sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Customize how Tundra works.</DialogDescription>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
+          <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
         <div className="settings-body">
           <nav className="settings-rail" aria-label="Settings sections">
-            {SECTIONS.map((s) => (
+            {SECTION_IDS.map((id) => (
               <button
-                key={s.id}
-                className={`settings-rail-item${section === s.id ? " active" : ""}`}
-                onClick={() => setSection(s.id)}
+                key={id}
+                className={`settings-rail-item${section === id ? " active" : ""}`}
+                onClick={() => setSection(id)}
               >
-                {s.label}
+                {t(`settings.sections.${id}`)}
               </button>
             ))}
           </nav>
@@ -90,6 +89,7 @@ export function SettingsDialog({
  *  and clock format (24h/12h), applied app-wide via the theme store and
  *  persisted through Rust app-settings. */
 function AppearanceSection() {
+  const { t } = useTranslation();
   const theme = useTheme((s) => s.theme);
   const setTheme = useTheme((s) => s.setTheme);
   const timeFormat = useTheme((s) => s.timeFormat);
@@ -100,19 +100,21 @@ function AppearanceSection() {
   const setEditorFontSize = useTheme((s) => s.setEditorFontSize);
   const dyslexiaFont = useTheme((s) => s.dyslexiaFont);
   const setDyslexiaFont = useTheme((s) => s.setDyslexiaFont);
+  const language = useLocale((s) => s.language);
+  const setLanguage = useLocale((s) => s.setLanguage);
   const options: { id: ThemePref; label: string; desc: string }[] = [
-    { id: "system", label: "System", desc: "Follow the operating system" },
-    { id: "light", label: "Light", desc: "Always light" },
-    { id: "dark", label: "Dark", desc: "Always dark" },
+    { id: "system", label: t("settings.appearance.themeSystem"), desc: t("settings.appearance.themeSystemDesc") },
+    { id: "light", label: t("settings.appearance.themeLight"), desc: t("settings.appearance.themeLightDesc") },
+    { id: "dark", label: t("settings.appearance.themeDark"), desc: t("settings.appearance.themeDarkDesc") },
   ];
   const timeOptions: { id: TimeFormatPref; label: string; desc: string }[] = [
-    { id: "24h", label: "24-hour", desc: "13:00" },
-    { id: "12h", label: "12-hour", desc: "1:00 PM" },
+    { id: "24h", label: t("settings.appearance.clock24h"), desc: "13:00" },
+    { id: "12h", label: t("settings.appearance.clock12h"), desc: "1:00 PM" },
   ];
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Appearance</h3>
-      <p className="muted settings-section-desc">Choose the app theme. “System” follows your OS and updates live.</p>
+      <h3 className="settings-section-title">{t("settings.appearance.title")}</h3>
+      <p className="muted settings-section-desc">{t("settings.appearance.themeDesc")}</p>
       <div className="settings-theme-options" role="radiogroup" aria-label="Theme">
         {options.map((o) => (
           <button
@@ -128,8 +130,28 @@ function AppearanceSection() {
         ))}
       </div>
 
-      <h3 className="settings-section-title settings-section-title-spaced">Clock format</h3>
-      <p className="muted settings-section-desc">Used by the calendar's hourly view.</p>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.language")}</h3>
+      <p className="muted settings-section-desc">{t("settings.appearance.languageDesc")}</p>
+      <label className="settings-field">
+        <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
+          <SelectTrigger aria-label={t("settings.appearance.language")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((l) => (
+              <SelectItem key={l.code} value={l.code}>
+                {l.nativeLabel}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+      {NEEDS_REVIEW[language] && (
+        <p className="muted settings-section-desc">{t("settings.appearance.languageReviewNotice")}</p>
+      )}
+
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.clockFormat")}</h3>
+      <p className="muted settings-section-desc">{t("settings.appearance.clockFormatDesc")}</p>
       <div className="settings-theme-options" role="radiogroup" aria-label="Clock format">
         {timeOptions.map((o) => (
           <button
@@ -145,11 +167,11 @@ function AppearanceSection() {
         ))}
       </div>
 
-      <h3 className="settings-section-title settings-section-title-spaced">Font size</h3>
-      <p className="muted settings-section-desc">Applies to note and quick-note content in the editor.</p>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.fontSize")}</h3>
+      <p className="muted settings-section-desc">{t("settings.appearance.fontSizeDesc")}</p>
       <label className="settings-slider">
         <span className="settings-slider-head">
-          Size <span className="muted">{editorFontSize}px</span>
+          {t("settings.appearance.fontSizeLabel")} <span className="muted">{editorFontSize}px</span>
         </span>
         <input
           type="range"
@@ -158,20 +180,20 @@ function AppearanceSection() {
           step={1}
           value={editorFontSize}
           onChange={(e) => setEditorFontSize(Number(e.target.value))}
-          aria-label="Font size"
+          aria-label={t("settings.appearance.fontSizeLabel")}
         />
       </label>
 
-      <h3 className="settings-section-title settings-section-title-spaced">Accessibility</h3>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.accessibility")}</h3>
       <label className="settings-check">
         <Switch checked={dyslexiaFont} onCheckedChange={setDyslexiaFont} />
-        Use a dyslexia-friendly font (OpenDyslexic) in the editor
+        {t("settings.appearance.dyslexiaFont")}
       </label>
 
-      <h3 className="settings-section-title settings-section-title-spaced">Note hover</h3>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.noteHover")}</h3>
       <label className="settings-check">
         <Switch checked={showModifiedOnHover} onCheckedChange={setShowModifiedOnHover} />
-        Show last-modified date when hovering a note
+        {t("settings.appearance.showModifiedOnHover")}
       </label>
     </div>
   );
@@ -180,14 +202,15 @@ function AppearanceSection() {
 /** Dictionaries section (Phase 3 step 6): enable/disable bundled language
  *  dictionaries (global app-setting) and manage the per-vault custom words. */
 function DictionariesSection() {
+  const { t } = useTranslation();
   const [langs, setLangs] = useState<SpellLanguages | null>(null);
   const [words, setWords] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    spellcheck.languages().then(setLangs).catch((e) => setError(String(e)));
+    spellcheck.languages().then(setLangs).catch((e) => setError(localizeError(e, t)));
     spellcheck.personalWords().then(setWords).catch(() => setWords([]));
-  }, []);
+  }, [t]);
   useEffect(() => reload(), [reload]);
 
   const toggleLang = async (code: string, on: boolean) => {
@@ -197,7 +220,7 @@ function DictionariesSection() {
       await spellcheck.setLanguages(enabled);
       reload();
     } catch (e) {
-      setError(String(e));
+      setError(localizeError(e, t));
     }
   };
 
@@ -206,21 +229,21 @@ function DictionariesSection() {
       await spellcheck.removeWord(w);
       setWords((ws) => ws.filter((x) => x !== w));
     } catch (e) {
-      setError(String(e));
+      setError(localizeError(e, t));
     }
   };
 
-  if (!langs) return <div className="muted">Loading…</div>;
+  if (!langs) return <div className="muted">{t("common.loading")}</div>;
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Dictionaries</h3>
-      <p className="muted settings-section-desc">Enable spellcheck languages and manage words you’ve added.</p>
+      <h3 className="settings-section-title">{t("settings.dictionaries.title")}</h3>
+      <p className="muted settings-section-desc">{t("settings.dictionaries.description")}</p>
 
       <div className="settings-field">
-        <span className="settings-field-label">Languages</span>
+        <span className="settings-field-label">{t("settings.dictionaries.languages")}</span>
         {langs.available.length === 0 ? (
-          <p className="muted">No dictionaries are bundled yet.</p>
+          <p className="muted">{t("settings.dictionaries.noneBundled")}</p>
         ) : (
           langs.available.map((code) => (
             <label key={code} className="settings-check">
@@ -235,15 +258,19 @@ function DictionariesSection() {
       </div>
 
       <div className="settings-field">
-        <span className="settings-field-label">Custom words</span>
+        <span className="settings-field-label">{t("settings.dictionaries.customWords")}</span>
         {words.length === 0 ? (
-          <p className="muted">No custom words yet — add them from the editor’s right-click menu.</p>
+          <p className="muted">{t("settings.dictionaries.noCustomWords")}</p>
         ) : (
           <ul className="settings-wordlist">
             {words.map((w) => (
               <li key={w}>
                 <span>{w}</span>
-                <button onClick={() => removeWord(w)} title={`Remove “${w}”`} aria-label={`Remove ${w}`}>
+                <button
+                  onClick={() => removeWord(w)}
+                  title={t("settings.dictionaries.removeWord", { word: w })}
+                  aria-label={t("settings.dictionaries.removeWord", { word: w })}
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </li>
@@ -270,6 +297,7 @@ const BACKUP_SETTINGS = "backup";
  * persist through Rust app-settings (never localStorage). Fuller polish is step 6.
  */
 function BackupSection() {
+  const { t } = useTranslation();
   // null = still loading the saved settings.
   const [settings, setSettings] = useState<BackupSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -284,11 +312,11 @@ function BackupSection() {
 
   const persist = async (next: BackupSettings) => {
     setSettings(next);
-    await appSettings.write(BACKUP_SETTINGS, next).catch((e) => setError(String(e)));
+    await appSettings.write(BACKUP_SETTINGS, next).catch((e) => setError(localizeError(e, t)));
   };
 
   const choose = async () => {
-    const dir = await pickDirectory("Choose a backup destination");
+    const dir = await pickDirectory(t("settings.backup.destination"));
     if (dir) await persist({ ...settings, destDir: dir });
   };
 
@@ -300,38 +328,40 @@ function BackupSection() {
       const archive = await backup.run(settings.destDir);
       await persist({ ...settings, destDir: settings.destDir, lastArchive: archive, lastAt: new Date().toISOString() });
     } catch (e) {
-      setError(String(e));
+      setError(localizeError(e, t));
     } finally {
       setBusy(false);
     }
   };
 
-  if (settings === null) return <div className="muted">Loading…</div>;
+  if (settings === null) return <div className="muted">{t("common.loading")}</div>;
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Backup</h3>
-      <p className="muted settings-section-desc">
-        Save a compressed <code>.zip</code> snapshot of the whole vault (excluding the
-        rebuildable search/graph cache) to a folder outside the vault.
-      </p>
+      <h3 className="settings-section-title">{t("settings.backup.title")}</h3>
+      <p className="muted settings-section-desc">{t("settings.backup.description")}</p>
       <div className="settings-field">
-        <span className="settings-field-label">Destination</span>
+        <span className="settings-field-label">{t("settings.backup.destination")}</span>
         <div className="settings-field-value">
-          <span className={settings.destDir ? "settings-path" : "muted"}>{settings.destDir ?? "Not set"}</span>
+          <span className={settings.destDir ? "settings-path" : "muted"}>
+            {settings.destDir ?? t("common.notSet")}
+          </span>
           <Button variant="outline" size="sm" onClick={choose}>
-            Choose…
+            {t("common.choose")}
           </Button>
         </div>
       </div>
       <div className="settings-actions">
         <Button size="sm" disabled={!settings.destDir || busy} onClick={runBackup}>
-          {busy ? "Backing up…" : "Back up now"}
+          {busy ? t("settings.backup.backingUp") : t("settings.backup.backUpNow")}
         </Button>
       </div>
       {settings.lastArchive && settings.lastAt && (
         <p className="muted settings-backup-last">
-          Last backup {new Date(settings.lastAt).toLocaleString()} → <code>{settings.lastArchive}</code>
+          {t("settings.backup.lastBackup", {
+            date: new Date(settings.lastAt).toLocaleString(),
+            archive: settings.lastArchive,
+          })}
         </p>
       )}
       {error && <p className="error">{error}</p>}
@@ -346,22 +376,20 @@ function BackupSection() {
  * section is just the launch points.
  */
 function ImportSection({ onOpenImport }: { onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void }) {
+  const { t } = useTranslation();
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Import</h3>
-      <p className="muted settings-section-desc">
-        Bring notes in from another app. Always imports into a new, empty vault — your
-        currently open vault is never touched or merged into.
-      </p>
+      <h3 className="settings-section-title">{t("settings.import.title")}</h3>
+      <p className="muted settings-section-desc">{t("settings.import.description")}</p>
       <div className="settings-actions">
         <Button size="sm" onClick={() => onOpenImport?.("obsidian")}>
-          Import from Obsidian…
+          {t("settings.import.fromObsidian")}
         </Button>
         <Button size="sm" onClick={() => onOpenImport?.("notion")}>
-          Import from Notion…
+          {t("settings.import.fromNotion")}
         </Button>
         <Button size="sm" onClick={() => onOpenImport?.("anytype")}>
-          Import from Anytype…
+          {t("settings.import.fromAnytype")}
         </Button>
       </div>
     </div>
@@ -388,6 +416,7 @@ function formatBytes(bytes: number): string {
 }
 
 function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void }) {
+  const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<number | null>(null);
@@ -407,7 +436,7 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
       setResult(deleted.length);
       onCleaned?.(deleted);
     } catch (e) {
-      setError(String(e));
+      setError(localizeError(e, t));
     } finally {
       setBusy(false);
       setConfirming(false);
@@ -421,7 +450,7 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
     try {
       setAttResult(await attachments.cleanupOrphans());
     } catch (e) {
-      setAttError(String(e));
+      setAttError(localizeError(e, t));
     } finally {
       setAttBusy(false);
     }
@@ -429,51 +458,48 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Vault cleanup</h3>
-      <p className="muted settings-section-desc">
-        Delete every note with an empty body to tidy up notes you started but never
-        wrote in. Notes containing images, tables, or other non-text blocks are kept,
-        even if they have no text. This cannot be undone.
-      </p>
+      <h3 className="settings-section-title">{t("settings.maintenance.vaultCleanupTitle")}</h3>
+      <p className="muted settings-section-desc">{t("settings.maintenance.vaultCleanupDesc")}</p>
       <div className="settings-actions">
         {confirming ? (
           <>
             <Button variant="destructive" size="sm" disabled={busy} onClick={runCleanup}>
-              {busy ? "Cleaning up…" : "Delete empty notes"}
+              {busy ? t("settings.maintenance.cleaningUp") : t("settings.maintenance.deleteEmptyNotes")}
             </Button>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
           </>
         ) : (
           <Button variant="outline" size="sm" onClick={() => { setResult(null); setError(null); setConfirming(true); }}>
-            Clean up vault
+            {t("settings.maintenance.cleanUpVault")}
           </Button>
         )}
       </div>
       {result !== null && (
         <p className="muted settings-backup-last">
-          {result === 0 ? "No empty notes found." : `Deleted ${result} empty note${result === 1 ? "" : "s"}.`}
+          {result === 0
+            ? t("settings.maintenance.noEmptyNotes")
+            : t("settings.maintenance.deletedEmptyNotes", { count: result })}
         </p>
       )}
       {error && <p className="error">{error}</p>}
 
-      <h3 className="settings-section-title settings-section-title-spaced">Unused attachments</h3>
-      <p className="muted settings-section-desc">
-        Remove image, video, and file attachments that no note, template, or quick note
-        uses anymore — left behind when you delete an embed or a note. Attachments still
-        referenced anywhere are always kept. This cannot be undone.
-      </p>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.maintenance.unusedAttachmentsTitle")}</h3>
+      <p className="muted settings-section-desc">{t("settings.maintenance.unusedAttachmentsDesc")}</p>
       <div className="settings-actions">
         <Button variant="outline" size="sm" disabled={attBusy} onClick={runAttachmentCleanup}>
-          {attBusy ? "Cleaning up…" : "Clean up unused attachments"}
+          {attBusy ? t("settings.maintenance.cleaningUp") : t("settings.maintenance.cleanUpAttachments")}
         </Button>
       </div>
       {attResult !== null && (
         <p className="muted settings-backup-last">
           {attResult.removed === 0
-            ? "No unused attachments found."
-            : `Freed ${formatBytes(attResult.bytes ?? 0)} (${attResult.removed} file${attResult.removed === 1 ? "" : "s"} removed).`}
+            ? t("settings.maintenance.noUnusedAttachments")
+            : t("settings.maintenance.freedSpace", {
+                size: formatBytes(attResult.bytes ?? 0),
+                count: attResult.removed,
+              })}
         </p>
       )}
       {attError && <p className="error">{attError}</p>}
@@ -482,6 +508,7 @@ function MaintenanceSection({ onCleaned }: { onCleaned?: (ids: string[]) => void
 }
 
 function KeybindingsSection() {
+  const { t } = useTranslation();
   const bindings = useKeybindings((s) => s.bindings);
   const setBinding = useKeybindings((s) => s.setBinding);
   const resetBinding = useKeybindings((s) => s.resetBinding);
@@ -517,14 +544,16 @@ function KeybindingsSection() {
       <div className="keybindings-list">
         {COMMANDS.map((cmd) => {
           const inConflict = conflicts.has(cmd.id);
+          const key = cmd.id.replace(/\./g, "_");
+          const label = t(`settings.keybindings.commands.${key}.label`);
           return (
             <div key={cmd.id} className="keybinding-row">
               <div className="keybinding-info">
-                <span className="keybinding-label">{cmd.label}</span>
-                <span className="keybinding-desc muted">{cmd.description}</span>
+                <span className="keybinding-label">{label}</span>
+                <span className="keybinding-desc muted">{t(`settings.keybindings.commands.${key}.description`)}</span>
                 {inConflict && (
                   <span className="keybinding-conflict">
-                    Conflicts with another shortcut on the same keys.
+                    {t("settings.keybindings.conflict")}
                   </span>
                 )}
               </div>
@@ -534,16 +563,16 @@ function KeybindingsSection() {
                   size="sm"
                   className="keybinding-key"
                   onClick={() => setRecording(recording === cmd.id ? null : cmd.id)}
-                  aria-label={`Rebind ${cmd.label}`}
+                  aria-label={t("settings.keybindings.rebind", { label })}
                 >
-                  {recording === cmd.id ? "Press keys…" : formatBinding(bindings[cmd.id])}
+                  {recording === cmd.id ? t("settings.keybindings.pressKeys") : formatBinding(bindings[cmd.id])}
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => resetBinding(cmd.id)}
-                  title="Reset to default"
-                  aria-label={`Reset ${cmd.label} to default`}
+                  title={t("settings.keybindings.resetToDefault")}
+                  aria-label={t("settings.keybindings.resetToDefaultFor", { label })}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
@@ -554,7 +583,7 @@ function KeybindingsSection() {
       </div>
       <div className="keybindings-footer">
         <Button variant="ghost" size="sm" onClick={resetAll}>
-          Reset all to defaults
+          {t("settings.keybindings.resetAll")}
         </Button>
       </div>
     </div>

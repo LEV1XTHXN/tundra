@@ -7,12 +7,15 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, type Locale } from "date-fns";
 import { Folder as FolderIcon, Pin } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { notes, type PropertyValue } from "@/services";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { type ColumnKey, type TableSortKey } from "@/store/folderViews";
 import { cn } from "@/lib/utils";
+import { useDateLocale } from "@/i18n/dateLocale";
+import { localizeError } from "@/i18n/errors";
 import { columnKeyStr, propertyValue, type TableRow } from "./ordering";
 import { ColumnHeader } from "./ColumnHeader";
 import { AddColumnPopover } from "./AddColumnPopover";
@@ -36,9 +39,9 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: Locale | undefined): string {
   try {
-    return format(parseISO(iso), "MMM d, yyyy, h:mm a");
+    return format(parseISO(iso), "MMM d, yyyy, h:mm a", { locale });
   } catch {
     return iso;
   }
@@ -55,6 +58,8 @@ interface FolderTableProps {
 }
 
 export function FolderTable({ rows, schema, vaultPath, onOpenNote, onOpenFolder, onChanged, onError }: FolderTableProps) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const parentRef = useRef<HTMLDivElement>(null);
   const headScrollRef = useRef<HTMLDivElement>(null);
   const { columns, propsById } = schema;
@@ -131,10 +136,10 @@ export function FolderTable({ rows, schema, vaultPath, onOpenNote, onOpenFolder,
         await notes.setProperty(noteId, propId, value);
         onChanged();
       } catch (e) {
-        onError(e instanceof Error ? e.message : String(e));
+        onError(localizeError(e, t));
       }
     },
-    [onChanged, onError],
+    [onChanged, onError, t],
   );
 
   // Keep the header's horizontal scroll locked to the body's, so columns stay
@@ -148,8 +153,8 @@ export function FolderTable({ rows, schema, vaultPath, onOpenNote, onOpenFolder,
   function renderCell(row: TableRow, col: ColumnKey) {
     if (row.kind === "folder") return <span className="ft-cell-empty">—</span>;
     const s = row.summary;
-    if (col === "modified") return formatDate(s.modified);
-    if (col === "created") return formatDate(s.created);
+    if (col === "modified") return formatDate(s.modified, dateLocale);
+    if (col === "created") return formatDate(s.created, dateLocale);
     if (col === "size") return formatSize(s.size ?? 0);
     const def = propsById[col.prop];
     if (!def) return null;
@@ -168,8 +173,8 @@ export function FolderTable({ rows, schema, vaultPath, onOpenNote, onOpenFolder,
       <div className="ft-head-scroll" ref={headScrollRef}>
         <div className="ft-head-row">
           <div className="ft-th ft-th-name" style={colStyle("name")}>
-            <span className="ft-th-name-label">Name</span>
-            <div className="ft-col-resize" onMouseDown={(e) => startResize(e, "name")} title="Drag to resize" />
+            <span className="ft-th-name-label">{t("folderView.columnName")}</span>
+            <div className="ft-col-resize" onMouseDown={(e) => startResize(e, "name")} title={t("folderView.dragToResize")} />
           </div>
           {columns.map((col) => (
             <ColumnHeader
@@ -219,7 +224,7 @@ export function FolderTable({ rows, schema, vaultPath, onOpenNote, onOpenFolder,
                         <NoteIcon icon={row.summary.icon} vaultPath={vaultPath} className="h-4 w-4 shrink-0" />
                       )}
                       <span className="ft-name-text">
-                        {row.kind === "folder" ? row.name : row.summary.title || "Untitled"}
+                        {row.kind === "folder" ? row.name : row.summary.title || t("common.untitled")}
                       </span>
                       {row.pinned && <Pin size={12} className="ft-pin-indicator" />}
                     </button>

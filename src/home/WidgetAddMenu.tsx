@@ -7,6 +7,7 @@
  */
 import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export interface AddableWidget {
@@ -25,15 +26,16 @@ export function WidgetAddMenu({
   available: AddableWidget[];
   onAdd: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="widget-add-popover" align="start">
-        <div className="widget-add-heading">Add a widget</div>
+        <div className="widget-add-heading">{t("home.addAWidget")}</div>
         {available.length === 0 ? (
-          <p className="widget-add-empty muted">Every widget is already on your dashboard.</p>
+          <p className="widget-add-empty muted">{t("home.allWidgetsAdded")}</p>
         ) : (
           <div className="widget-add-list">
             {available.map((w) => {

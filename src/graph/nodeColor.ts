@@ -1,21 +1,19 @@
 /**
  * Node color palette + assignment helpers for the graph view's "color by"
- * modes (folder / tag / cluster — `GraphView.tsx`). Reuses the app's
- * existing `TAG_PALETTE` (the same swatches already on tag/property chips
- * and Kanban cards) rather than inventing a second palette. The palette
- * itself is deliberately theme-invariant, matching every other TAG_PALETTE
- * consumer (`tagChipStyle` doesn't branch on theme either) — it's the
- * surrounding chrome (canvas background, edges, dim/neutral tones) that
- * needs a light/dark variant, not the swatches.
+ * modes (folder / tag / cluster). Reuses the app's existing TAG_PALETTE
+ * (same swatches already seen on tag/property chips and Kanban cards) rather
+ * than inventing a second palette, and is theme-invariant by design — like
+ * every other TAG_PALETTE consumer, the same hex reads fine in both themes;
+ * it's the SURROUNDING chrome (canvas background, edges, the dimmed/neutral
+ * tones below) that needs a light/dark variant, not the palette itself.
  */
 import { TAG_PALETTE } from "@/store/tagColors";
 
 export type GraphColorMode = "folder" | "tag" | "cluster";
 
-/** Untagged notes in "by tag" mode — a muted neutral, not part of the
- *  palette proper (canvas fillStyle needs a resolved color, not a CSS var,
- *  so these approximate the theme's own --muted-foreground at each theme's
- *  lightness rather than referencing it directly). */
+/** Untagged notes in "by tag" mode, and the hovered-fade tone — a muted
+ *  neutral gray close to the theme's own --muted-foreground at each theme's
+ *  lightness (canvas fillStyle needs a resolved color, not a CSS var). */
 export const NEUTRAL_LIGHT = "#a1a1aa";
 export const NEUTRAL_DARK = "#71717a";
 

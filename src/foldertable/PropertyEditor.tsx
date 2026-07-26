@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +15,12 @@ import type { useFolderSchema } from "./useFolderSchema";
 
 type Schema = ReturnType<typeof useFolderSchema>;
 
-const TYPE_LABELS: Record<PropertyDef["type"], string> = {
-  text: "Text",
-  number: "Number",
-  select: "Select",
-  multiSelect: "Multi-select",
-  date: "Date",
+const TYPE_LABEL_KEYS: Record<PropertyDef["type"], string> = {
+  text: "folderView.typeText",
+  number: "folderView.typeNumber",
+  select: "folderView.typeSelect",
+  multiSelect: "folderView.typeMultiSelect",
+  date: "folderView.typeDate",
 };
 
 interface PropertyEditorProps {
@@ -35,6 +36,7 @@ interface PropertyEditorProps {
  * changing it would orphan existing note values — so it's shown read-only.
  */
 export function PropertyEditor({ def, schema, open, onOpenChange }: PropertyEditorProps) {
+  const { t } = useTranslation();
   const { updateProperty, addOption } = schema;
   const isSelect = def.type === "select" || def.type === "multiSelect";
   const [newOption, setNewOption] = useState("");
@@ -50,12 +52,12 @@ export function PropertyEditor({ def, schema, open, onOpenChange }: PropertyEdit
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="ft-prop-editor">
         <DialogHeader>
-          <DialogTitle>Edit property</DialogTitle>
-          <DialogDescription>{TYPE_LABELS[def.type]} property</DialogDescription>
+          <DialogTitle>{t("folderView.editProperty")}</DialogTitle>
+          <DialogDescription>{t("folderView.propertyDescription", { type: t(TYPE_LABEL_KEYS[def.type]) })}</DialogDescription>
         </DialogHeader>
 
         <label className="ft-field">
-          <span className="ft-field-label">Name</span>
+          <span className="ft-field-label">{t("folderView.columnName")}</span>
           <input
             className="ft-cell-input"
             defaultValue={def.name}
@@ -68,7 +70,7 @@ export function PropertyEditor({ def, schema, open, onOpenChange }: PropertyEdit
 
         {isSelect && (
           <div className="ft-options">
-            <span className="ft-field-label">Options</span>
+            <span className="ft-field-label">{t("folderView.options")}</span>
             {(def.options ?? []).map((o) => (
               <div key={o.id} className="ft-option-row">
                 <input
@@ -85,12 +87,12 @@ export function PropertyEditor({ def, schema, open, onOpenChange }: PropertyEdit
                       key={c}
                       className={cn("ft-swatch", o.color === c && "active")}
                       style={{ backgroundColor: c, color: contrastText(c) }}
-                      title="Set color"
+                      title={t("folderView.setColor")}
                       onClick={() => patchOption(o.id, { color: c })}
                     />
                   ))}
                 </div>
-                <button className="ft-option-remove" title="Remove option" onClick={() => removeOption(o.id)}>
+                <button className="ft-option-remove" title={t("folderView.removeOption")} onClick={() => removeOption(o.id)}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -107,12 +109,12 @@ export function PropertyEditor({ def, schema, open, onOpenChange }: PropertyEdit
             >
               <input
                 className="ft-option-name"
-                placeholder="New option…"
+                placeholder={t("folderView.newOptionPlaceholder")}
                 value={newOption}
                 onChange={(e) => setNewOption(e.target.value)}
               />
               <button type="submit" className="ft-option-add-btn" disabled={!newOption.trim()}>
-                <Plus size={13} /> Add
+                <Plus size={13} /> {t("folderView.add")}
               </button>
             </form>
           </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowUpDown, ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { type TableSort, type TableSortKey } from "@/store/folderViews";
@@ -19,6 +20,7 @@ interface SortMenuProps {
  * removed; "Add sort" appends the next unused column.
  */
 export function SortMenu({ schema }: SortMenuProps) {
+  const { t } = useTranslation();
   const { tableSort, columns, propsById, setSort } = schema;
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -45,29 +47,29 @@ export function SortMenu({ schema }: SortMenuProps) {
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setAdding(false); }}>
       <PopoverTrigger asChild>
-        <button className={cn("ft-toolbar-button", tableSort.length > 0 && "active")} title="Sort">
+        <button className={cn("ft-toolbar-button", tableSort.length > 0 && "active")} title={t("folderView.sort")}>
           <ArrowUpDown size={14} />
-          Sort{tableSort.length > 0 ? ` (${tableSort.length})` : ""}
+          {t("folderView.sort")}{tableSort.length > 0 ? ` (${tableSort.length})` : ""}
         </button>
       </PopoverTrigger>
       <PopoverContent className="ft-sort-panel" align="end">
-        {tableSort.length === 0 && <div className="ft-sort-empty muted">No sorts applied.</div>}
+        {tableSort.length === 0 && <div className="ft-sort-empty muted">{t("folderView.sortEmpty")}</div>}
 
         {tableSort.map((sort, i) => (
           <div key={columnKeyStr(sort.key)} className="ft-sort-level">
-            <span className="ft-sort-name">{columnLabel(sort.key, propsById)}</span>
+            <span className="ft-sort-name">{columnLabel(sort.key, propsById, t)}</span>
             <button className="ft-sort-dir" onClick={() => flipDir(i)}>
-              {sort.dir === "asc" ? "Ascending" : "Descending"}
+              {sort.dir === "asc" ? t("folderView.ascending") : t("folderView.descending")}
             </button>
             <div className="ft-sort-move">
-              <button disabled={i === 0} onClick={() => move(i, -1)} title="Move up">
+              <button disabled={i === 0} onClick={() => move(i, -1)} title={t("folderView.moveUp")}>
                 <ChevronUp size={13} />
               </button>
-              <button disabled={i === tableSort.length - 1} onClick={() => move(i, 1)} title="Move down">
+              <button disabled={i === tableSort.length - 1} onClick={() => move(i, 1)} title={t("folderView.moveDown")}>
                 <ChevronDown size={13} />
               </button>
             </div>
-            <button className="ft-sort-remove" onClick={() => remove(i)} title="Remove">
+            <button className="ft-sort-remove" onClick={() => remove(i)} title={t("folderView.remove")}>
               <X size={13} />
             </button>
           </div>
@@ -78,13 +80,13 @@ export function SortMenu({ schema }: SortMenuProps) {
             <div className="ft-sort-add-list">
               {available.map((k) => (
                 <button key={columnKeyStr(k)} className="ft-menu-item" onClick={() => add(k)}>
-                  {columnLabel(k, propsById)}
+                  {columnLabel(k, propsById, t)}
                 </button>
               ))}
             </div>
           ) : (
             <button className="ft-sort-add" onClick={() => setAdding(true)}>
-              <Plus size={13} /> Add sort
+              <Plus size={13} /> {t("folderView.addSort")}
             </button>
           ))}
       </PopoverContent>

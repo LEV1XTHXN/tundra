@@ -7,6 +7,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  addDays,
   addMonths,
   eachDayOfInterval,
   endOfMonth,
@@ -19,8 +20,11 @@ import {
   startOfMonth,
   startOfWeek,
   subMonths,
+  type Locale,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import { calendar, config, notes, quickNote, search, tags as tagsService } from "@/services";
 import type { Block, NoteSummary, SearchHit } from "@/services";
@@ -29,13 +33,14 @@ import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
 import { useActivity } from "@/store/activity";
 import { useFolderGroups } from "@/store/folderGroups";
+import { useDateLocale } from "@/i18n/dateLocale";
+import { localizeError } from "@/i18n/errors";
 
-const WEEKDAYS_SHORT = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const WEEK_STARTS_ON = 1;
 
-function formatModified(iso: string): string {
+function formatModified(iso: string, locale: Locale | undefined, t: TFunction): string {
   try {
-    return `Edited ${format(parseISO(iso), "MMM d, yyyy, h:mm a")}`;
+    return t("nav.editedAt", { date: format(parseISO(iso), "MMM d, yyyy, h:mm a", { locale }) });
   } catch {
     return iso;
   }
@@ -60,6 +65,8 @@ function NoteList({
   onOpenNote: (id: string) => void;
   empty: string;
 }) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   if (items.length === 0) return <p className="widget-empty muted">{empty}</p>;
   return (
@@ -69,10 +76,10 @@ function NoteList({
           key={n.id}
           className="home-note-row"
           onClick={() => onOpenNote(n.id)}
-          title={showModifiedOnHover ? formatModified(n.modified) : undefined}
+          title={showModifiedOnHover ? formatModified(n.modified, dateLocale, t) : undefined}
         >
           <NoteIcon icon={n.icon} vaultPath={vaultPath} className="h-4 w-4" />
-          <span className="home-note-title">{n.title || "Untitled"}</span>
+          <span className="home-note-title">{n.title || t("common.untitled")}</span>
         </button>
       ))}
     </div>
@@ -81,6 +88,7 @@ function NoteList({
 
 /** Notes flagged `meta.pinned` (pin/unpin from the editor's pin button). */
 export function PinnedWidget({ vaultPath, refreshKey, onOpenNote }: WidgetProps) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<NoteSummary[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -99,13 +107,14 @@ export function PinnedWidget({ vaultPath, refreshKey, onOpenNote }: WidgetProps)
       items={items}
       vaultPath={vaultPath}
       onOpenNote={onOpenNote}
-      empty="No pinned notes. Pin one from its editor (the pin icon)."
+      empty={t("home.pinnedEmpty")}
     />
   );
 }
 
 /** The most recently modified notes (`list_notes` is already modified-desc). */
 export function RecentWidget({ vaultPath, refreshKey, onOpenNote }: WidgetProps) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<NoteSummary[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +128,7 @@ export function RecentWidget({ vaultPath, refreshKey, onOpenNote }: WidgetProps)
       cancelled = true;
     };
   }, [refreshKey]);
-  return <NoteList items={items} vaultPath={vaultPath} onOpenNote={onOpenNote} empty="No notes yet." />;
+  return <NoteList items={items} vaultPath={vaultPath} onOpenNote={onOpenNote} empty={t("home.recentEmpty")} />;
 }
 
 const SEARCH_RESULT_LIMIT = 12;
@@ -130,6 +139,7 @@ const SEARCH_DEBOUNCE_MS = 150;
  *  `search.query`, and a leading `#` switches to tag search (`search.byTag`),
  *  same as the palette. Click a hit to open it (`onOpenNote`). */
 export function SearchWidget({ onOpenNote }: WidgetProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
 
@@ -173,13 +183,13 @@ export function SearchWidget({ onOpenNote }: WidgetProps) {
         className="search-widget-input"
         type="text"
         value={query}
-        placeholder="Search notes…  (#tag to search by tag)"
+        placeholder={t("home.searchPlaceholder")}
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="search-widget-results">
         {hits.length === 0 ? (
           <p className="widget-empty muted">
-            {trimmed ? "No notes found." : "Type to search…  Start with # to search by tag."}
+            {trimmed ? t("home.searchNoResults") : t("home.searchTypeToSearch")}
           </p>
         ) : (
           hits.map((hit) => (
@@ -189,7 +199,7 @@ export function SearchWidget({ onOpenNote }: WidgetProps) {
               onClick={() => onOpenNote(hit.id)}
             >
               <div className="search-hit">
-                <span className="search-hit-title">{hit.title || "Untitled"}</span>
+                <span className="search-hit-title">{hit.title || t("common.untitled")}</span>
                 {hit.snippet && <span className="search-hit-snippet">{hit.snippet}</span>}
               </div>
             </button>
@@ -202,6 +212,7 @@ export function SearchWidget({ onOpenNote }: WidgetProps) {
 
 /** Jot a thought straight into the quick-note scratchpad without leaving Home. */
 export function QuickCaptureWidget({ onError }: WidgetProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   const [status, setStatus] = useState<"idle" | "saved">("idle");
 
@@ -220,7 +231,7 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
       setStatus("saved");
       window.setTimeout(() => setStatus("idle"), 1500);
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     }
   };
 
@@ -229,7 +240,7 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
       <textarea
         className="quick-capture-input"
         value={text}
-        placeholder="Capture a quick thought — it lands in Quick notes…"
+        placeholder={t("home.quickCapturePlaceholder")}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -239,9 +250,9 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
         }}
       />
       <div className="quick-capture-actions">
-        <span className="muted">{status === "saved" ? "Added to Quick notes" : "Ctrl+Enter to add"}</span>
+        <span className="muted">{status === "saved" ? t("home.addedToQuickNotes") : t("home.ctrlEnterToAdd")}</span>
         <button className="new-note" onClick={() => void submit()} disabled={!text.trim()}>
-          Add
+          {t("home.add")}
         </button>
       </div>
     </div>
@@ -253,6 +264,8 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
  * note-date link get a dot indicator, fetched the same way CalendarView's own
  * grid does (`calendar.range` over the visible month). */
 export function CalendarWidget({}: WidgetProps) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const openCalendarOn = useViewState((s) => s.openCalendarOn);
   const [cursor, setCursor] = useState(() => new Date());
   const [marked, setMarked] = useState<Set<string>>(new Set());
@@ -266,6 +279,13 @@ export function CalendarWidget({}: WidgetProps) {
     [gridStartKey, gridEndKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const weeks = gridDays.length / 7;
+  // Locale-correct short weekday labels (e.g. "Mo"/"Пн"/"Mo") for the header
+  // row, derived from the same week-start days rather than a hardcoded
+  // English array.
+  const weekdayLabels = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => format(addDays(gridStart, i), "EEEEEE", { locale: dateLocale })),
+    [gridStartKey, dateLocale], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Size day cells to a square that fits BOTH the available width and height —
   // whichever is the limiting dimension — so cells stay square yet the whole
@@ -315,17 +335,17 @@ export function CalendarWidget({}: WidgetProps) {
   return (
     <div className="mini-calendar">
       <div className="mini-calendar-header">
-        <button onClick={() => setCursor((c) => subMonths(c, 1))} aria-label="Previous month">
+        <button onClick={() => setCursor((c) => subMonths(c, 1))} aria-label={t("home.previousMonth")}>
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="mini-calendar-month">{format(cursor, "MMMM yyyy")}</span>
-        <button onClick={() => setCursor((c) => addMonths(c, 1))} aria-label="Next month">
+        <span className="mini-calendar-month">{format(cursor, "MMMM yyyy", { locale: dateLocale })}</span>
+        <button onClick={() => setCursor((c) => addMonths(c, 1))} aria-label={t("home.nextMonth")}>
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
       <div className="mini-calendar-weekdays" style={{ gridTemplateColumns: `repeat(7, ${cell}px)` }}>
-        {WEEKDAYS_SHORT.map((w) => (
-          <span key={w}>{w}</span>
+        {weekdayLabels.map((w, i) => (
+          <span key={i}>{w}</span>
         ))}
       </div>
       <div
@@ -341,7 +361,7 @@ export function CalendarWidget({}: WidgetProps) {
               key={key}
               className={`mini-calendar-day${dim ? " dim" : ""}${isToday(day) ? " today" : ""}${marked.has(key) ? " has-events" : ""}`}
               onClick={() => openCalendarOn(day)}
-              title={format(day, "EEEE, MMM d, yyyy")}
+              title={format(day, "EEEE, MMM d, yyyy", { locale: dateLocale })}
             >
               <span className="mini-calendar-daynum">{format(day, "d")}</span>
             </button>
@@ -356,6 +376,7 @@ export function CalendarWidget({}: WidgetProps) {
  *  groupings, `store/folderGroups.ts`) are frontend-only UI state, so their
  *  count comes straight from that store rather than a service call. */
 export function StorageWidget({ refreshKey }: WidgetProps) {
+  const { t } = useTranslation();
   const [noteCount, setNoteCount] = useState<number | null>(null);
   const [tagCount, setTagCount] = useState<number | null>(null);
   const groupCount = useFolderGroups((s) => s.groups.length);
@@ -383,15 +404,15 @@ export function StorageWidget({ refreshKey }: WidgetProps) {
     <div className="storage-stats">
       <div className="storage-stat">
         <span className="storage-stat-value">{noteCount ?? "–"}</span>
-        <span className="storage-stat-label">Notes</span>
+        <span className="storage-stat-label">{t("home.notes")}</span>
       </div>
       <div className="storage-stat">
         <span className="storage-stat-value">{tagCount ?? "–"}</span>
-        <span className="storage-stat-label">Tags</span>
+        <span className="storage-stat-label">{t("home.tags")}</span>
       </div>
       <div className="storage-stat">
         <span className="storage-stat-value">{groupCount}</span>
-        <span className="storage-stat-label">Groups</span>
+        <span className="storage-stat-label">{t("home.groups")}</span>
       </div>
     </div>
   );
@@ -401,13 +422,14 @@ export function StorageWidget({ refreshKey }: WidgetProps) {
  *  / quick-note save, so it reflects both "the app was open" and "a note was
  *  edited" that day. Loaded once at app boot; this widget only reads it. */
 export function StreakWidget({}: WidgetProps) {
+  const { t } = useTranslation();
   const currentStreak = useActivity((s) => s.currentStreak);
   const loaded = useActivity((s) => s.loaded);
   return (
     <div className="streak-widget">
       <Flame className="streak-icon h-8 w-8" />
       <span className="streak-count">{loaded ? currentStreak : "–"}</span>
-      <span className="streak-label">day{currentStreak === 1 ? "" : "s"} in a row</span>
+      <span className="streak-label">{t("home.streakLabel", { count: currentStreak })}</span>
     </div>
   );
 }
@@ -426,6 +448,8 @@ interface ClockConfig {
  *  Recent call `notes.list()` directly, Calendar calls `calendar.range()`
  *  directly, etc.). */
 export function ClockWidget({}: WidgetProps) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const [now, setNow] = useState(() => new Date());
   const [format24h, setFormat24h] = useState(true);
 
@@ -455,9 +479,9 @@ export function ClockWidget({}: WidgetProps) {
 
   return (
     <div className="clock-widget">
-      <span className="clock-time">{format(now, format24h ? "HH:mm:ss" : "h:mm:ss a")}</span>
-      <span className="clock-date">{format(now, "EEEE, MMMM d, yyyy")}</span>
-      <button className="clock-format-toggle" onClick={toggleFormat} title="Toggle 12h/24h time">
+      <span className="clock-time">{format(now, format24h ? "HH:mm:ss" : "h:mm:ss a", { locale: dateLocale })}</span>
+      <span className="clock-date">{format(now, "EEEE, MMMM d, yyyy", { locale: dateLocale })}</span>
+      <button className="clock-format-toggle" onClick={toggleFormat} title={t("home.toggleClockFormat")}>
         {format24h ? "24h" : "12h"}
       </button>
     </div>

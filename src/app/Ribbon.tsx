@@ -23,32 +23,33 @@ import {
   Tags as TagsIcon,
   type LucideIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/store/theme";
 import { useViewState, type AppView } from "@/store/viewState";
 
 type RibbonItem =
-  | { kind: "view"; id: AppView; label: string; icon: LucideIcon }
-  | { kind: "action"; id: "search" | "settings"; label: string; icon: LucideIcon };
+  | { kind: "view"; id: AppView; labelKey: string; icon: LucideIcon }
+  | { kind: "action"; id: "search" | "settings"; labelKey: string; icon: LucideIcon };
 
 /** Ribbon entries in display order. `Settings` is rendered separately, pinned to
  *  the bottom of the strip. */
 const ITEMS: RibbonItem[] = [
-  { kind: "view", id: "home", label: "Home", icon: HomeIcon },
-  { kind: "action", id: "search", label: "Search", icon: Search },
-  { kind: "view", id: "editor", label: "Notes", icon: FileText },
-  { kind: "view", id: "graph", label: "Graph", icon: Network },
-  { kind: "view", id: "calendar", label: "Calendar", icon: CalendarDays },
-  { kind: "view", id: "kanban", label: "Kanban", icon: KanbanIcon },
-  { kind: "view", id: "quicknotes", label: "Quick notes", icon: NotebookPen },
-  { kind: "view", id: "tags", label: "Tags", icon: TagsIcon },
-  { kind: "view", id: "templates", label: "Templates", icon: LayoutTemplate },
+  { kind: "view", id: "home", labelKey: "ribbon.home", icon: HomeIcon },
+  { kind: "action", id: "search", labelKey: "ribbon.search", icon: Search },
+  { kind: "view", id: "editor", labelKey: "ribbon.notes", icon: FileText },
+  { kind: "view", id: "graph", labelKey: "ribbon.graph", icon: Network },
+  { kind: "view", id: "calendar", labelKey: "ribbon.calendar", icon: CalendarDays },
+  { kind: "view", id: "kanban", labelKey: "ribbon.kanban", icon: KanbanIcon },
+  { kind: "view", id: "quicknotes", labelKey: "ribbon.quicknotes", icon: NotebookPen },
+  { kind: "view", id: "tags", labelKey: "ribbon.tags", icon: TagsIcon },
+  { kind: "view", id: "templates", labelKey: "ribbon.templates", icon: LayoutTemplate },
 ];
 
 const SETTINGS_ITEM: RibbonItem = {
   kind: "action",
   id: "settings",
-  label: "Settings",
+  labelKey: "ribbon.settings",
   icon: Settings,
 };
 
@@ -58,6 +59,7 @@ interface RibbonProps {
 }
 
 export function Ribbon({ onSearch, onSettings }: RibbonProps) {
+  const { t } = useTranslation();
   const view = useViewState((s) => s.view);
   const setView = useViewState((s) => s.setView);
   const expanded = useTheme((s) => s.ribbonExpanded);
@@ -74,6 +76,7 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
 
   const renderItem = (item: RibbonItem) => {
     const active = isActive(item);
+    const label = t(item.labelKey);
     return (
       <button
         key={`${item.kind}:${item.id}`}
@@ -81,8 +84,8 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
         role={item.kind === "view" ? "tab" : undefined}
         aria-selected={item.kind === "view" ? active : undefined}
         // Collapsed, the icon is the only affordance — keep the name reachable.
-        title={expanded ? undefined : item.label}
-        aria-label={item.label}
+        title={expanded ? undefined : label}
+        aria-label={label}
         onClick={() => {
           if (item.kind === "view") setView(item.id);
           else if (item.id === "search") onSearch();
@@ -90,7 +93,7 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
         }}
       >
         <item.icon className="ribbon-item-icon h-[18px] w-[18px]" />
-        {expanded && <span className="ribbon-item-label">{item.label}</span>}
+        {expanded && <span className="ribbon-item-label">{label}</span>}
       </button>
     );
   };
@@ -107,8 +110,8 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
         {renderItem(SETTINGS_ITEM)}
         <button
           className="ribbon-item ribbon-toggle"
-          title={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          title={expanded ? t("ribbon.collapseSidebar") : t("ribbon.expandSidebar")}
+          aria-label={expanded ? t("ribbon.collapseSidebar") : t("ribbon.expandSidebar")}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
@@ -117,7 +120,7 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
           ) : (
             <ChevronsRight className="ribbon-item-icon h-[18px] w-[18px]" />
           )}
-          {expanded && <span className="ribbon-item-label">Collapse</span>}
+          {expanded && <span className="ribbon-item-label">{t("ribbon.collapse")}</span>}
         </button>
       </div>
     </nav>

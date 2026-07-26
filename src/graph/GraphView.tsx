@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import Graph from "graphology";
 import Sigma from "sigma";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
@@ -23,6 +24,7 @@ import { inferSettings } from "graphology-layout-forceatlas2";
 import louvain from "graphology-communities-louvain";
 
 import { config, links, notes } from "../services";
+import { localizeError } from "@/i18n/errors";
 import { useViewState } from "../store/viewState";
 import { useTheme } from "../store/theme";
 import { useTagColors } from "@/store/tagColors";
@@ -30,19 +32,6 @@ import { ViewFrame } from "@/components/ViewFrame";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
 import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
 import { NEUTRAL_DARK, NEUTRAL_LIGHT, DIM_DARK, DIM_LIGHT, clusterColor, paletteAssigner, type GraphColorMode } from "./nodeColor";
-import GlossyNodeProgram from "./GlossyNodeProgram";
-
-/** The two node-rendering programs a node's `type` attribute can select
- *  (`GraphView.tsx`'s Sigma instance registers `glossy`; sigma's own
- *  built-in `circle` — the plain flat dot — needs no registration). Kept as
- *  a union so it's easy to add another preset (e.g. "glow") later, per the
- *  task's own framing — each new preset is just another `nodeProgramClasses`
- *  entry plus a case in `nodeTypeFor` below. */
-export type NodeStyle = "glossy" | "flat";
-
-function nodeTypeFor(style: NodeStyle): string {
-  return style === "flat" ? "circle" : "glossy";
-}
 
 /** Vault-scoped file the graph persists its view settings to (through Rust). */
 const GRAPH_VIEW_CONFIG = "graph-view.json";
@@ -54,7 +43,7 @@ const GRAPH_VIEW_CONFIG = "graph-view.json";
 const LABEL_COLOR_LIGHT = "#000";
 const LABEL_COLOR_DARK = "#e4e4e7";
 
-/** Edges: thin, muted lines so nodes — now carrying the real signal via
+/** Edges: thin, muted lines so nodes — carrying the real signal via
  *  color/size — pop instead of the canvas reading as a hairball. Solid,
  *  pre-blended tones rather than an alpha color: an `rgba()` at low alpha
  *  measured out to barely any contrast against the near-white light-mode
@@ -83,7 +72,6 @@ const DEFAULT_NODE_SIZE_SCALE = 1;
 const DEFAULT_EDGE_LENGTH = 1;
 const DEFAULT_COLOR_MODE: GraphColorMode = "folder";
 const DEFAULT_SIZE_BY_DEGREE = true;
-const DEFAULT_NODE_STYLE: NodeStyle = "glossy";
 
 /** Persisted graph view state (CLAUDE.md §5.2: `.vault/config/graph-view.json`).
  *  Camera + the panel's display settings; filters/pinned positions are future
@@ -95,7 +83,6 @@ interface GraphViewSettings {
   edgeLength?: number;
   colorMode?: GraphColorMode;
   sizeByDegree?: boolean;
-  nodeStyle?: NodeStyle;
 }
 
 /** A note's derived folder path from its vault-relative file path
@@ -108,6 +95,7 @@ function folderOf(path: string): string {
 type Status = "loading" | "ready" | "empty" | "error";
 
 export function GraphView() {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const openNote = useViewState((s) => s.openNote);
   const resolvedTheme = useTheme((s) => s.resolved);
@@ -123,7 +111,6 @@ export function GraphView() {
   const [edgeLength, setEdgeLength] = useState(DEFAULT_EDGE_LENGTH);
   const [colorMode, setColorMode] = useState<GraphColorMode>(DEFAULT_COLOR_MODE);
   const [sizeByDegree, setSizeByDegree] = useState(DEFAULT_SIZE_BY_DEGREE);
-  const [nodeStyle, setNodeStyle] = useState<NodeStyle>(DEFAULT_NODE_STYLE);
 
   // Live instances, reachable by the panel's handlers without rebuilding them.
   const sigmaRef = useRef<Sigma | null>(null);
@@ -300,27 +287,6 @@ export function GraphView() {
     [scheduleSave],
   );
 
-  /** Switch every node's rendering program (`type` attribute) live — one
-   *  batched pass, same shape as the other setting handlers, and entirely a
-   *  render-program swap: no positions/layout touched, so it's as cheap as
-   *  `onColorMode`/`onSizeByDegree` and equally off the FA2 worker path. */
-  const onNodeStyle = useCallback(
-    (style: NodeStyle) => {
-      setNodeStyle(style);
-      settingsRef.current.nodeStyle = style;
-      const type = nodeTypeFor(style);
-      graphRef.current?.updateEachNodeAttributes(
-        (_n, attr) => {
-          attr.type = type;
-          return attr;
-        },
-        { attributes: ["type"] },
-      );
-      scheduleSave();
-    },
-    [scheduleSave],
-  );
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -351,7 +317,6 @@ export function GraphView() {
         const initEdgeLength = saved?.edgeLength ?? DEFAULT_EDGE_LENGTH;
         const initColorMode = saved?.colorMode ?? DEFAULT_COLOR_MODE;
         const initSizeByDegree = saved?.sizeByDegree ?? DEFAULT_SIZE_BY_DEGREE;
-        const initNodeStyle = saved?.nodeStyle ?? DEFAULT_NODE_STYLE;
         settingsRef.current = {
           camera: saved?.camera,
           showLabels: initShowLabels,
@@ -359,13 +324,11 @@ export function GraphView() {
           edgeLength: initEdgeLength,
           colorMode: initColorMode,
           sizeByDegree: initSizeByDegree,
-          nodeStyle: initNodeStyle,
         };
         setShowLabels(initShowLabels);
         setNodeSizeScale(initNodeScale);
         setEdgeLength(initEdgeLength);
         setColorMode(initColorMode);
-        setNodeStyle(initNodeStyle);
         setSizeByDegree(initSizeByDegree);
 
         // Folder (from the note's own path) and primary tag (first of
@@ -382,16 +345,14 @@ export function GraphView() {
         // something to relax from (it needs x/y on every node).
         const graph = new Graph();
         graphRef.current = graph;
-        const initNodeType = nodeTypeFor(initNodeStyle);
         for (const node of data.nodes) {
           graph.addNode(node.id, {
-            label: node.title || "Untitled",
+            label: node.title || t("common.untitled"),
             x: Math.random(),
             y: Math.random(),
             size: NODE_BASE_SIZE,
             baseSize: NODE_BASE_SIZE,
             color: neutralColorRef.current,
-            type: initNodeType,
             folder: folderById(node.id),
             tag: tagById(node.id),
             cluster: 0,
@@ -462,11 +423,6 @@ export function GraphView() {
           // Draw the note title centered directly under the node.
           defaultDrawNodeLabel: drawNodeLabelBelow,
           defaultDrawNodeHover: drawNodeHoverBelow,
-          // The "glossy sphere" node style (default) — a real batched WebGL
-          // program, see GlossyNodeProgram.ts. sigma's built-in "circle" type
-          // (the flat dot, selected by the "Flat" node style) needs no entry
-          // here; it's already registered by sigma itself.
-          nodeProgramClasses: { glossy: GlossyNodeProgram },
         });
         sigmaRef.current = sigma;
 
@@ -643,7 +599,7 @@ export function GraphView() {
         setStatus("ready");
       } catch (e) {
         if (!cancelled) {
-          setError(String(e));
+          setError(localizeError(e, t));
           setStatus("error");
         }
       }
@@ -688,7 +644,7 @@ export function GraphView() {
 
   return (
     <ViewFrame
-      title="Graph"
+      title={t("graph.title")}
       fullBleed
       actions={
         status === "ready" &&
@@ -696,8 +652,8 @@ export function GraphView() {
           <button
             className="graph-panel-toggle"
             onClick={togglePanel}
-            title="Graph info & settings (Alt+I)"
-            aria-label="Open graph info panel"
+            title={t("graph.openPanel")}
+            aria-label={t("graph.openPanel")}
           >
             <SlidersHorizontal className="h-4 w-4" />
           </button>
@@ -705,12 +661,8 @@ export function GraphView() {
       }
     >
       <div className="graph-view">
-        {status === "empty" && (
-          <div className="centered muted">
-            No links yet — connect notes with <code>[[links]]</code> to see them here.
-          </div>
-        )}
-        {status === "error" && <div className="centered error">Couldn't load the graph: {error}</div>}
+        {status === "empty" && <div className="centered muted">{t("graph.empty")}</div>}
+        {status === "error" && <div className="centered error">{t("graph.loadError", { error })}</div>}
         <div
           ref={containerRef}
           className="graph-canvas"
@@ -725,13 +677,11 @@ export function GraphView() {
             edgeLength={edgeLength}
             colorMode={colorMode}
             sizeByDegree={sizeByDegree}
-            nodeStyle={nodeStyle}
             onToggleLabels={onToggleLabels}
             onNodeSize={onNodeSize}
             onEdgeLength={onEdgeLength}
             onColorMode={onColorMode}
             onSizeByDegree={onSizeByDegree}
-            onNodeStyle={onNodeStyle}
             onClose={() => setPanelOpen(false)}
           />
         )}

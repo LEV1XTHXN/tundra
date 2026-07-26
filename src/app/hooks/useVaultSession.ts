@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { pickVaultFolder, vault } from "@/services";
 import type { NoteSummary, VaultInfo } from "@/services";
-import { errorMessage } from "@/lib/errorMessage";
+import { localizeError } from "@/i18n/errors";
 import { useViewState } from "@/store/viewState";
 import { useKnownVaults } from "@/store/knownVaults";
 
@@ -28,6 +29,7 @@ export interface VaultSession {
 export function useVaultSession(
   refreshTree: () => Promise<NoteSummary[]>,
 ): VaultSession {
+  const { t } = useTranslation();
   const [vaultInfo, setVaultInfo] = useState<VaultInfo | null>(null);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,10 +50,10 @@ export function useVaultSession(
         // Settings list reflects it immediately.
         void useKnownVaults.getState().refresh();
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       }
     },
-    [refreshTree],
+    [refreshTree, t],
   );
 
   // On launch, reopen the last vault so returning users skip onboarding.
@@ -72,12 +74,12 @@ export function useVaultSession(
           void useKnownVaults.getState().refresh();
         }
       } catch (e) {
-        setError(errorMessage(e));
+        setError(localizeError(e, t));
       } finally {
         setBooting(false);
       }
     })();
-  }, [refreshTree]);
+  }, [refreshTree, t]);
 
   const onChooseFolder = useCallback(async () => {
     const path = await pickVaultFolder();
@@ -88,9 +90,9 @@ export function useVaultSession(
     try {
       await switchVault(await vault.defaultPath());
     } catch (e) {
-      setError(errorMessage(e));
+      setError(localizeError(e, t));
     }
-  }, [switchVault]);
+  }, [switchVault, t]);
 
   return { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault };
 }

@@ -27,11 +27,14 @@ import {
   startOfWeek,
 } from "date-fns";
 import { Link2, Plus, Trash2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { calendar, notes } from "@/services";
 import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary } from "@/services";
 import { useTheme } from "@/store/theme";
 import { useViewState } from "@/store/viewState";
+import { useDateLocale } from "@/i18n/dateLocale";
+import { localizeError } from "@/i18n/errors";
 import { ViewFrame } from "@/components/ViewFrame";
 import {
   Dialog,
@@ -98,6 +101,8 @@ export function CalendarView({
   onOpenNote: (id: string) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const [mode, setMode] = useState<Mode>("month");
   // A date inside the currently-shown period; navigation moves it by month/week.
   // Jumps to the Home widget's clicked day when set (consumed once — see
@@ -134,7 +139,7 @@ export function CalendarView({
         setEvents(r.events);
         setNoteDates(r.note_dates);
       })
-      .catch((e) => onError(String(e)));
+      .catch((e) => onError(localizeError(e, t)));
   }, [gridStart, gridEnd, onError]);
 
   useEffect(() => load(), [load]);
@@ -166,15 +171,15 @@ export function CalendarView({
 
   const heading =
     mode === "week"
-      ? `${format(gridStart, "MMM d")} – ${format(gridEnd, "MMM d, yyyy")}`
-      : format(cursor, "MMMM yyyy");
+      ? `${format(gridStart, "MMM d", { locale: dateLocale })} – ${format(gridEnd, "MMM d, yyyy", { locale: dateLocale })}`
+      : format(cursor, "MMMM yyyy", { locale: dateLocale });
 
   const unlinkNote = useCallback(
     (nd: NoteDateEntry) => {
       const date: NoteDate = { date: nd.date, event_id: nd.event_id };
-      calendar.removeNoteDate(nd.note_id, date).then(load).catch((e) => onError(String(e)));
+      calendar.removeNoteDate(nd.note_id, date).then(load).catch((e) => onError(localizeError(e, t)));
     },
-    [load, onError],
+    [load, onError, t],
   );
 
   const calendarActions = (
@@ -327,8 +332,10 @@ function WeekTimeGrid({
   onUnlinkNote: (nd: NoteDateEntry) => void;
   onLinkNote: (day: Date) => void;
 }) {
+  const dateLocale = useDateLocale();
   const timeFormat = useTheme((s) => s.timeFormat);
-  const hourLabel = (h: number) => format(new Date(2000, 0, 1, h), timeFormat === "24h" ? "HH:mm" : "h a");
+  const hourLabel = (h: number) =>
+    format(new Date(2000, 0, 1, h), timeFormat === "24h" ? "HH:mm" : "h a", { locale: dateLocale });
 
   return (
     <div className="calendar-week">
@@ -341,7 +348,7 @@ function WeekTimeGrid({
           return (
             <div key={key} className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}`}>
               <div className="calendar-week-daylabel">
-                <span>{format(day, "EEE")}</span>
+                <span>{format(day, "EEE", { locale: dateLocale })}</span>
                 <span className="calendar-daynum">{format(day, "d")}</span>
               </div>
               <div className="calendar-week-allday">
@@ -449,6 +456,7 @@ function EventDialog({
   onSaved: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation();
   const initialStart = event
     ? parseISO(event.start)
     : hour !== undefined
@@ -486,7 +494,7 @@ function EventDialog({
       else await calendar.createEvent(payload);
       onSaved();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     } finally {
       setBusy(false);
     }
@@ -499,7 +507,7 @@ function EventDialog({
       await calendar.deleteEvent(event.id);
       onSaved();
     } catch (e) {
-      onError(String(e));
+      onError(localizeError(e, t));
     } finally {
       setBusy(false);
     }
@@ -586,12 +594,14 @@ function LinkNoteDialog({
   onLinked: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const [all, setAll] = useState<NoteSummary[]>([]);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    notes.list().then(setAll).catch((e) => onError(String(e)));
-  }, [onError]);
+    notes.list().then(setAll).catch((e) => onError(localizeError(e, t)));
+  }, [onError, t]);
 
   const matches = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -603,14 +613,14 @@ function LinkNoteDialog({
     calendar
       .addNoteDate(id, { date: dayKey(day), event_id: null })
       .then(onLinked)
-      .catch((e) => onError(String(e)));
+      .catch((e) => onError(localizeError(e, t)));
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Link a note to {format(day, "MMM d, yyyy")}</DialogTitle>
+          <DialogTitle>Link a note to {format(day, "MMM d, yyyy", { locale: dateLocale })}</DialogTitle>
         </DialogHeader>
         <Input autoFocus placeholder="Search notes…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <ul className="calendar-notepicker">

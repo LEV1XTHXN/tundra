@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import "./index.css";
 import { installWebkitFileInputFix } from "./editor/webkitFileInputFix";
+import "./i18n";
 
 // Linux/WebKitGTK: unbreak BlockNote's file-block picker (empty on `accept="*/*"`).
 installWebkitFileInputFix();

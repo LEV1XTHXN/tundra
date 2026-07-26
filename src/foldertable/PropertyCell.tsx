@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Check, Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { PropertyValue } from "@/services";
 import { tagChipStyle } from "@/store/tagColors";
 import type { PropertyDef, SelectOption } from "@/store/folderViews";
+import { useDateLocale } from "@/i18n/dateLocale";
 
 interface PropertyCellProps {
   def: PropertyDef;
@@ -82,6 +84,7 @@ export function PropertyCell({ def, value, onChange, onAddOption }: PropertyCell
 }
 
 function TextCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   if (editing) {
@@ -107,12 +110,13 @@ function TextCell({ value, onChange }: { value: string; onChange: (v: string) =>
   }
   return (
     <button className="ft-cell-button" onClick={() => { setDraft(value); setEditing(true); }}>
-      {value || <span className="ft-cell-empty">Empty</span>}
+      {value || <span className="ft-cell-empty">{t("folderView.empty")}</span>}
     </button>
   );
 }
 
 function NumberCell({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value === null ? "" : String(value));
   if (editing) {
@@ -141,19 +145,21 @@ function NumberCell({ value, onChange }: { value: number | null; onChange: (v: n
   }
   return (
     <button className="ft-cell-button" onClick={() => { setDraft(value === null ? "" : String(value)); setEditing(true); }}>
-      {value === null ? <span className="ft-cell-empty">Empty</span> : value}
+      {value === null ? <span className="ft-cell-empty">{t("folderView.empty")}</span> : value}
     </button>
   );
 }
 
 function DateCell({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
   const [open, setOpen] = useState(false);
   const selected = value ? parseISO(value) : undefined;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="ft-cell-button">
-          {selected ? format(selected, "MMMM d, yyyy") : <span className="ft-cell-empty">Empty</span>}
+          {selected ? format(selected, "MMMM d, yyyy", { locale: dateLocale }) : <span className="ft-cell-empty">{t("folderView.empty")}</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className="ft-date-popover" align="start">
@@ -167,7 +173,7 @@ function DateCell({ value, onChange }: { value: string | null; onChange: (v: str
         />
         {value && (
           <button className="ft-popover-clear" onClick={() => { onChange(null); setOpen(false); }}>
-            <X size={12} /> Clear
+            <X size={12} /> {t("folderView.clear")}
           </button>
         )}
       </PopoverContent>
@@ -186,6 +192,7 @@ function SelectCell({
   onChange: (id: string | null) => void;
   onAddOption: (name: string) => SelectOption;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const current = selected ? optionById(def, selected) : undefined;
@@ -197,14 +204,14 @@ function SelectCell({
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(""); }}>
       <PopoverTrigger asChild>
         <button className="ft-cell-button">
-          {current ? <OptionChip option={current} /> : <span className="ft-cell-empty">Empty</span>}
+          {current ? <OptionChip option={current} /> : <span className="ft-cell-empty">{t("folderView.empty")}</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className="ft-select-popover" align="start">
         <input
           autoFocus
           className="ft-select-search"
-          placeholder="Search or create…"
+          placeholder={t("folderView.searchOrCreate")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -229,13 +236,13 @@ function SelectCell({
                 setQuery("");
               }}
             >
-              <Plus size={12} /> Create “{query.trim()}”
+              <Plus size={12} /> {t("folderView.create", { query: query.trim() })}
             </button>
           )}
         </div>
         {selected && (
           <button className="ft-popover-clear" onClick={() => { onChange(null); setOpen(false); }}>
-            <X size={12} /> Clear
+            <X size={12} /> {t("folderView.clear")}
           </button>
         )}
       </PopoverContent>
@@ -254,6 +261,7 @@ function MultiSelectCell({
   onChange: (ids: string[]) => void;
   onAddOption: (name: string) => SelectOption;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const options = def.options ?? [];
@@ -271,7 +279,7 @@ function MultiSelectCell({
           {chosen.length ? (
             chosen.map((o) => <OptionChip key={o.id} option={o} onRemove={() => toggle(o.id)} />)
           ) : (
-            <span className="ft-cell-empty">Empty</span>
+            <span className="ft-cell-empty">{t("folderView.empty")}</span>
           )}
         </button>
       </PopoverTrigger>
@@ -279,7 +287,7 @@ function MultiSelectCell({
         <input
           autoFocus
           className="ft-select-search"
-          placeholder="Search or create…"
+          placeholder={t("folderView.searchOrCreate")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -299,7 +307,7 @@ function MultiSelectCell({
                 setQuery("");
               }}
             >
-              <Plus size={12} /> Create “{query.trim()}”
+              <Plus size={12} /> {t("folderView.create", { query: query.trim() })}
             </button>
           )}
         </div>

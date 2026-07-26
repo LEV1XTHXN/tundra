@@ -6,6 +6,7 @@
  * `React.lazy`, matching how `App.tsx` lazy-loads `GraphView` itself.
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import Graph from "graphology";
 import Sigma from "sigma";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
@@ -26,6 +27,7 @@ const MINI_GRAPH_NODE_DEGREE_SCALE = 1.6;
  *  the graph is tiny on screen. Clicking a node opens it; clicking the widget
  *  otherwise jumps to the full Graph view. */
 export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const setView = useViewState((s) => s.setView);
   const [status, setStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
@@ -50,7 +52,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
         const graph = new Graph();
         for (const node of data.nodes) {
           graph.addNode(node.id, {
-            label: node.title || "Untitled",
+            label: node.title || t("common.untitled"),
             x: Math.random(),
             y: Math.random(),
             size: MINI_GRAPH_NODE_SIZE,
@@ -98,12 +100,8 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
 
   return (
     <div className="mini-graph">
-      {status === "empty" && (
-        <p className="widget-empty muted">
-          No links yet — connect notes with <code>[[links]]</code>.
-        </p>
-      )}
-      {status === "error" && <p className="widget-empty muted">Couldn't load the graph.</p>}
+      {status === "empty" && <p className="widget-empty muted">{t("home.widgets.miniGraph.empty")}</p>}
+      {status === "error" && <p className="widget-empty muted">{t("home.widgets.miniGraph.error")}</p>}
       <div
         ref={containerRef}
         className="mini-graph-canvas"
@@ -111,7 +109,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
       />
       {status === "ready" && (
         <button className="mini-graph-open" onClick={() => setView("graph")}>
-          Open full graph →
+          {t("home.widgets.miniGraph.openFull")}
         </button>
       )}
     </div>
