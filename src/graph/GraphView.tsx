@@ -20,20 +20,32 @@ import Graph from "graphology";
 import Sigma from "sigma";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
 import { inferSettings } from "graphology-layout-forceatlas2";
+import louvain from "graphology-communities-louvain";
 
-import { config, links } from "../services";
+import { config, links, notes } from "../services";
 import { useViewState } from "../store/viewState";
 import { useTheme } from "../store/theme";
+import { useTagColors } from "@/store/tagColors";
 import { ViewFrame } from "@/components/ViewFrame";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
 import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
+import { NEUTRAL_DARK, NEUTRAL_LIGHT, DIM_DARK, DIM_LIGHT, clusterColor, paletteAssigner, type GraphColorMode } from "./nodeColor";
+import GlossyNodeProgram from "./GlossyNodeProgram";
+
+/** The two node-rendering programs a node's `type` attribute can select
+ *  (`GraphView.tsx`'s Sigma instance registers `glossy`; sigma's own
+ *  built-in `circle` — the plain flat dot — needs no registration). Kept as
+ *  a union so it's easy to add another preset (e.g. "glow") later, per the
+ *  task's own framing — each new preset is just another `nodeProgramClasses`
+ *  entry plus a case in `nodeTypeFor` below. */
+export type NodeStyle = "glossy" | "flat";
+
+function nodeTypeFor(style: NodeStyle): string {
+  return style === "flat" ? "circle" : "glossy";
+}
 
 /** Vault-scoped file the graph persists its view settings to (through Rust). */
 const GRAPH_VIEW_CONFIG = "graph-view.json";
-
-/** Node fill — a single accent that reads on the (light) shell background; nodes
- *  are deliberately uniform dots, so scale/importance is shown by size, not color. */
-const NODE_COLOR = "#5b8def";
 
 /** Node label text colour, per theme. Sigma resolves labels from the
  *  `labelColor` setting; the default `#000` is unreadable on the dark shell, so
@@ -42,18 +54,36 @@ const NODE_COLOR = "#5b8def";
 const LABEL_COLOR_LIGHT = "#000";
 const LABEL_COLOR_DARK = "#e4e4e7";
 
+/** Edges: thin, muted lines so nodes — now carrying the real signal via
+ *  color/size — pop instead of the canvas reading as a hairball. Solid,
+ *  pre-blended tones rather than an alpha color: an `rgba()` at low alpha
+ *  measured out to barely any contrast against the near-white light-mode
+ *  canvas (a 32%-alpha mid-gray blends to ~82% of the way back to white —
+ *  practically invisible on a thin 1px line), so these are picked for
+ *  contrast against each theme's actual canvas background directly. */
+const EDGE_COLOR_LIGHT = "#a3a3a3"; // neutral-400 — clearly visible on the near-white canvas
+const EDGE_COLOR_DARK = "#52525b"; // neutral-600 — visible but muted on the near-black canvas
+const EDGE_SIZE = 1;
+
 /** Node sizing. Sigma v3 hit-tests via pixel-perfect WebGL color-picking, so a
  *  node's clickable area == its drawn size (there's no separate hit radius). A
  *  generous base therefore does double duty: bigger dots AND an easier click
- *  target. Hubs grow on top via sqrt(degree) so very linked notes don't balloon.
- *  The user-facing "node size" slider multiplies this per-node base. */
+ *  target. Hubs grow on top via sqrt(degree) so very linked notes don't balloon,
+ *  clamped at NODE_MAX_SIZE so a handful of extreme hubs can't dwarf everything
+ *  else. The user-facing "node size" slider multiplies this per-node base.
+ *  "Size by connections" (sizeByDegree) can turn the degree term off entirely,
+ *  leaving every node at NODE_BASE_SIZE. */
 const NODE_BASE_SIZE = 8;
 const NODE_DEGREE_SCALE = 2.5;
+const NODE_MAX_SIZE = 26;
 
 /** Settings defaults (also the panel's reset baseline). */
 const DEFAULT_SHOW_LABELS = true;
 const DEFAULT_NODE_SIZE_SCALE = 1;
 const DEFAULT_EDGE_LENGTH = 1;
+const DEFAULT_COLOR_MODE: GraphColorMode = "folder";
+const DEFAULT_SIZE_BY_DEGREE = true;
+const DEFAULT_NODE_STYLE: NodeStyle = "glossy";
 
 /** Persisted graph view state (CLAUDE.md §5.2: `.vault/config/graph-view.json`).
  *  Camera + the panel's display settings; filters/pinned positions are future
@@ -63,6 +93,16 @@ interface GraphViewSettings {
   showLabels?: boolean;
   nodeSizeScale?: number;
   edgeLength?: number;
+  colorMode?: GraphColorMode;
+  sizeByDegree?: boolean;
+  nodeStyle?: NodeStyle;
+}
+
+/** A note's derived folder path from its vault-relative file path
+ *  (`"Biology/Plants/Cactus"` → `"Biology/Plants"`; a root note → `""`). */
+function folderOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
 }
 
 type Status = "loading" | "ready" | "empty" | "error";
@@ -81,13 +121,27 @@ export function GraphView() {
   const [showLabels, setShowLabels] = useState(DEFAULT_SHOW_LABELS);
   const [nodeSizeScale, setNodeSizeScale] = useState(DEFAULT_NODE_SIZE_SCALE);
   const [edgeLength, setEdgeLength] = useState(DEFAULT_EDGE_LENGTH);
+  const [colorMode, setColorMode] = useState<GraphColorMode>(DEFAULT_COLOR_MODE);
+  const [sizeByDegree, setSizeByDegree] = useState(DEFAULT_SIZE_BY_DEGREE);
+  const [nodeStyle, setNodeStyle] = useState<NodeStyle>(DEFAULT_NODE_STYLE);
 
   // Live instances, reachable by the panel's handlers without rebuilding them.
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
-  // Current label colour, kept in a ref so the (theme-independent) build effect
-  // can read the live value at construction without re-running on theme change.
+  // Current label/edge/dim/neutral colours, kept in refs so the
+  // (theme-independent) build effect can read the live value at construction
+  // without re-running on theme change — the theme-sync effect below updates
+  // both the ref and, if sigma is already live, the running instance.
   const labelColorRef = useRef(resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT);
+  const edgeColorRef = useRef(resolvedTheme === "dark" ? EDGE_COLOR_DARK : EDGE_COLOR_LIGHT);
+  const dimColorRef = useRef(resolvedTheme === "dark" ? DIM_DARK : DIM_LIGHT);
+  const neutralColorRef = useRef(resolvedTheme === "dark" ? NEUTRAL_DARK : NEUTRAL_LIGHT);
+  // Per-graph, built once (the FOLDER/TAG value set is fixed for as long as
+  // this graph snapshot is loaded): value → palette-color functions the
+  // "color by" modes read from. Cluster ids need no assigner (indexes the
+  // palette directly — see `nodeColor.ts`).
+  const folderColorRef = useRef<(folder: string) => string>(() => neutralColorRef.current);
+  const tagColorRef = useRef<(tag: string) => string>(() => neutralColorRef.current);
   const layoutRef = useRef<FA2Layout | null>(null);
   // Full persisted settings (camera + display) — the single object we write, so
   // saving one field never clobbers another.
@@ -187,6 +241,86 @@ export function GraphView() {
     [applyEdgeLength, scheduleSave],
   );
 
+  /** Re-derive every node's `color` from its stored `folder`/`tag`/`cluster`
+   *  attributes (set once at build time) for the given mode — one batched
+   *  pass, same shape as `onNodeSize` above. Cheap and entirely off the FA2
+   *  worker path: it only ever touches the graphology model's `color`
+   *  attribute, never positions/layout. */
+  const recolorGraph = useCallback((mode: GraphColorMode) => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const tagColors = useTagColors.getState().colors;
+    const neutral = neutralColorRef.current;
+    graph.updateEachNodeAttributes(
+      (_n, attr) => {
+        if (mode === "folder") {
+          attr.color = folderColorRef.current((attr.folder as string) ?? "");
+        } else if (mode === "cluster") {
+          attr.color = clusterColor((attr.cluster as number) ?? 0);
+        } else {
+          const tag = attr.tag as string | null;
+          attr.color = tag ? (tagColors[tag] ?? tagColorRef.current(tag)) : neutral;
+        }
+        return attr;
+      },
+      { attributes: ["color"] },
+    );
+  }, []);
+
+  const onColorMode = useCallback(
+    (mode: GraphColorMode) => {
+      setColorMode(mode);
+      settingsRef.current.colorMode = mode;
+      recolorGraph(mode);
+      scheduleSave();
+    },
+    [recolorGraph, scheduleSave],
+  );
+
+  const onSizeByDegree = useCallback(
+    (enabled: boolean) => {
+      setSizeByDegree(enabled);
+      settingsRef.current.sizeByDegree = enabled;
+      const graph = graphRef.current;
+      const scale = settingsRef.current.nodeSizeScale ?? DEFAULT_NODE_SIZE_SCALE;
+      graph?.updateEachNodeAttributes(
+        (node, attr) => {
+          const degree = graph.degree(node);
+          const base = enabled
+            ? Math.min(NODE_BASE_SIZE + Math.sqrt(degree) * NODE_DEGREE_SCALE, NODE_MAX_SIZE)
+            : NODE_BASE_SIZE;
+          attr.baseSize = base;
+          attr.size = base * scale;
+          return attr;
+        },
+        { attributes: ["baseSize", "size"] },
+      );
+      scheduleSave();
+    },
+    [scheduleSave],
+  );
+
+  /** Switch every node's rendering program (`type` attribute) live — one
+   *  batched pass, same shape as the other setting handlers, and entirely a
+   *  render-program swap: no positions/layout touched, so it's as cheap as
+   *  `onColorMode`/`onSizeByDegree` and equally off the FA2 worker path. */
+  const onNodeStyle = useCallback(
+    (style: NodeStyle) => {
+      setNodeStyle(style);
+      settingsRef.current.nodeStyle = style;
+      const type = nodeTypeFor(style);
+      graphRef.current?.updateEachNodeAttributes(
+        (_n, attr) => {
+          attr.type = type;
+          return attr;
+        },
+        { attributes: ["type"] },
+      );
+      scheduleSave();
+    },
+    [scheduleSave],
+  );
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -199,9 +333,10 @@ export function GraphView() {
 
     void (async () => {
       try {
-        const [data, saved] = await Promise.all([
+        const [data, saved, noteSummaries] = await Promise.all([
           links.graph(),
           config.read<GraphViewSettings>(GRAPH_VIEW_CONFIG),
+          notes.list(),
         ]);
         if (cancelled) return;
 
@@ -214,20 +349,40 @@ export function GraphView() {
         const initShowLabels = saved?.showLabels ?? DEFAULT_SHOW_LABELS;
         const initNodeScale = saved?.nodeSizeScale ?? DEFAULT_NODE_SIZE_SCALE;
         const initEdgeLength = saved?.edgeLength ?? DEFAULT_EDGE_LENGTH;
+        const initColorMode = saved?.colorMode ?? DEFAULT_COLOR_MODE;
+        const initSizeByDegree = saved?.sizeByDegree ?? DEFAULT_SIZE_BY_DEGREE;
+        const initNodeStyle = saved?.nodeStyle ?? DEFAULT_NODE_STYLE;
         settingsRef.current = {
           camera: saved?.camera,
           showLabels: initShowLabels,
           nodeSizeScale: initNodeScale,
           edgeLength: initEdgeLength,
+          colorMode: initColorMode,
+          sizeByDegree: initSizeByDegree,
+          nodeStyle: initNodeStyle,
         };
         setShowLabels(initShowLabels);
         setNodeSizeScale(initNodeScale);
         setEdgeLength(initEdgeLength);
+        setColorMode(initColorMode);
+        setNodeStyle(initNodeStyle);
+        setSizeByDegree(initSizeByDegree);
+
+        // Folder (from the note's own path) and primary tag (first of
+        // NoteSummary.tags, if any) per note — the two non-degree, non-cluster
+        // "color by" sources. Looked up once here rather than threaded through
+        // `links.graph()`'s own (Rust) response, since `notes.list()` already
+        // carries both and this avoids widening that IPC shape for a purely
+        // presentational feature.
+        const summaryById = new Map(noteSummaries.map((s) => [s.id, s]));
+        const folderById = (id: string) => folderOf(summaryById.get(id)?.path ?? "");
+        const tagById = (id: string): string | null => summaryById.get(id)?.tags?.[0] ?? null;
 
         // Build the graphology model. Seed random positions so ForceAtlas2 has
         // something to relax from (it needs x/y on every node).
         const graph = new Graph();
         graphRef.current = graph;
+        const initNodeType = nodeTypeFor(initNodeStyle);
         for (const node of data.nodes) {
           graph.addNode(node.id, {
             label: node.title || "Untitled",
@@ -235,7 +390,11 @@ export function GraphView() {
             y: Math.random(),
             size: NODE_BASE_SIZE,
             baseSize: NODE_BASE_SIZE,
-            color: NODE_COLOR,
+            color: neutralColorRef.current,
+            type: initNodeType,
+            folder: folderById(node.id),
+            tag: tagById(node.id),
+            cluster: 0,
           });
         }
         for (const edge of data.edges) {
@@ -246,20 +405,49 @@ export function GraphView() {
             graph.hasNode(edge.target) &&
             !graph.hasDirectedEdge(edge.source, edge.target)
           ) {
-            graph.addDirectedEdge(edge.source, edge.target);
+            graph.addDirectedEdge(edge.source, edge.target, { size: EDGE_SIZE });
           }
         }
 
+        // Community detection (Louvain) — one cheap pass over the already-built
+        // topology, entirely separate from ForceAtlas2/the layout worker. Skipped
+        // for an edgeless graph (nothing to cluster; every node keeps community 0).
+        const communities: Record<string, number> = graph.size > 0 ? louvain(graph) : {};
+
+        // Stable value → palette-color functions for this graph snapshot (see
+        // `nodeColor.ts`) — built once here, reused by `recolorGraph` on every
+        // later mode switch without recomputing the folder/tag universe.
+        folderColorRef.current = paletteAssigner(data.nodes.map((n) => folderById(n.id)));
+        tagColorRef.current = paletteAssigner(
+          data.nodes.map((n) => tagById(n.id)).filter((t): t is string => t !== null),
+        );
+        const tagColors = useTagColors.getState().colors;
+
         // Size nodes by degree so hubs read as bigger dots (sqrt keeps very
-        // linked notes from ballooning); remember the base so the node-size
-        // slider can rescale from it. Apply the saved scale up front.
+        // linked notes from ballooning, clamped at NODE_MAX_SIZE), and color
+        // them per the saved/default mode — remember the base size so the
+        // node-size slider can rescale from it. Both applied up front from
+        // the saved settings; `onSizeByDegree`/`onColorMode` redo this same
+        // per-node work live when the user changes either afterward.
         let leaves = 0;
         graph.forEachNode((node) => {
           const degree = graph.degree(node);
           if (degree === 0) leaves++;
-          const base = NODE_BASE_SIZE + Math.sqrt(degree) * NODE_DEGREE_SCALE;
-          graph.setNodeAttribute(node, "baseSize", base);
-          graph.setNodeAttribute(node, "size", base * initNodeScale);
+          const base = initSizeByDegree
+            ? Math.min(NODE_BASE_SIZE + Math.sqrt(degree) * NODE_DEGREE_SCALE, NODE_MAX_SIZE)
+            : NODE_BASE_SIZE;
+          const cluster = communities[node] ?? 0;
+          const folder = graph.getNodeAttribute(node, "folder") as string;
+          const tag = graph.getNodeAttribute(node, "tag") as string | null;
+          const color =
+            initColorMode === "folder"
+              ? folderColorRef.current(folder)
+              : initColorMode === "cluster"
+                ? clusterColor(cluster)
+                : tag
+                  ? (tagColors[tag] ?? tagColorRef.current(tag))
+                  : neutralColorRef.current;
+          graph.mergeNodeAttributes(node, { baseSize: base, size: base * initNodeScale, cluster, color });
         });
         setStats({ nodes: graph.order, links: graph.size, leaves });
 
@@ -267,12 +455,18 @@ export function GraphView() {
           allowInvalidContainer: true,
           labelDensity: 0.6,
           labelRenderedSizeThreshold: 8,
-          defaultNodeColor: NODE_COLOR,
+          defaultNodeColor: neutralColorRef.current,
+          defaultEdgeColor: edgeColorRef.current,
           labelColor: { color: labelColorRef.current },
           renderLabels: initShowLabels,
           // Draw the note title centered directly under the node.
           defaultDrawNodeLabel: drawNodeLabelBelow,
           defaultDrawNodeHover: drawNodeHoverBelow,
+          // The "glossy sphere" node style (default) — a real batched WebGL
+          // program, see GlossyNodeProgram.ts. sigma's built-in "circle" type
+          // (the flat dot, selected by the "Flat" node style) needs no entry
+          // here; it's already registered by sigma itself.
+          nodeProgramClasses: { glossy: GlossyNodeProgram },
         });
         sigmaRef.current = sigma;
 
@@ -298,7 +492,7 @@ export function GraphView() {
         });
         sigma.setSetting("nodeReducer", (node, attrs) => {
           if (hovered === null || node === hovered || neighbors.has(node)) return attrs;
-          return { ...attrs, color: "#d4d4d8", label: "" };
+          return { ...attrs, color: dimColorRef.current, label: "" };
         });
         sigma.setSetting("edgeReducer", (edge, attrs) => {
           if (hovered === null) return attrs;
@@ -471,18 +665,26 @@ export function GraphView() {
     };
   }, [openNote, runLayout, scheduleSave]);
 
-  // Keep label colour in step with the theme without rebuilding sigma. Updates
-  // the ref (read by the build effect on first mount) and, if sigma is already
-  // live, pushes the new colour and repaints.
+  // Keep label/edge/dim/neutral colours in step with the theme without
+  // rebuilding sigma. Updates the refs (read by the build effect on first
+  // mount) and, if sigma is already live, pushes the new values and
+  // recolors — the palette hues themselves are theme-invariant (see
+  // `nodeColor.ts`), but "by tag"'s neutral fallback isn't, so a live theme
+  // flip needs a recolor pass to actually change anything for that mode.
   useEffect(() => {
-    const color = resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT;
-    labelColorRef.current = color;
+    const dark = resolvedTheme === "dark";
+    labelColorRef.current = dark ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT;
+    edgeColorRef.current = dark ? EDGE_COLOR_DARK : EDGE_COLOR_LIGHT;
+    dimColorRef.current = dark ? DIM_DARK : DIM_LIGHT;
+    neutralColorRef.current = dark ? NEUTRAL_DARK : NEUTRAL_LIGHT;
     const s = sigmaRef.current;
     if (s) {
-      s.setSetting("labelColor", { color });
+      s.setSetting("labelColor", { color: labelColorRef.current });
+      s.setSetting("defaultEdgeColor", edgeColorRef.current);
+      recolorGraph(settingsRef.current.colorMode ?? DEFAULT_COLOR_MODE);
       s.refresh();
     }
-  }, [resolvedTheme]);
+  }, [resolvedTheme, recolorGraph]);
 
   return (
     <ViewFrame
@@ -521,9 +723,15 @@ export function GraphView() {
             showLabels={showLabels}
             nodeSizeScale={nodeSizeScale}
             edgeLength={edgeLength}
+            colorMode={colorMode}
+            sizeByDegree={sizeByDegree}
+            nodeStyle={nodeStyle}
             onToggleLabels={onToggleLabels}
             onNodeSize={onNodeSize}
             onEdgeLength={onEdgeLength}
+            onColorMode={onColorMode}
+            onSizeByDegree={onSizeByDegree}
+            onNodeStyle={onNodeStyle}
             onClose={() => setPanelOpen(false)}
           />
         )}

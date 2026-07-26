@@ -72,7 +72,11 @@ export const drawNodeHoverBelow: NodeHoverFn = (context, data, settings) => {
   context.fill();
   context.shadowBlur = 0;
 
-  context.fillStyle = labelColor(data, settings);
+  // The pill background above is hardcoded white regardless of theme, so the
+  // text must be too — the theme-aware `labelColor()` (used by the plain,
+  // always-on labels below) would resolve to a light gray in dark mode and
+  // go nearly invisible on this white pill.
+  context.fillStyle = "#000";
   context.textAlign = "center";
   context.fillText(data.label, data.x, top + size);
   context.textAlign = "left";

@@ -2370,6 +2370,9 @@ body,
   accent-color: var(--primary);
   cursor: pointer;
 }
+.graph-setting-select {
+  min-width: 7.5rem;
+}
 
 /* --- Calendar view (Phase 3 step 2) ---------------------------------- */
 .calendar {
