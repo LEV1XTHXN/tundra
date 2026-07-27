@@ -6,7 +6,7 @@
  * events can be created/edited/deleted, notes linked/unlinked to a day, and a
  * linked note opened (which switches to the editor via `onOpenNote`).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addHours,
@@ -33,7 +33,7 @@ import { calendar, notes } from "@/services";
 import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary } from "@/services";
 import { useTheme } from "@/store/theme";
 import { useViewState } from "@/store/viewState";
-import { useDateLocale } from "@/i18n/dateLocale";
+import { formatCap, useDateLocale } from "@/i18n/dateLocale";
 import { localizeError } from "@/i18n/errors";
 import { ViewFrame } from "@/components/ViewFrame";
 import {
@@ -43,16 +43,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { Button } from "@/components/ui/button";
+import { isSpanning, packWeek, toWeeks } from "./monthLayout";
 
 type Mode = "month" | "week";
 
 /** Optional event colours, keyed to a small preset palette so chips stay legible. */
 const COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7"];
-
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Weeks start Monday throughout the calendar (date-fns: 0 = Sunday, 1 = Monday). */
 const WEEK_STARTS_ON = 1;
@@ -62,6 +62,19 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 /** Must match `--calendar-hour-height` in index.css — kept as one number so the
  * hour-click and event-position math never drifts from the actual row height. */
 const HOUR_HEIGHT_REM = 3.5;
+
+/** Month-cell metrics, in rem. These MUST match the corresponding heights in
+ * index.css (`.calendar-cell-head`, `.calendar-allday-bar`, `.calendar-event-row`,
+ * `.calendar-more`): the grid computes how many rows fit in a cell from them, so
+ * a drift here shows up as a wrong "+N more" count. Same contract as
+ * `HOUR_HEIGHT_REM` above. */
+const MONTH_HEAD_REM = 1.75;
+const MONTH_LANE_REM = 1.4;
+const MONTH_ROW_REM = 1.35;
+const MONTH_MORE_REM = 1.2;
+/** The weekday label ("MON") that heads each cell of the FIRST week row only —
+ * extra head height that row alone pays for. */
+const MONTH_WEEKDAY_REM = 1.1;
 
 /** A day's vault-relative key (`yyyy-MM-dd`), matching the `NoteDate` date form. */
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
@@ -105,12 +118,18 @@ export function CalendarView({
   const dateLocale = useDateLocale();
   const [mode, setMode] = useState<Mode>("month");
   // A date inside the currently-shown period; navigation moves it by month/week.
-  // Jumps to the Home widget's clicked day when set (consumed once — see
-  // useViewState's calendarTarget doc comment).
-  const [cursor, setCursor] = useState<Date>(() => useViewState.getState().calendarTarget ?? new Date());
+  // Shared state (`useViewState`) rather than local, because the shell sidebar's
+  // mini month drives the same cursor from outside this view. Jumps to the Home
+  // widget's clicked day when set (consumed once — see useViewState's
+  // calendarTarget doc comment).
+  const cursor = useViewState((s) => s.calendarCursor);
+  const setCursor = useViewState((s) => s.setCalendarCursor);
   useEffect(() => {
-    if (useViewState.getState().calendarTarget) useViewState.getState().setCalendarTarget(null);
-  }, []);
+    const target = useViewState.getState().calendarTarget;
+    if (!target) return;
+    setCursor(target);
+    useViewState.getState().setCalendarTarget(null);
+  }, [setCursor]);
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [noteDates, setNoteDates] = useState<NoteDateEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -167,12 +186,15 @@ export function CalendarView({
   }, [events, noteDates]);
 
   const shift = (delta: number) =>
-    setCursor((c) => (mode === "week" ? addWeeks(c, delta) : addMonths(c, delta)));
+    setCursor(mode === "week" ? addWeeks(cursor, delta) : addMonths(cursor, delta));
 
   const heading =
     mode === "week"
-      ? `${format(gridStart, "MMM d", { locale: dateLocale })} – ${format(gridEnd, "MMM d, yyyy", { locale: dateLocale })}`
-      : format(cursor, "MMMM yyyy", { locale: dateLocale });
+      ? `${formatCap(gridStart, "MMM d", dateLocale)} – ${formatCap(gridEnd, "MMM d, yyyy", dateLocale)}`
+      // `LLLL`, not `MMMM`: the standalone (nominative) month name. Russian's
+      // `MMMM` is the genitive form meant to sit next to a day number — "Июля
+      // 2026" instead of "Июль 2026".
+      : formatCap(cursor, "LLLL yyyy", dateLocale);
 
   const unlinkNote = useCallback(
     (nd: NoteDateEntry) => {
@@ -211,63 +233,17 @@ export function CalendarView({
     <ViewFrame title={heading} actions={calendarActions} fullBleed>
     <div className="calendar">
       {mode === "month" && (
-        <>
-          <div className="calendar-weekdays">
-            {WEEKDAYS.map((w) => (
-              <div key={w} className="calendar-weekday">
-                {w}
-              </div>
-            ))}
-          </div>
-
-          <div className="calendar-grid month">
-            {days.map((day) => {
-              const key = dayKey(day);
-              const cell = byDay.get(key);
-              const dim = !isSameMonth(day, cursor);
-              return (
-                <div key={key} className={`calendar-cell${dim ? " dim" : ""}${isToday(day) ? " today" : ""}`}>
-                  <div className="calendar-cell-head">
-                    <span className="calendar-daynum">{format(day, "d")}</span>
-                    <span className="calendar-cell-actions">
-                      <button title="Link a note to this day" aria-label="Link a note to this day"
-                        onClick={() => setDialog({ kind: "linkNote", day })}>
-                        <Link2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button title="New event" aria-label="New event"
-                        onClick={() => setDialog({ kind: "event", day })}>
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  </div>
-                  <div className="calendar-cell-body">
-                    {cell?.events.map((ev) => (
-                      <button
-                        key={ev.id}
-                        className="calendar-event"
-                        style={ev.color ? { background: ev.color, borderColor: ev.color, color: "#fff" } : undefined}
-                        title={ev.title}
-                        onClick={() => setDialog({ kind: "event", day, event: ev })}
-                      >
-                        {ev.title || "(untitled)"}
-                      </button>
-                    ))}
-                    {cell?.notes.map((nd) => (
-                      <span key={`${nd.note_id}:${nd.event_id ?? ""}`} className="calendar-notelink">
-                        <button className="calendar-notelink-open" title={`Open "${nd.title}"`} onClick={() => onOpenNote(nd.note_id)}>
-                          {nd.title || "Untitled"}
-                        </button>
-                        <button className="calendar-notelink-x" title="Unlink" aria-label="Unlink note" onClick={() => unlinkNote(nd)}>
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
+        <MonthGrid
+          days={days}
+          cursor={cursor}
+          events={events}
+          byDay={byDay}
+          onEventClick={(day, event) => setDialog({ kind: "event", day, event })}
+          onNewEvent={(day) => setDialog({ kind: "event", day })}
+          onLinkNote={(day) => setDialog({ kind: "linkNote", day })}
+          onOpenNote={onOpenNote}
+          onUnlinkNote={unlinkNote}
+        />
       )}
 
       {mode === "week" && (
@@ -308,6 +284,339 @@ export function CalendarView({
       )}
     </div>
     </ViewFrame>
+  );
+}
+
+/** One thing listed inside a day cell, under that day's all-day bars: a timed
+ * event or a note linked to the day. Both render as the same `● time title`
+ * row shape, so a cell's contents read as one list. */
+type DayItem =
+  | { kind: "event"; event: CalEvent }
+  | { kind: "note"; note: NoteDateEntry };
+
+const itemKey = (item: DayItem) =>
+  item.kind === "event" ? `e:${item.event.id}` : `n:${item.note.note_id}:${item.note.event_id ?? ""}`;
+
+/**
+ * Month mode's grid: a weekday header over one row per week. Within a week row,
+ * all-day events (and multi-day periods) are drawn as CONTINUOUS bars in an
+ * overlay grid — `packWeek` gives each its column span and lane — while timed
+ * events and note links list underneath as rows inside their own day cell.
+ *
+ * Cells are fixed-height, so whatever doesn't fit collapses into a "+N more"
+ * button that opens the full day in a popover. How much fits is computed from
+ * the measured row height and the MONTH_*_REM metrics, rather than guessed.
+ */
+function MonthGrid({
+  days,
+  cursor,
+  events,
+  byDay,
+  onEventClick,
+  onNewEvent,
+  onLinkNote,
+  onOpenNote,
+  onUnlinkNote,
+}: {
+  days: Date[];
+  cursor: Date;
+  events: CalEvent[];
+  byDay: Map<string, { events: CalEvent[]; notes: NoteDateEntry[] }>;
+  onEventClick: (day: Date, event: CalEvent) => void;
+  onNewEvent: (day: Date) => void;
+  onLinkNote: (day: Date) => void;
+  onOpenNote: (id: string) => void;
+  onUnlinkNote: (nd: NoteDateEntry) => void;
+}) {
+  const dateLocale = useDateLocale();
+  const weeks = useMemo(() => toWeeks(days), [days]);
+  const [peekDay, setPeekDay] = useState<string | null>(null);
+
+  // How tall one week row actually is, in px — the input for "how many rows fit
+  // in a cell". All rows share the grid's height, so one measurement covers
+  // every cell; `null` means "not measured yet", and until then nothing is
+  // collapsed (a first paint that hides rows and immediately shows them again
+  // reads as a flicker).
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [rowHeight, setRowHeight] = useState<number | null>(null);
+  const weekCountRef = useRef(weeks.length);
+  weekCountRef.current = weeks.length;
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => setRowHeight(el.clientHeight / Math.max(1, weekCountRef.current));
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (el) setRowHeight(el.clientHeight / Math.max(1, weeks.length));
+  }, [weeks.length]);
+
+  const rem = useMemo(
+    () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
+    [],
+  );
+
+  // `EEEEEE` — the two-letter short form — in every language: "Mo Tu We",
+  // "Пн Вт Ср", "Mo Di Mi". (`EEE` is three letters, and picks up a trailing dot
+  // in German: "Mo.".) Same token the mini month uses, so the two agree.
+  const weekdayLabels = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => format(addDays(days[0], i), "EEEEEE", { locale: dateLocale })),
+    [days, dateLocale],
+  );
+
+  return (
+    <div className="calendar-month">
+      <div className="calendar-month-body" ref={bodyRef}>
+        {weeks.map((week, weekIndex) => {
+          const bars = packWeek(week, events);
+          const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
+          // The weekday names head the first row's cells (no separate strip), so
+          // that row's head is taller — and it, not the constant, is what the
+          // capacity maths and the bar overlay's offset must use.
+          const headRem = weekIndex === 0 ? MONTH_HEAD_REM + MONTH_WEEKDAY_REM : MONTH_HEAD_REM;
+          // Lanes eat the same vertical space the rows want; cap them so a day
+          // stacked with periods still has room for a "+N more".
+          const laneLimit =
+            rowHeight === null
+              ? laneCount
+              : Math.max(
+                  0,
+                  Math.floor((rowHeight / rem - headRem - MONTH_MORE_REM) / MONTH_LANE_REM),
+                );
+          const lanes = Math.min(laneCount, laneLimit);
+          const rowCapacity =
+            rowHeight === null
+              ? Number.POSITIVE_INFINITY
+              : Math.max(
+                  0,
+                  Math.floor((rowHeight / rem - headRem - lanes * MONTH_LANE_REM) / MONTH_ROW_REM),
+                );
+
+          return (
+            <div className="calendar-week-row" key={dayKey(week[0])}>
+              <div className="calendar-week-cells">
+                {week.map((day, col) => {
+                  const key = dayKey(day);
+                  const cell = byDay.get(key);
+                  const items = dayItems(cell);
+                  // Bars whose lane got cut off still belong to this day — they
+                  // count towards the overflow instead of vanishing.
+                  const hiddenBars = bars.filter(
+                    (b) => b.lane >= lanes && b.colStart <= col && col < b.colStart + b.span,
+                  );
+                  const total = items.length + hiddenBars.length;
+                  const overflows = total > rowCapacity;
+                  const shown = overflows ? Math.max(rowCapacity - 1, 0) : items.length;
+                  const hidden = total - shown;
+
+                  return (
+                    <div
+                      key={key}
+                      className={`calendar-cell${isSameMonth(day, cursor) ? "" : " dim"}${
+                        isToday(day) ? " today" : ""
+                      }`}
+                    >
+                      <div className={`calendar-cell-head${weekIndex === 0 ? " with-weekday" : ""}`}>
+                        {weekIndex === 0 && (
+                          <span className="calendar-weekday-label">{weekdayLabels[col]}</span>
+                        )}
+                        <span className="calendar-daynum">
+                          {format(day, day.getDate() === 1 ? "d MMM" : "d", { locale: dateLocale })}
+                        </span>
+                        <span className="calendar-cell-actions">
+                          <button
+                            title="Link a note to this day"
+                            aria-label="Link a note to this day"
+                            onClick={() => onLinkNote(day)}
+                          >
+                            <Link2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button title="New event" aria-label="New event" onClick={() => onNewEvent(day)}>
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </div>
+                      <div
+                        className="calendar-cell-body"
+                        style={{ paddingTop: `${lanes * MONTH_LANE_REM}rem` }}
+                      >
+                        {items.slice(0, shown).map((item) => (
+                          <DayItemRow
+                            key={itemKey(item)}
+                            item={item}
+                            day={day}
+                            onEventClick={onEventClick}
+                            onOpenNote={onOpenNote}
+                            onUnlinkNote={onUnlinkNote}
+                          />
+                        ))}
+                        {hidden > 0 && (
+                          <Popover
+                            open={peekDay === key}
+                            onOpenChange={(open) => setPeekDay(open ? key : null)}
+                          >
+                            <PopoverTrigger asChild>
+                              <button className="calendar-more">{`+${hidden} more`}</button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="calendar-day-popover">
+                              <div className="calendar-day-popover-head">
+                                {formatCap(day, "EEEE, MMM d", dateLocale)}
+                              </div>
+                              <div className="calendar-day-popover-list">
+                                {bars
+                                  .filter((b) => b.colStart <= col && col < b.colStart + b.span)
+                                  .map((b) => (
+                                    <button
+                                      key={b.event.id}
+                                      className="calendar-allday-bar"
+                                      style={barStyle(b.event.color)}
+                                      onClick={() => {
+                                        setPeekDay(null);
+                                        onEventClick(day, b.event);
+                                      }}
+                                    >
+                                      {b.event.title || "(untitled)"}
+                                    </button>
+                                  ))}
+                                {items.map((item) => (
+                                  <DayItemRow
+                                    key={itemKey(item)}
+                                    item={item}
+                                    day={day}
+                                    onEventClick={(d, ev) => {
+                                      setPeekDay(null);
+                                      onEventClick(d, ev);
+                                    }}
+                                    onOpenNote={(id) => {
+                                      setPeekDay(null);
+                                      onOpenNote(id);
+                                    }}
+                                    onUnlinkNote={onUnlinkNote}
+                                  />
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {lanes > 0 && (
+                <div
+                  className="calendar-alldaylane"
+                  style={{
+                    top: `${headRem}rem`,
+                    gridTemplateRows: `repeat(${lanes}, ${MONTH_LANE_REM}rem)`,
+                  }}
+                >
+                  {bars
+                    .filter((b) => b.lane < lanes)
+                    .map((b) => (
+                      <button
+                        key={b.event.id}
+                        className={`calendar-allday-bar${b.continuesLeft ? " continues-left" : ""}${
+                          b.continuesRight ? " continues-right" : ""
+                        }`}
+                        style={{
+                          gridColumn: `${b.colStart + 1} / span ${b.span}`,
+                          gridRow: b.lane + 1,
+                          ...barStyle(b.event.color),
+                        }}
+                        title={b.event.title}
+                        onClick={() => onEventClick(week[b.colStart], b.event)}
+                      >
+                        {b.event.title || "(untitled)"}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** A day's non-bar contents, in reading order: timed events by clock time, then
+ * the notes linked to the day. */
+function dayItems(cell: { events: CalEvent[]; notes: NoteDateEntry[] } | undefined): DayItem[] {
+  if (!cell) return [];
+  const timed = cell.events
+    .filter((ev) => !isSpanning(ev))
+    .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
+  return [
+    ...timed.map((event): DayItem => ({ kind: "event", event })),
+    ...cell.notes.map((note): DayItem => ({ kind: "note", note })),
+  ];
+}
+
+/** An event's bar/dot colour: its own, or the theme accent when it has none. */
+const barStyle = (color: string | null | undefined) =>
+  color ? { background: color, color: "#fff" } : undefined;
+
+/** One row in a day cell: `● 09:30 Zoom Sync` for a timed event, or the same
+ * shape with a link glyph for a note tied to the day. */
+function DayItemRow({
+  item,
+  day,
+  onEventClick,
+  onOpenNote,
+  onUnlinkNote,
+}: {
+  item: DayItem;
+  day: Date;
+  onEventClick: (day: Date, event: CalEvent) => void;
+  onOpenNote: (id: string) => void;
+  onUnlinkNote: (nd: NoteDateEntry) => void;
+}) {
+  const dateLocale = useDateLocale();
+  const timeFormat = useTheme((s) => s.timeFormat);
+
+  if (item.kind === "event") {
+    const ev = item.event;
+    return (
+      <button
+        className="calendar-event-row"
+        title={ev.title}
+        onClick={() => onEventClick(day, ev)}
+      >
+        <span className="calendar-event-dot" style={ev.color ? { background: ev.color } : undefined} />
+        <span className="calendar-event-time">
+          {format(parseISO(ev.start), timeFormat === "24h" ? "HH:mm" : "h:mm a", { locale: dateLocale })}
+        </span>
+        <span className="calendar-event-title">{ev.title || "(untitled)"}</span>
+      </button>
+    );
+  }
+
+  const nd = item.note;
+  return (
+    <span className="calendar-event-row note">
+      <button
+        className="calendar-event-open"
+        title={`Open "${nd.title}"`}
+        onClick={() => onOpenNote(nd.note_id)}
+      >
+        <Link2 className="calendar-event-icon h-3 w-3" />
+        <span className="calendar-event-title">{nd.title || "Untitled"}</span>
+      </button>
+      <button
+        className="calendar-event-unlink"
+        title="Unlink"
+        aria-label="Unlink note"
+        onClick={() => onUnlinkNote(nd)}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 
@@ -620,7 +929,7 @@ function LinkNoteDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Link a note to {format(day, "MMM d, yyyy", { locale: dateLocale })}</DialogTitle>
+          <DialogTitle>Link a note to {formatCap(day, "MMM d, yyyy", dateLocale)}</DialogTitle>
         </DialogHeader>
         <Input autoFocus placeholder="Search notes…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <ul className="calendar-notepicker">

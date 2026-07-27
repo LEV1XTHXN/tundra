@@ -6,7 +6,7 @@
  * cached in memory for the rest of the session.
  */
 import { useEffect, useState } from "react";
-import type { Locale } from "date-fns";
+import { format, type Locale } from "date-fns";
 import { useLocale } from "@/store/locale";
 import type { Language } from "@/i18n";
 
@@ -21,6 +21,17 @@ const cache = new Map<Language, Locale>();
 /** The date-fns locale for the active UI language; `undefined` until it
  *  finishes loading (date-fns formatting functions treat that as their
  *  own English default, so callers can pass it straight through). */
+/**
+ * date-fns `format` with the first character upper-cased. Russian and German
+ * month and weekday names come back lower-case ("июль 2026", "montag") — correct
+ * mid-sentence, but a heading or a column label reads as a typo. Use this
+ * wherever a formatted date STARTS a label; plain `format` everywhere else.
+ */
+export function formatCap(date: Date | number, fmt: string, locale?: Locale): string {
+  const out = format(date, fmt, { locale });
+  return out.charAt(0).toLocaleUpperCase(locale?.code) + out.slice(1);
+}
+
 export function useDateLocale(): Locale | undefined {
   const language = useLocale((s) => s.language);
   const [locale, setLocale] = useState<Locale | undefined>(cache.get(language));

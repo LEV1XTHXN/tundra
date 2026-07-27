@@ -98,6 +98,14 @@ interface ViewState {
   /** Set the target day and switch to the Calendar view in one step. */
   openCalendarOn: (date: Date) => void;
 
+  /** A day inside the period the Calendar view is showing — the month/week its
+   *  grid is scrolled to. Lives here rather than in CalendarView because the
+   *  sidebar's mini month (shown while the Calendar view is open) drives the
+   *  same cursor from outside the view. Transient like {@link calendarTarget}:
+   *  it is view state, never part of a navigation location. */
+  calendarCursor: Date;
+  setCalendarCursor: (date: Date) => void;
+
   /** Clear every reference to the PREVIOUS vault's notes/folders (open note,
    *  expanded folders, folder-table path, template-edit id, calendar target)
    *  and land back on Home — called when switching to a different vault, so
@@ -201,15 +209,21 @@ export const useViewState = create<ViewState>((set, get) => {
   calendarTarget: null,
   setCalendarTarget: (date) => set({ calendarTarget: date }),
   openCalendarOn: (date) => {
-    set({ calendarTarget: date });
+    // Move the cursor too, so an already-mounted Calendar view (which only
+    // consumes `calendarTarget` on mount) still jumps to the clicked day.
+    set({ calendarTarget: date, calendarCursor: date });
     recordNav({ view: "calendar" });
   },
+
+  calendarCursor: new Date(),
+  setCalendarCursor: (date) => set({ calendarCursor: date }),
 
   resetForVaultSwitch: () =>
     set({
       ...HOME_LOCATION,
       expandedFolders: new Set(),
       calendarTarget: null,
+      calendarCursor: new Date(),
       // Wipe the history — the previous vault's notes/folders are meaningless
       // here, so back/forward must start fresh at Home.
       navHistory: [HOME_LOCATION],

@@ -5,29 +5,15 @@
  * `refreshKey` changes (the vault's notes changed). React renders; data via
  * services only.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  addDays,
-  addMonths,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
-  format,
-  isSameMonth,
-  isToday,
-  parseISO,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-  subMonths,
-  type Locale,
-} from "date-fns";
-import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
+import { useEffect, useState } from "react";
+import { format, parseISO, type Locale } from "date-fns";
+import { Flame } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-import { calendar, config, notes, quickNote, search, tags as tagsService } from "@/services";
+import { config, notes, quickNote, search, tags as tagsService } from "@/services";
 import type { Block, NoteSummary, SearchHit } from "@/services";
+import { MiniMonth } from "@/calendar/MiniMonth";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
@@ -35,8 +21,6 @@ import { useActivity } from "@/store/activity";
 import { useFolderGroups } from "@/store/folderGroups";
 import { useDateLocale } from "@/i18n/dateLocale";
 import { localizeError } from "@/i18n/errors";
-
-const WEEK_STARTS_ON = 1;
 
 function formatModified(iso: string, locale: Locale | undefined, t: TFunction): string {
   try {
@@ -260,116 +244,14 @@ export function QuickCaptureWidget({ onError }: WidgetProps) {
 }
 
 /** A compact month calendar: navigate months locally, click a day to jump the
- * full Calendar view there (`openCalendarOn`). Days carrying an event or a
- * note-date link get a dot indicator, fetched the same way CalendarView's own
- * grid does (`calendar.range` over the visible month). */
+ * full Calendar view there (`openCalendarOn`). The month itself is `MiniMonth`
+ * — shared with the Calendar view's sidebar — so this widget is just its
+ * cursor plus the click destination. */
 export function CalendarWidget({}: WidgetProps) {
-  const { t } = useTranslation();
-  const dateLocale = useDateLocale();
   const openCalendarOn = useViewState((s) => s.openCalendarOn);
   const [cursor, setCursor] = useState(() => new Date());
-  const [marked, setMarked] = useState<Set<string>>(new Set());
 
-  const gridStart = startOfWeek(startOfMonth(cursor), { weekStartsOn: WEEK_STARTS_ON });
-  const gridEnd = endOfWeek(endOfMonth(cursor), { weekStartsOn: WEEK_STARTS_ON });
-  const gridStartKey = format(gridStart, "yyyy-MM-dd");
-  const gridEndKey = format(gridEnd, "yyyy-MM-dd");
-  const gridDays = useMemo(
-    () => eachDayOfInterval({ start: gridStart, end: gridEnd }),
-    [gridStartKey, gridEndKey], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  const weeks = gridDays.length / 7;
-  // Locale-correct short weekday labels (e.g. "Mo"/"Пн"/"Mo") for the header
-  // row, derived from the same week-start days rather than a hardcoded
-  // English array.
-  const weekdayLabels = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => format(addDays(gridStart, i), "EEEEEE", { locale: dateLocale })),
-    [gridStartKey, dateLocale], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  // Size day cells to a square that fits BOTH the available width and height —
-  // whichever is the limiting dimension — so cells stay square yet the whole
-  // month is always visible without scrolling, at any widget size.
-  const gridRef = useRef<HTMLDivElement | null>(null);
-  const [cell, setCell] = useState(0);
-  const weeksRef = useRef(weeks);
-  weeksRef.current = weeks;
-  useLayoutEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    const measure = () => {
-      const size = Math.min(el.clientWidth / 7, el.clientHeight / weeksRef.current);
-      setCell(Math.max(0, Math.floor(size)));
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    measure();
-    return () => ro.disconnect();
-  }, []);
-  useLayoutEffect(() => {
-    const el = gridRef.current;
-    if (el) setCell(Math.max(0, Math.floor(Math.min(el.clientWidth / 7, el.clientHeight / weeks))));
-  }, [weeks]);
-
-  useEffect(() => {
-    let cancelled = false;
-    calendar
-      .range(gridStartKey, gridEndKey)
-      .then((r) => {
-        if (cancelled) return;
-        const next = new Set<string>();
-        for (const ev of r.events) {
-          const start = startOfDay(parseISO(ev.start));
-          const end = ev.end ? startOfDay(parseISO(ev.end)) : start;
-          for (const d of eachDayOfInterval({ start, end })) next.add(format(d, "yyyy-MM-dd"));
-        }
-        for (const nd of r.note_dates) next.add(nd.date);
-        setMarked(next);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [gridStartKey, gridEndKey]);
-
-  return (
-    <div className="mini-calendar">
-      <div className="mini-calendar-header">
-        <button onClick={() => setCursor((c) => subMonths(c, 1))} aria-label={t("home.previousMonth")}>
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <span className="mini-calendar-month">{format(cursor, "MMMM yyyy", { locale: dateLocale })}</span>
-        <button onClick={() => setCursor((c) => addMonths(c, 1))} aria-label={t("home.nextMonth")}>
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="mini-calendar-weekdays" style={{ gridTemplateColumns: `repeat(7, ${cell}px)` }}>
-        {weekdayLabels.map((w, i) => (
-          <span key={i}>{w}</span>
-        ))}
-      </div>
-      <div
-        className="mini-calendar-grid"
-        ref={gridRef}
-        style={{ gridTemplateColumns: `repeat(7, ${cell}px)`, gridAutoRows: `${cell}px` }}
-      >
-        {gridDays.map((day) => {
-          const key = format(day, "yyyy-MM-dd");
-          const dim = !isSameMonth(day, cursor);
-          return (
-            <button
-              key={key}
-              className={`mini-calendar-day${dim ? " dim" : ""}${isToday(day) ? " today" : ""}${marked.has(key) ? " has-events" : ""}`}
-              onClick={() => openCalendarOn(day)}
-              title={format(day, "EEEE, MMM d, yyyy", { locale: dateLocale })}
-            >
-              <span className="mini-calendar-daynum">{format(day, "d")}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <MiniMonth cursor={cursor} onCursorChange={setCursor} onSelectDay={openCalendarOn} />;
 }
 
 /** Vault size at a glance: note/tag/group counts. Groups (sidebar folder

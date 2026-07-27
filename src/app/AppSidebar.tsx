@@ -1,5 +1,6 @@
 import type { TreeNode, VaultInfo } from "@/services";
 import { NavTree } from "@/nav/NavTree";
+import { CalendarSidebar } from "@/calendar/CalendarSidebar";
 import { useViewState } from "@/store/viewState";
 import { VaultSwitcher } from "./VaultSwitcher";
 import type { NoteActions } from "./hooks/useNoteActions";
@@ -24,6 +25,10 @@ interface AppSidebarProps {
  * Creating, renaming and deleting all happen on the tree's right-click menu, so
  * this panel carries no buttons of its own.
  *
+ * The one exception is the Calendar view, which swaps the tree for a mini month
+ * (`CalendarSidebar`) — a calendar is navigated by date, not by note, so the
+ * tree is dead weight there. Every other view keeps the tree.
+ *
  * Nav *view* state (open note, expanded folders) is read straight from
  * `useViewState`; the mutation callbacks come from the action hooks via props.
  */
@@ -36,6 +41,7 @@ export function AppSidebar({
   onSwitchVault,
   onError,
 }: AppSidebarProps) {
+  const view = useViewState((s) => s.view);
   const openNoteId = useViewState((s) => s.openNoteId);
   const expandedFolders = useViewState((s) => s.expandedFolders);
   const toggleFolder = useViewState((s) => s.toggleFolder);
@@ -45,29 +51,33 @@ export function AppSidebar({
   return (
     <aside className="sidebar">
       <VaultSwitcher vaultInfo={vaultInfo} onSwitch={onSwitchVault} onError={onError} />
-      <NavTree
-        tree={treeData}
-        vaultPath={vaultInfo.path}
-        openNoteId={openNoteId}
-        expandedFolders={expandedFolders}
-        onToggleFolder={toggleFolder}
-        onSelectNote={openNote}
-        onOpenFolder={openFolder}
-        onMoveNote={noteActions.onMoveNote}
-        onMoveFolder={noteActions.onMoveFolder}
-        onRenameNote={noteActions.onRenameNote}
-        onRenameFolder={noteActions.onRenameFolder}
-        onRequestDeleteNote={deletion.onRequestDeleteNote}
-        onRequestDeleteFolder={deletion.onRequestDeleteFolder}
-        onSetNoteIcon={noteActions.onSetNoteIcon}
-        onRequestDeleteGroup={deletion.onRequestDeleteGroup}
-        onNewNote={(folder) => void noteActions.onNewNote(folder)}
-        onNewFolder={(parent, label) => creation.onNewFolder({ parent, label })}
-        onNewFolderInGroup={(groupId, label) =>
-          creation.onNewFolder({ parent: "", groupId, label })
-        }
-        onNewGroup={creation.onNewGroup}
-      />
+      {view === "calendar" ? (
+        <CalendarSidebar />
+      ) : (
+        <NavTree
+          tree={treeData}
+          vaultPath={vaultInfo.path}
+          openNoteId={openNoteId}
+          expandedFolders={expandedFolders}
+          onToggleFolder={toggleFolder}
+          onSelectNote={openNote}
+          onOpenFolder={openFolder}
+          onMoveNote={noteActions.onMoveNote}
+          onMoveFolder={noteActions.onMoveFolder}
+          onRenameNote={noteActions.onRenameNote}
+          onRenameFolder={noteActions.onRenameFolder}
+          onRequestDeleteNote={deletion.onRequestDeleteNote}
+          onRequestDeleteFolder={deletion.onRequestDeleteFolder}
+          onSetNoteIcon={noteActions.onSetNoteIcon}
+          onRequestDeleteGroup={deletion.onRequestDeleteGroup}
+          onNewNote={(folder) => void noteActions.onNewNote(folder)}
+          onNewFolder={(parent, label) => creation.onNewFolder({ parent, label })}
+          onNewFolderInGroup={(groupId, label) =>
+            creation.onNewFolder({ parent: "", groupId, label })
+          }
+          onNewGroup={creation.onNewGroup}
+        />
+      )}
     </aside>
   );
 }

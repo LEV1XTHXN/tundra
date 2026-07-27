@@ -1131,6 +1131,36 @@ body,
   position: relative;
   z-index: 1;
 }
+/* The sidebar's variant (`fitHeight={false}`): the month takes its natural
+   height instead of stretching, and cells are kept square by aspect-ratio
+   rather than by the JS square-sizing the Home widget needs. */
+.mini-calendar.natural {
+  flex: none;
+}
+.mini-calendar.natural .mini-calendar-grid {
+  flex: none;
+}
+.mini-calendar.natural .mini-calendar-day {
+  aspect-ratio: 1;
+}
+/* The day the main grid is centred on, when today isn't it (today keeps its
+   filled circle). */
+.mini-calendar-day.selected:not(.today) .mini-calendar-daynum {
+  font-weight: 700;
+}
+.mini-calendar-day.selected:not(.today)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 72%;
+  max-width: 2.2rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
 .mini-calendar-day.has-events::after {
   content: "";
   position: absolute;
@@ -2375,12 +2405,16 @@ body,
 }
 
 /* --- Calendar view (Phase 3 step 2) ---------------------------------- */
+/* No padding of its own: BOTH grids fill the main pane edge to edge, the way a
+   calendar reads best — no `--view-padding-x` gutter in either mode. Month and
+   week therefore share the same outer framing (own top+left border, rounded
+   top-left corner, sidebar/header rules donated below); only what's inside the
+   frame differs. */
 .calendar {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 1.25rem var(--view-padding-x) 0;
 }
 /* Header/title now come from ViewFrame; .calendar-controls sits in its actions. */
 .calendar-controls {
@@ -2419,51 +2453,103 @@ body,
 .calendar-nav:hover {
   background: var(--accent);
 }
-.calendar-weekdays {
+/* Month mode (CalendarView.tsx's MonthGrid): one row per week, with the weekday
+   names heading the FIRST row's cells rather than sitting in a strip of their
+   own. The grid runs flush to the pane on every side; its top and left edges are
+   its OWN borders, meeting in a rounded corner, and the two rules it would
+   otherwise double up with — the view header's `border-bottom` and the sidebar's
+   `border-right` — are turned transparent while it's showing (see below).
+   Everything inside is the cells' own right/bottom borders (cleared on the last
+   column/row). Row heights are equal (`grid-auto-rows: 1fr`), which is also what
+   the "+N more" capacity maths measures. */
+.calendar-month {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.calendar-month-body {
+  display: grid;
+  grid-auto-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* Both edges belong to the GRID rather than to the header/sidebar (see the
+     `:has()` rules below) — that's the only way the corner where they meet can
+     be a single rounded stroke instead of a hard L of two elements' borders.
+     Only the top-left is rounded: the other three corners are window edges. */
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-top-left-radius: var(--radius-lg);
+}
+/* Hand the grid's two outer edges over to it while the calendar is showing, so
+   neither doubles up with it:
+   — the sidebar's `border-right` spans the whole window height, which would
+     leave a stub of line beside the view header, above the grid's corner;
+   — the header's `border-bottom` sits exactly where the grid's top border does.
+   Scoped with `:has(.calendar)` — the view root, so it covers BOTH modes: month
+   and week are flush alike, and each draws its own top+left border. A browser
+   without `:has()` support just shows the old square-cornered pair of rules
+   rather than losing a line anywhere. */
+.app:has(.calendar) .sidebar {
+  /* Transparent rather than `none`, so the 1px stays and nothing shifts. */
+  border-right-color: transparent;
+}
+.view-frame:has(.calendar) .view-frame-header {
+  border-bottom-color: transparent;
+}
+/* One week. Positioned, because the all-day bars are an overlay that has to be
+   free to span across the day cells' borders. */
+.calendar-week-row {
+  position: relative;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+.calendar-week-row:last-child {
+  border-bottom: none;
+}
+.calendar-week-cells {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  height: 100%;
 }
-.calendar-weekday {
-  padding: 0.35rem 0.5rem;
-  font-size: 0.72rem;
+.calendar-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.15rem 0.15rem;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+}
+.calendar-cell:last-child {
+  border-right: none;
+}
+.calendar-cell.dim .calendar-daynum {
+  color: var(--muted-foreground);
+  opacity: 0.65;
+}
+/* Height must match MONTH_HEAD_REM in CalendarView.tsx — and the first row's
+   `.with-weekday` variant that same constant plus MONTH_WEEKDAY_REM. */
+.calendar-cell-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  flex: none;
+}
+.calendar-cell-head.with-weekday {
+  height: 2.85rem;
+}
+.calendar-weekday-label {
+  height: 1.1rem;
+  line-height: 1.1rem;
+  font-size: 0.68rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted-foreground);
-}
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  margin-bottom: 1rem;
-}
-.calendar-grid.month {
-  grid-auto-rows: minmax(6rem, 1fr);
-}
-.calendar-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.3rem;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  min-height: 0;
-  overflow: hidden;
-}
-.calendar-cell.dim {
-  background: color-mix(in oklch, var(--muted) 40%, transparent);
-}
-.calendar-cell.dim .calendar-daynum {
-  color: var(--muted-foreground);
-}
-.calendar-cell-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 .calendar-daynum {
   display: inline-flex;
@@ -2471,7 +2557,8 @@ body,
   justify-content: center;
   min-width: 1.5rem;
   height: 1.5rem;
-  font-size: 0.8rem;
+  padding: 0 0.4rem;
+  font-size: 0.78rem;
   border-radius: 999px;
 }
 .calendar-cell.today .calendar-daynum {
@@ -2480,10 +2567,14 @@ body,
   font-weight: 700;
 }
 .calendar-cell-actions {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
   display: inline-flex;
   gap: 0.15rem;
   opacity: 0;
   transition: opacity 0.12s;
+  z-index: 2;
 }
 .calendar-cell:hover .calendar-cell-actions {
   opacity: 1;
@@ -2492,7 +2583,9 @@ body,
   display: inline-flex;
   padding: 0.15rem;
   border: none;
-  background: transparent;
+  /* Opaque so it masks the day number it overlaps on hover — the grid has no
+     card of its own now, so this is the view background, not `--card`. */
+  background: var(--background);
   color: var(--muted-foreground);
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -2501,12 +2594,205 @@ body,
   background: var(--accent);
   color: var(--accent-foreground);
 }
+/* Its padding-top (set inline) reserves the space the week's all-day bars
+   occupy, so rows always start below them. */
 .calendar-cell-body {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  overflow-y: auto;
+  flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* A day's rows: `● 09:30 Zoom Sync`. Deliberately unfilled — colour is a dot,
+   not a background, so a cell full of events stays readable. Height must match
+   MONTH_ROW_REM in CalendarView.tsx. */
+.calendar-event-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+  height: 1.35rem;
+  padding: 0 0.3rem;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.calendar-event-row:hover {
+  background: var(--accent);
+}
+.calendar-event-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.calendar-event-time {
+  flex: none;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-event-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A note linked to the day: the same row, with a link glyph where the colour
+   dot sits and an unlink button revealed on hover. */
+.calendar-event-row.note {
+  padding: 0;
+}
+.calendar-event-open {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0.3rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.calendar-event-icon {
+  flex: none;
+  color: var(--muted-foreground);
+}
+.calendar-event-unlink {
+  display: inline-flex;
+  flex: none;
+  padding: 0 0.2rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  opacity: 0;
+}
+.calendar-event-row.note:hover .calendar-event-unlink {
+  opacity: 1;
+}
+.calendar-event-unlink:hover {
+  color: var(--destructive);
+}
+
+/* All-day events and multi-day periods: one continuous bar per week, laid out
+   in an overlay grid so it can span day columns. Lane height must match
+   MONTH_LANE_REM in CalendarView.tsx. */
+.calendar-alldaylane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  pointer-events: none;
+  z-index: 1;
+}
+.calendar-allday-bar {
+  pointer-events: auto;
+  display: block;
+  height: 1.15rem;
+  line-height: 1.15rem;
+  margin: 0 0.25rem;
+  padding: 0 0.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.calendar-allday-bar:hover {
+  filter: brightness(0.95);
+}
+/* A bar cut by the week boundary continues elsewhere — square that edge off and
+   run it to the cell wall so the two halves read as one event. */
+.calendar-allday-bar.continues-left {
+  margin-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.calendar-allday-bar.continues-right {
+  margin-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Overflow: whatever doesn't fit the cell collapses into this, which opens the
+   whole day in a popover. Height must match MONTH_MORE_REM in CalendarView.tsx. */
+.calendar-more {
+  flex: none;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.calendar-more:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.calendar-day-popover {
+  width: 16rem;
+  gap: 0.4rem;
+}
+.calendar-day-popover-head {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.calendar-day-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.calendar-day-popover .calendar-allday-bar {
+  margin: 0;
+  height: 1.35rem;
+  line-height: 1.35rem;
+}
+
+/* Sidebar while the Calendar view is open (CalendarSidebar.tsx). */
+.calendar-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  padding: 0 0.15rem;
+}
+.calendar-sidebar-today {
+  align-self: flex-start;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.calendar-sidebar-today:hover {
+  background: var(--accent);
 }
 .calendar-event {
   text-align: left;
@@ -2641,16 +2927,23 @@ body,
   padding: 0.5rem;
 }
 
-/* Week mode's hourly time grid (CalendarView.tsx's WeekTimeGrid). */
+/* Week mode's hourly time grid (CalendarView.tsx's WeekTimeGrid). Framed exactly
+   like the month grid: no margin, flush to the pane on all four sides, owning its
+   own top and left borders so they meet in one rounded corner (the header's and
+   sidebar's rules are donated to it by the `:has(.calendar)` pair above). Right
+   and bottom are window edges with no rule — hence the `:last-child` border
+   resets on the day columns further down. `overflow-y: auto` (the hour grid is
+   24 × HOUR_HEIGHT_REM tall, always taller than the pane) also makes the radius
+   clip the sticky day-header row's corner. */
 .calendar-week {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin-bottom: 1rem;
   border-top: 1px solid var(--border);
   border-left: 1px solid var(--border);
+  border-top-left-radius: var(--radius-lg);
 }
 .calendar-week-header {
   display: grid;
@@ -2664,12 +2957,25 @@ body,
 .calendar-week-gutter {
   border-right: 1px solid var(--border);
 }
+/* ...but not the header's copy of it: the gutter is a column of hour LABELS, and
+   the header cell above them is empty, so a rule there is a stub hanging off the
+   grid's top edge rather than a separator between two things. The body gutter
+   keeps its rule — that's the real divide between the times and the days. */
+.calendar-week-header > .calendar-week-gutter {
+  border-right: none;
+}
 .calendar-week-daycol-head {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
   padding: 0.35rem;
   border-right: 1px solid var(--border);
+}
+/* Sunday's rule would land on the window edge now that the grid is flush — the
+   same reset `.calendar-cell:last-child` does in month mode. The day columns are
+   the last children of the header/body grids (the hour gutter is the first). */
+.calendar-week-daycol-head:last-child {
+  border-right: none;
 }
 .calendar-week-daylabel {
   display: flex;
@@ -2709,6 +3015,12 @@ body,
   display: grid;
   grid-template-columns: 3.5rem repeat(7, 1fr);
 }
+/* No `border-top`: the hour rules belong to the day columns
+   (`.calendar-hour-slot`), which is where they mean something. Repeating each one
+   as a stub inside the gutter just boxes the time in. The label floats instead,
+   pulled up half a line so it sits ON its hour's rule. (Heights still line up
+   with the slots: `box-sizing: border-box` globally, so the inline
+   `HOUR_HEIGHT_REM` is the outer height either way.) */
 .calendar-hour-label {
   display: flex;
   align-items: flex-start;
@@ -2716,13 +3028,22 @@ body,
   padding: 0 0.5rem;
   font-size: 0.7rem;
   color: var(--muted-foreground);
-  border-right: 1px solid var(--border);
-  border-top: 1px solid var(--border);
   transform: translateY(-0.5em);
+}
+/* The first label is hidden, as in Google Calendar: it has no rule above it to
+   straddle, only the grid's top edge, so it reads as a stray number rather than a
+   marker for a line. `visibility`, NOT `display: none` — the element still has to
+   hold its `HOUR_HEIGHT_REM` of height, or every label below it slides up an hour
+   and the gutter stops matching the day columns. */
+.calendar-hour-label:first-child {
+  visibility: hidden;
 }
 .calendar-week-daycol {
   position: relative;
   border-right: 1px solid var(--border);
+}
+.calendar-week-daycol:last-child {
+  border-right: none;
 }
 .calendar-hour-slot {
   display: block;
@@ -2732,6 +3053,12 @@ body,
   background: transparent;
   cursor: pointer;
   padding: 0;
+}
+/* The 00:00 slot's rule would stack on the header's `border-bottom` directly above
+   it, reading as one 2px line against every other rule's 1px. The header's own
+   border draws it — and draws it across the gutter too, which this can't. */
+.calendar-hour-slot:first-child {
+  border-top: none;
 }
 .calendar-hour-slot:hover {
   background: color-mix(in oklch, var(--accent) 50%, transparent);
