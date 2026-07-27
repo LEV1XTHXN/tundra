@@ -883,7 +883,9 @@ function WeekTimeGrid({
               <ContextMenuTrigger asChild>
                 <div className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}`}>
                   <div className="calendar-week-daylabel">
-                    <span>{format(day, "EEE", { locale: dateLocale })}</span>
+                    {/* `EEEEEE` — the same two-letter short form the month grid
+                        uses, in every language ("Mo", "Пн", "Di"). */}
+                    <span>{format(day, "EEEEEE", { locale: dateLocale })}</span>
                     <span className="calendar-daynum">{format(day, "d")}</span>
                   </div>
                 </div>
