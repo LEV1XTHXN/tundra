@@ -171,6 +171,12 @@
     "nodeSize": "Knotengröße",
     "lineLength": "Linienlänge"
   },
+  "calendar": {
+    "newEvent": "Neues Ereignis",
+    "editEvent": "Ereignis bearbeiten…",
+    "deleteEvent": "Ereignis löschen",
+    "linkNote": "Notiz mit diesem Tag verknüpfen"
+  },
   "folderView": {
     "allNotes": "Alle Notizen",
     "galleryView": "Galerieansicht",

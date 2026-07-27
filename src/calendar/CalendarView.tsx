@@ -7,13 +7,13 @@
  * linked note opened (which switches to the editor via `onOpenNote`).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   addDays,
   addHours,
   addMinutes,
   addMonths,
   addWeeks,
-  differenceInMinutes,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -21,7 +21,6 @@ import {
   isSameMonth,
   isToday,
   parseISO,
-  set,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -32,6 +31,8 @@ import { useTranslation } from "react-i18next";
 import { calendar, notes } from "@/services";
 import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary } from "@/services";
 import { useTheme } from "@/store/theme";
+import type { TimeFormatPref } from "@/store/theme";
+import { contrastText, TAG_PALETTE } from "@/store/tagColors";
 import { useViewState } from "@/store/viewState";
 import { formatCap, useDateLocale } from "@/i18n/dateLocale";
 import { localizeError } from "@/i18n/errors";
@@ -44,15 +45,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { Button } from "@/components/ui/button";
-import { isSpanning, packWeek, toWeeks } from "./monthLayout";
+import { CalendarDayMenu, EventContextMenu } from "./CalendarContextMenu";
+import type { CalendarMenuActions } from "./CalendarContextMenu";
+import { isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
+import type { DaySegment } from "./monthLayout";
 
 type Mode = "month" | "week";
 
-/** Optional event colours, keyed to a small preset palette so chips stay legible. */
-const COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7"];
+/** Optional event colours. Reuses the app's shared TAG_PALETTE (tag chips,
+ *  Kanban cards, folder properties, graph nodes) rather than keeping a sixth
+ *  palette of its own. Events persist the chosen HEX, not an index, so an event
+ *  coloured under an older palette keeps the exact hue it was given — it simply
+ *  can't be picked again once that hue leaves TAG_PALETTE. */
+const COLORS = TAG_PALETTE;
 
 /** Weeks start Monday throughout the calendar (date-fns: 0 = Sunday, 1 = Monday). */
 const WEEK_STARTS_ON = 1;
@@ -62,14 +71,37 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 /** Must match `--calendar-hour-height` in index.css — kept as one number so the
  * hour-click and event-position math never drifts from the actual row height. */
 const HOUR_HEIGHT_REM = 3.5;
+/** The grain every time the hour grid produces is rounded to — a click or a
+ * drag lands on :00/:15/:30/:45. Deliberately NOT drawn: the grid keeps one
+ * rule per hour, and the quarter-hours exist only in the maths. */
+const SNAP_MINUTES = 15;
+/** A default one-hour block, for the two gestures that name a start but no end:
+ * a plain click in the grid, and the day menu's "New event" over an hour. */
+const DEFAULT_EVENT_MINUTES = 60;
+/** How far the pointer must travel before a press counts as a drag rather than
+ * a click. Without it, the shake in a normal click would sweep out a span. */
+const DRAG_THRESHOLD_PX = 3;
+/** Under this, a week block puts its time BESIDE the title instead of under it.
+ * Purely a question of what fits: at `HOUR_HEIGHT_REM` a 45min block is 42px,
+ * which clears two 15px lines plus padding — a 30min block's 28px does not. */
+const SHORT_EVENT_MINUTES = 45;
+
+/** One stacked lane of all-day bars, in rem — `.calendar-allday-bar`'s height
+ * plus its margin. Shared: BOTH grids draw the same bar (month inside a week
+ * row, week inside its header strip), so both offset their contents by it. */
+const ALLDAY_LANE_REM = 1.4;
+
+/** How many lanes of all-day bars the WEEK strip shows before the rest collapse
+ * into a per-day "+N more". Unlike a month cell there's nothing to measure —
+ * the strip lives in a sticky header, which would push the hour grid off screen
+ * if it grew freely — so the cap is a flat number. */
+const WEEK_ALLDAY_LANES = 3;
 
 /** Month-cell metrics, in rem. These MUST match the corresponding heights in
- * index.css (`.calendar-cell-head`, `.calendar-allday-bar`, `.calendar-event-row`,
- * `.calendar-more`): the grid computes how many rows fit in a cell from them, so
- * a drift here shows up as a wrong "+N more" count. Same contract as
- * `HOUR_HEIGHT_REM` above. */
+ * index.css (`.calendar-cell-head`, `.calendar-event-row`, `.calendar-more`):
+ * the grid computes how many rows fit in a cell from them, so a drift here shows
+ * up as a wrong "+N more" count. Same contract as `HOUR_HEIGHT_REM` above. */
 const MONTH_HEAD_REM = 1.75;
-const MONTH_LANE_REM = 1.4;
 const MONTH_ROW_REM = 1.35;
 const MONTH_MORE_REM = 1.2;
 /** The weekday label ("MON") that heads each cell of the FIRST week row only —
@@ -79,33 +111,27 @@ const MONTH_WEEKDAY_REM = 1.1;
 /** A day's vault-relative key (`yyyy-MM-dd`), matching the `NoteDate` date form. */
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
 
-/** A dialog request: create/edit an event, or link a note — to a specific day. */
+/** A dialog request: create/edit an event, or link a note — to a specific day.
+ * `range` pre-fills a NEW event's times: the hour a menu was opened over, or the
+ * span a drag swept out in the week grid. Absent means all-day. */
 type DialogState =
-  | { kind: "event"; day: Date; event?: CalEvent; hour?: number }
+  | { kind: "event"; day: Date; event?: CalEvent; range?: TimeRange }
   | { kind: "linkNote"; day: Date }
   | null;
 
-/** Timed (non-all-day) events on `day`, clipped to its 24h span, as fractional
- * hour offsets from midnight — the input the week view's hour grid positions
- * event blocks from. */
-function timedSegmentsForDay(events: CalEvent[], day: Date) {
-  const dayStart = startOfDay(day);
-  const dayEnd = addDays(dayStart, 1);
-  const segments: { event: CalEvent; startHour: number; endHour: number }[] = [];
-  for (const ev of events) {
-    if (ev.all_day) continue;
-    const evStart = parseISO(ev.start);
-    // Untimed-end events get a nominal 30min block so they're visible/clickable.
-    const evEnd = ev.end ? parseISO(ev.end) : addMinutes(evStart, 30);
-    if (evEnd <= dayStart || evStart >= dayEnd) continue;
-    const clippedStart = evStart < dayStart ? dayStart : evStart;
-    const clippedEnd = evEnd > dayEnd ? dayEnd : evEnd;
-    const startHour = differenceInMinutes(clippedStart, dayStart) / 60;
-    const endHour = Math.max(differenceInMinutes(clippedEnd, dayStart) / 60, startHour + 0.5);
-    segments.push({ event: ev, startHour, endHour });
-  }
-  return segments;
-}
+type TimeRange = { start: Date; end: Date };
+
+/** A range on `day` from minute offsets past midnight — the form both the hour
+ * grid's drag and its keyboard slot activation produce. */
+const rangeOnDay = (day: Date, startMin: number, endMin: number): TimeRange => ({
+  start: addMinutes(startOfDay(day), startMin),
+  end: addMinutes(startOfDay(day), endMin),
+});
+
+/** The date-fns pattern for a wall-clock time under the user's clock-format
+ * setting. One helper so the calendar's three time readouts — a month day row,
+ * a week block, the drag draft — can't drift into three different formats. */
+const clockPattern = (timeFormat: TimeFormatPref) => (timeFormat === "24h" ? "HH:mm" : "h:mm a");
 
 export function CalendarView({
   onOpenNote,
@@ -204,6 +230,48 @@ export function CalendarView({
     [load, onError, t],
   );
 
+  // Deleting straight from the context menu — no confirmation, matching the
+  // event dialog's own Delete button.
+  const deleteEvent = useCallback(
+    (ev: CalEvent) => {
+      calendar.deleteEvent(ev.id).then(load).catch((e) => onError(localizeError(e, t)));
+    },
+    [load, onError, t],
+  );
+
+  // Everything the right-click menus can dispatch. The same create/edit paths
+  // the buttons use, so a menu action and a click land in the same dialog.
+  const menuActions: CalendarMenuActions = useMemo(
+    () => ({
+      // The menu names an hour at most; a bare day (month cell, week header)
+      // still means all-day, i.e. no range at all.
+      onNewEvent: (day, hour) =>
+        setDialog({
+          kind: "event",
+          day,
+          range:
+            hour === undefined
+              ? undefined
+              : rangeOnDay(day, hour * 60, hour * 60 + DEFAULT_EVENT_MINUTES),
+        }),
+      onLinkNote: (day) => setDialog({ kind: "linkNote", day }),
+      onEditEvent: (day, event) => setDialog({ kind: "event", day, event }),
+      onDeleteEvent: deleteEvent,
+    }),
+    [deleteEvent],
+  );
+
+  // Clicking a day in the month grid drills into it: the week view, on that
+  // day's week. The cursor doubles as "which week", so moving it and flipping
+  // the mode is the whole operation.
+  const openDayInWeek = useCallback(
+    (day: Date) => {
+      setCursor(day);
+      setMode("week");
+    },
+    [setCursor],
+  );
+
   const calendarActions = (
     <div className="calendar-controls">
       <div className="calendar-modes">
@@ -239,22 +307,26 @@ export function CalendarView({
           events={events}
           byDay={byDay}
           onEventClick={(day, event) => setDialog({ kind: "event", day, event })}
-          onNewEvent={(day) => setDialog({ kind: "event", day })}
-          onLinkNote={(day) => setDialog({ kind: "linkNote", day })}
+          onDayClick={openDayInWeek}
           onOpenNote={onOpenNote}
           onUnlinkNote={unlinkNote}
+          actions={menuActions}
         />
       )}
 
       {mode === "week" && (
         <WeekTimeGrid
           days={days}
+          events={events}
           byDay={byDay}
-          onSlotClick={(day, hour) => setDialog({ kind: "event", day, hour })}
+          onSlotRange={(day, startMin, endMin) =>
+            setDialog({ kind: "event", day, range: rangeOnDay(day, startMin, endMin) })
+          }
           onEventClick={(day, event) => setDialog({ kind: "event", day, event })}
           onOpenNote={onOpenNote}
           onUnlinkNote={unlinkNote}
           onLinkNote={(day) => setDialog({ kind: "linkNote", day })}
+          actions={menuActions}
         />
       )}
 
@@ -262,7 +334,7 @@ export function CalendarView({
         <EventDialog
           day={dialog.day}
           event={dialog.event}
-          hour={dialog.hour}
+          range={dialog.range}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
@@ -306,6 +378,12 @@ const itemKey = (item: DayItem) =>
  * Cells are fixed-height, so whatever doesn't fit collapses into a "+N more"
  * button that opens the full day in a popover. How much fits is computed from
  * the measured row height and the MONTH_*_REM metrics, rather than guessed.
+ *
+ * Creating and deleting live in the right-click menus (`actions`) — cells carry
+ * no hover chrome, so a dense month stays as calm as the reference design.
+ *
+ * Left-clicking a cell's empty space drills into that day (`onDayClick`); the
+ * buttons inside it keep their own meaning — see `cellClick`.
  */
 function MonthGrid({
   days,
@@ -313,20 +391,20 @@ function MonthGrid({
   events,
   byDay,
   onEventClick,
-  onNewEvent,
-  onLinkNote,
+  onDayClick,
   onOpenNote,
   onUnlinkNote,
+  actions,
 }: {
   days: Date[];
   cursor: Date;
   events: CalEvent[];
   byDay: Map<string, { events: CalEvent[]; notes: NoteDateEntry[] }>;
   onEventClick: (day: Date, event: CalEvent) => void;
-  onNewEvent: (day: Date) => void;
-  onLinkNote: (day: Date) => void;
+  onDayClick: (day: Date) => void;
   onOpenNote: (id: string) => void;
   onUnlinkNote: (nd: NoteDateEntry) => void;
+  actions: CalendarMenuActions;
 }) {
   const dateLocale = useDateLocale();
   const weeks = useMemo(() => toWeeks(days), [days]);
@@ -368,6 +446,16 @@ function MonthGrid({
     [days, dateLocale],
   );
 
+  // A cell is one big click target, but it also CONTAINS buttons (event rows,
+  // the note open/unlink pair, "+N more"). Their clicks bubble here, so the
+  // drill-in only fires for clicks that didn't land on one — otherwise opening
+  // an event would silently change the view underneath its dialog. The all-day
+  // bars need no guard: they live in the overlay lane, a sibling of the cells.
+  const cellClick = (day: Date) => (e: ReactMouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    onDayClick(day);
+  };
+
   return (
     <div className="calendar-month">
       <div className="calendar-month-body" ref={bodyRef}>
@@ -385,7 +473,7 @@ function MonthGrid({
               ? laneCount
               : Math.max(
                   0,
-                  Math.floor((rowHeight / rem - headRem - MONTH_MORE_REM) / MONTH_LANE_REM),
+                  Math.floor((rowHeight / rem - headRem - MONTH_MORE_REM) / ALLDAY_LANE_REM),
                 );
           const lanes = Math.min(laneCount, laneLimit);
           const rowCapacity =
@@ -393,7 +481,7 @@ function MonthGrid({
               ? Number.POSITIVE_INFINITY
               : Math.max(
                   0,
-                  Math.floor((rowHeight / rem - headRem - lanes * MONTH_LANE_REM) / MONTH_ROW_REM),
+                  Math.floor((rowHeight / rem - headRem - lanes * ALLDAY_LANE_REM) / MONTH_ROW_REM),
                 );
 
           return (
@@ -414,96 +502,102 @@ function MonthGrid({
                   const hidden = total - shown;
 
                   return (
-                    <div
-                      key={key}
-                      className={`calendar-cell${isSameMonth(day, cursor) ? "" : " dim"}${
-                        isToday(day) ? " today" : ""
-                      }`}
-                    >
-                      <div className={`calendar-cell-head${weekIndex === 0 ? " with-weekday" : ""}`}>
-                        {weekIndex === 0 && (
-                          <span className="calendar-weekday-label">{weekdayLabels[col]}</span>
-                        )}
-                        <span className="calendar-daynum">
-                          {format(day, day.getDate() === 1 ? "d MMM" : "d", { locale: dateLocale })}
-                        </span>
-                        <span className="calendar-cell-actions">
-                          <button
-                            title="Link a note to this day"
-                            aria-label="Link a note to this day"
-                            onClick={() => onLinkNote(day)}
+                    // The cell's own menu creates on this day; the event rows
+                    // inside carry their own and stop the event, so only the
+                    // innermost one opens.
+                    <ContextMenu key={key}>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          className={`calendar-cell${isSameMonth(day, cursor) ? "" : " dim"}${
+                            isToday(day) ? " today" : ""
+                          }`}
+                          onClick={cellClick(day)}
+                        >
+                          <div
+                            className={`calendar-cell-head${weekIndex === 0 ? " with-weekday" : ""}`}
                           >
-                            <Link2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button title="New event" aria-label="New event" onClick={() => onNewEvent(day)}>
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      </div>
-                      <div
-                        className="calendar-cell-body"
-                        style={{ paddingTop: `${lanes * MONTH_LANE_REM}rem` }}
-                      >
-                        {items.slice(0, shown).map((item) => (
-                          <DayItemRow
-                            key={itemKey(item)}
-                            item={item}
-                            day={day}
-                            onEventClick={onEventClick}
-                            onOpenNote={onOpenNote}
-                            onUnlinkNote={onUnlinkNote}
-                          />
-                        ))}
-                        {hidden > 0 && (
-                          <Popover
-                            open={peekDay === key}
-                            onOpenChange={(open) => setPeekDay(open ? key : null)}
+                            {weekIndex === 0 && (
+                              <span className="calendar-weekday-label">{weekdayLabels[col]}</span>
+                            )}
+                            <span className="calendar-daynum">
+                              {format(day, day.getDate() === 1 ? "d MMM" : "d", { locale: dateLocale })}
+                            </span>
+                          </div>
+                          <div
+                            className="calendar-cell-body"
+                            style={{ paddingTop: `${lanes * ALLDAY_LANE_REM}rem` }}
                           >
-                            <PopoverTrigger asChild>
-                              <button className="calendar-more">{`+${hidden} more`}</button>
-                            </PopoverTrigger>
-                            <PopoverContent align="start" className="calendar-day-popover">
-                              <div className="calendar-day-popover-head">
-                                {formatCap(day, "EEEE, MMM d", dateLocale)}
-                              </div>
-                              <div className="calendar-day-popover-list">
-                                {bars
-                                  .filter((b) => b.colStart <= col && col < b.colStart + b.span)
-                                  .map((b) => (
-                                    <button
-                                      key={b.event.id}
-                                      className="calendar-allday-bar"
-                                      style={barStyle(b.event.color)}
-                                      onClick={() => {
-                                        setPeekDay(null);
-                                        onEventClick(day, b.event);
-                                      }}
-                                    >
-                                      {b.event.title || "(untitled)"}
-                                    </button>
-                                  ))}
-                                {items.map((item) => (
-                                  <DayItemRow
-                                    key={itemKey(item)}
-                                    item={item}
-                                    day={day}
-                                    onEventClick={(d, ev) => {
-                                      setPeekDay(null);
-                                      onEventClick(d, ev);
-                                    }}
-                                    onOpenNote={(id) => {
-                                      setPeekDay(null);
-                                      onOpenNote(id);
-                                    }}
-                                    onUnlinkNote={onUnlinkNote}
-                                  />
-                                ))}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        )}
-                      </div>
-                    </div>
+                            {items.slice(0, shown).map((item) => (
+                              <DayItemRow
+                                key={itemKey(item)}
+                                item={item}
+                                day={day}
+                                onEventClick={onEventClick}
+                                onOpenNote={onOpenNote}
+                                onUnlinkNote={onUnlinkNote}
+                                actions={actions}
+                              />
+                            ))}
+                            {hidden > 0 && (
+                              <Popover
+                                open={peekDay === key}
+                                onOpenChange={(open) => setPeekDay(open ? key : null)}
+                              >
+                                <PopoverTrigger asChild>
+                                  <button className="calendar-more">{`+${hidden} more`}</button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="calendar-day-popover">
+                                  <div className="calendar-day-popover-head">
+                                    {formatCap(day, "EEEE, MMM d", dateLocale)}
+                                  </div>
+                                  <div className="calendar-day-popover-list">
+                                    {bars
+                                      .filter((b) => b.colStart <= col && col < b.colStart + b.span)
+                                      .map((b) => (
+                                        <EventContextMenu
+                                          key={b.event.id}
+                                          day={day}
+                                          event={b.event}
+                                          actions={actions}
+                                        >
+                                          <button
+                                            className="calendar-allday-bar"
+                                            style={barStyle(b.event.color)}
+                                            onClick={() => {
+                                              setPeekDay(null);
+                                              onEventClick(day, b.event);
+                                            }}
+                                          >
+                                            {b.event.title || "(untitled)"}
+                                          </button>
+                                        </EventContextMenu>
+                                      ))}
+                                    {items.map((item) => (
+                                      <DayItemRow
+                                        key={itemKey(item)}
+                                        item={item}
+                                        day={day}
+                                        onEventClick={(d, ev) => {
+                                          setPeekDay(null);
+                                          onEventClick(d, ev);
+                                        }}
+                                        onOpenNote={(id) => {
+                                          setPeekDay(null);
+                                          onOpenNote(id);
+                                        }}
+                                        onUnlinkNote={onUnlinkNote}
+                                        actions={actions}
+                                      />
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        </div>
+                      </ContextMenuTrigger>
+                      <CalendarDayMenu day={day} actions={actions} />
+                    </ContextMenu>
                   );
                 })}
               </div>
@@ -513,27 +607,33 @@ function MonthGrid({
                   className="calendar-alldaylane"
                   style={{
                     top: `${headRem}rem`,
-                    gridTemplateRows: `repeat(${lanes}, ${MONTH_LANE_REM}rem)`,
+                    gridTemplateRows: `repeat(${lanes}, ${ALLDAY_LANE_REM}rem)`,
                   }}
                 >
                   {bars
                     .filter((b) => b.lane < lanes)
                     .map((b) => (
-                      <button
+                      <EventContextMenu
                         key={b.event.id}
-                        className={`calendar-allday-bar${b.continuesLeft ? " continues-left" : ""}${
-                          b.continuesRight ? " continues-right" : ""
-                        }`}
-                        style={{
-                          gridColumn: `${b.colStart + 1} / span ${b.span}`,
-                          gridRow: b.lane + 1,
-                          ...barStyle(b.event.color),
-                        }}
-                        title={b.event.title}
-                        onClick={() => onEventClick(week[b.colStart], b.event)}
+                        day={week[b.colStart]}
+                        event={b.event}
+                        actions={actions}
                       >
-                        {b.event.title || "(untitled)"}
-                      </button>
+                        <button
+                          className={`calendar-allday-bar${b.continuesLeft ? " continues-left" : ""}${
+                            b.continuesRight ? " continues-right" : ""
+                          }`}
+                          style={{
+                            gridColumn: `${b.colStart + 1} / span ${b.span}`,
+                            gridRow: b.lane + 1,
+                            ...barStyle(b.event.color),
+                          }}
+                          title={b.event.title}
+                          onClick={() => onEventClick(week[b.colStart], b.event)}
+                        >
+                          {b.event.title || "(untitled)"}
+                        </button>
+                      </EventContextMenu>
                     ))}
                 </div>
               )}
@@ -558,9 +658,12 @@ function dayItems(cell: { events: CalEvent[]; notes: NoteDateEntry[] } | undefin
   ];
 }
 
-/** An event's bar/dot colour: its own, or the theme accent when it has none. */
+/** An event's bar/dot colour: its own, or the theme accent when it has none.
+ *  The label can't be a fixed white — TAG_PALETTE spans a yellow that white
+ *  disappears on — so it's picked per swatch by the same `contrastText` helper
+ *  the tag chips use. */
 const barStyle = (color: string | null | undefined) =>
-  color ? { background: color, color: "#fff" } : undefined;
+  color ? { background: color, color: contrastText(color) } : undefined;
 
 /** One row in a day cell: `● 09:30 Zoom Sync` for a timed event, or the same
  * shape with a link glyph for a note tied to the day. */
@@ -570,12 +673,14 @@ function DayItemRow({
   onEventClick,
   onOpenNote,
   onUnlinkNote,
+  actions,
 }: {
   item: DayItem;
   day: Date;
   onEventClick: (day: Date, event: CalEvent) => void;
   onOpenNote: (id: string) => void;
   onUnlinkNote: (nd: NoteDateEntry) => void;
+  actions: CalendarMenuActions;
 }) {
   const dateLocale = useDateLocale();
   const timeFormat = useTheme((s) => s.timeFormat);
@@ -583,17 +688,19 @@ function DayItemRow({
   if (item.kind === "event") {
     const ev = item.event;
     return (
-      <button
-        className="calendar-event-row"
-        title={ev.title}
-        onClick={() => onEventClick(day, ev)}
-      >
-        <span className="calendar-event-dot" style={ev.color ? { background: ev.color } : undefined} />
-        <span className="calendar-event-time">
-          {format(parseISO(ev.start), timeFormat === "24h" ? "HH:mm" : "h:mm a", { locale: dateLocale })}
-        </span>
-        <span className="calendar-event-title">{ev.title || "(untitled)"}</span>
-      </button>
+      <EventContextMenu day={day} event={ev} actions={actions}>
+        <button
+          className="calendar-event-row"
+          title={ev.title}
+          onClick={() => onEventClick(day, ev)}
+        >
+          <span className="calendar-event-dot" style={ev.color ? { background: ev.color } : undefined} />
+          <span className="calendar-event-time">
+            {format(parseISO(ev.start), clockPattern(timeFormat), { locale: dateLocale })}
+          </span>
+          <span className="calendar-event-title">{ev.title || "(untitled)"}</span>
+        </button>
+      </EventContextMenu>
     );
   }
 
@@ -620,80 +727,292 @@ function DayItemRow({
   );
 }
 
+/** Where a pointer sits in a day column, as minutes past that day's midnight,
+ * snapped DOWN to the enclosing `SNAP_MINUTES` slot and clamped to the day.
+ * The column's rect is read live by every caller, so a grid scrolled mid-drag
+ * still measures from where the column actually is. */
+function snappedMinutesAt(col: HTMLElement, clientY: number, rem: number) {
+  const offset = clientY - col.getBoundingClientRect().top;
+  const minutes = (offset / (HOUR_HEIGHT_REM * rem)) * 60;
+  const clamped = Math.min(HOURS.length * 60 - SNAP_MINUTES, Math.max(0, minutes));
+  return Math.floor(clamped / SNAP_MINUTES) * SNAP_MINUTES;
+}
+
+/** A live click-and-drag over one day column. `col` is kept so each move can
+ * re-measure it; `anchor`/`current` are snapped minute offsets (either may be
+ * the later one — dragging upward is allowed); `moved` separates a real drag
+ * from a plain click, which means a different default length. */
+type SlotDrag = {
+  key: string;
+  day: Date;
+  col: HTMLElement;
+  startY: number;
+  anchor: number;
+  current: number;
+  moved: boolean;
+};
+
+/** The minute span a drag covers: ordered, and inclusive of the slot the
+ * pointer is in, so the shortest drag is one `SNAP_MINUTES` block. A plain
+ * click names no length at all, so it gets the standard hour. */
+function dragRange(drag: SlotDrag) {
+  const from = Math.min(drag.anchor, drag.current);
+  const to = drag.moved
+    ? Math.max(drag.anchor, drag.current) + SNAP_MINUTES
+    : from + DEFAULT_EVENT_MINUTES;
+  return { from, to: Math.min(to, HOURS.length * 60) };
+}
+
 /** Week mode's hour-by-hour view: a gutter of hour labels, one scrollable
- * column per day, timed events positioned/sized by their clock time, all-day
- * events + note links shown in a header row above the grid. Clicking an empty
- * hour cell opens the event dialog pre-filled to start at that hour. */
+ * column per day, and timed events positioned/sized by their clock time.
+ *
+ * Empty grid space is a create surface: press and drag to sweep out a span —
+ * previewed as you go, snapped to `SNAP_MINUTES` — and release to open the
+ * event dialog pre-filled with it. A press with no drag is the same gesture
+ * degenerate, and yields a one-hour block at the snapped mark it landed on.
+ *
+ * Above the grid sits the all-day strip, laid out by the SAME `packWeek` the
+ * month grid uses: every spanning event (all-day, or running across a day
+ * boundary) is one continuous lane-packed bar across the days it covers, rather
+ * than a chip per column or a block filling each day's hours. The strip is
+ * inside the sticky header, so its lanes are capped (`WEEK_ALLDAY_LANES`) and
+ * the remainder collapses into a per-day "+N more". */
 function WeekTimeGrid({
   days,
+  events,
   byDay,
-  onSlotClick,
+  onSlotRange,
   onEventClick,
   onOpenNote,
   onUnlinkNote,
   onLinkNote,
+  actions,
 }: {
   days: Date[];
+  events: CalEvent[];
   byDay: Map<string, { events: CalEvent[]; notes: NoteDateEntry[] }>;
-  onSlotClick: (day: Date, hour: number) => void;
+  onSlotRange: (day: Date, startMinutes: number, endMinutes: number) => void;
   onEventClick: (day: Date, event: CalEvent) => void;
   onOpenNote: (id: string) => void;
   onUnlinkNote: (nd: NoteDateEntry) => void;
   onLinkNote: (day: Date) => void;
+  actions: CalendarMenuActions;
 }) {
+  const { t } = useTranslation();
   const dateLocale = useDateLocale();
   const timeFormat = useTheme((s) => s.timeFormat);
   const hourLabel = (h: number) =>
     format(new Date(2000, 0, 1, h), timeFormat === "24h" ? "HH:mm" : "h a", { locale: dateLocale });
 
+  // The hour the last right-click landed on, so a menu opened over the grid
+  // creates at that time rather than all-day. One menu is open at a time, so a
+  // single value covers all seven columns. Set in the CAPTURE phase, which is
+  // guaranteed to run before Radix's trigger opens the menu.
+  const [ctxHour, setCtxHour] = useState<number | undefined>(undefined);
+  const rem = useMemo(
+    () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
+    [],
+  );
+  const hourAt = (e: ReactMouseEvent<HTMLDivElement>) => {
+    setCtxHour(Math.floor(snappedMinutesAt(e.currentTarget, e.clientY, rem) / 60));
+  };
+
+  // The drag in progress, if any. Moves and the release are tracked on the
+  // WINDOW, not the column: a gesture that runs off the grid (or off the app)
+  // still ends cleanly, which is the same reason FolderTable's column resize
+  // listens there.
+  const [drag, setDrag] = useState<SlotDrag | null>(null);
+  const startDrag = (day: Date) => (e: ReactMouseEvent<HTMLDivElement>) => {
+    // Left button only — right-click belongs to the context menu — and never on
+    // top of an existing event, which has its own click and menu.
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest(".calendar-week-event")) return;
+    e.preventDefault(); // no text selection / native drag while sweeping
+    const at = snappedMinutesAt(e.currentTarget, e.clientY, rem);
+    setDrag({
+      key: dayKey(day),
+      day,
+      col: e.currentTarget,
+      startY: e.clientY,
+      anchor: at,
+      current: at,
+      moved: false,
+    });
+  };
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: MouseEvent) => {
+      const at = snappedMinutesAt(drag.col, e.clientY, rem);
+      const moved = drag.moved || Math.abs(e.clientY - drag.startY) > DRAG_THRESHOLD_PX;
+      // Re-render per quarter-hour, not per pixel: below the threshold and
+      // inside the same slot there is nothing new to draw.
+      if (at === drag.current && moved === drag.moved) return;
+      setDrag({ ...drag, current: at, moved });
+    };
+    const onUp = () => {
+      const { from, to } = dragRange(drag);
+      setDrag(null);
+      onSlotRange(drag.day, from, to);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.classList.add("calendar-dragging");
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("calendar-dragging");
+    };
+  }, [drag, rem, onSlotRange]);
+
+  // The all-day strip: one row of lane-packed bars across the whole week.
+  const bars = useMemo(() => packWeek(days, events), [days, events]);
+  const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
+  const lanes = Math.min(laneCount, WEEK_ALLDAY_LANES);
+  // Which day's "+N more" popover is open (one at a time), by day key.
+  const [peekDay, setPeekDay] = useState<string | null>(null);
+
   return (
     <div className="calendar-week">
       <div className="calendar-week-header">
-        <div className="calendar-week-gutter" />
-        {days.map((day) => {
-          const key = dayKey(day);
-          const cell = byDay.get(key);
-          const allDayEvents = cell?.events.filter((ev) => ev.all_day) ?? [];
-          return (
-            <div key={key} className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}`}>
-              <div className="calendar-week-daylabel">
-                <span>{format(day, "EEE", { locale: dateLocale })}</span>
-                <span className="calendar-daynum">{format(day, "d")}</span>
-              </div>
-              <div className="calendar-week-allday">
-                {allDayEvents.map((ev) => (
-                  <button
-                    key={ev.id}
-                    className="calendar-event"
-                    style={ev.color ? { background: ev.color, borderColor: ev.color, color: "#fff" } : undefined}
-                    title={ev.title}
-                    onClick={() => onEventClick(day, ev)}
+        <div className="calendar-week-daylabels">
+          <div className="calendar-week-gutter" />
+          {days.map((day) => (
+            // The header's menu creates an all-day event on this day (no `hour`).
+            <ContextMenu key={dayKey(day)}>
+              <ContextMenuTrigger asChild>
+                <div className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}`}>
+                  <div className="calendar-week-daylabel">
+                    <span>{format(day, "EEE", { locale: dateLocale })}</span>
+                    <span className="calendar-daynum">{format(day, "d")}</span>
+                  </div>
+                </div>
+              </ContextMenuTrigger>
+              <CalendarDayMenu day={day} actions={actions} />
+            </ContextMenu>
+          ))}
+        </div>
+
+        <div className="calendar-week-alldays">
+          <div className="calendar-week-gutter" />
+          {days.map((day, col) => {
+            const key = dayKey(day);
+            const cell = byDay.get(key);
+            const dayBars = bars.filter((b) => b.colStart <= col && col < b.colStart + b.span);
+            // Bars whose lane got cut off still belong to this day — they
+            // collapse into its "+N more" instead of vanishing.
+            const hidden = dayBars.filter((b) => b.lane >= lanes).length;
+            return (
+              <ContextMenu key={key}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    className="calendar-week-allday"
+                    // Reserve the lane overlay's height: the bars are absolutely
+                    // positioned over this row, so the notes below have to be
+                    // pushed clear of them. The 0.15rem is the overlay's own top
+                    // offset — inline padding replaces the stylesheet's, so it
+                    // has to be carried here rather than left to the shorthand.
+                    style={{ paddingTop: `calc(0.15rem + ${lanes * ALLDAY_LANE_REM}rem)` }}
                   >
-                    {ev.title || "(untitled)"}
-                  </button>
-                ))}
-                {cell?.notes.map((nd) => (
-                  <span key={`${nd.note_id}:${nd.event_id ?? ""}`} className="calendar-notelink">
-                    <button className="calendar-notelink-open" title={`Open "${nd.title}"`} onClick={() => onOpenNote(nd.note_id)}>
-                      {nd.title || "Untitled"}
+                    {hidden > 0 && (
+                      <Popover
+                        open={peekDay === key}
+                        onOpenChange={(open) => setPeekDay(open ? key : null)}
+                      >
+                        <PopoverTrigger asChild>
+                          <button className="calendar-more">{`+${hidden} more`}</button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="calendar-day-popover">
+                          <div className="calendar-day-popover-head">
+                            {formatCap(day, "EEEE, MMM d", dateLocale)}
+                          </div>
+                          {/* Every bar covering the day, not just the hidden
+                              ones — the day's timed events are already visible
+                              in the grid below, so bars are all there is to
+                              collapse, and listing them all keeps the popover a
+                              complete picture rather than a remainder. */}
+                          <div className="calendar-day-popover-list">
+                            {dayBars.map((b) => (
+                              <EventContextMenu
+                                key={b.event.id}
+                                day={day}
+                                event={b.event}
+                                actions={actions}
+                              >
+                                <button
+                                  className="calendar-allday-bar"
+                                  style={barStyle(b.event.color)}
+                                  onClick={() => {
+                                    setPeekDay(null);
+                                    onEventClick(day, b.event);
+                                  }}
+                                >
+                                  {b.event.title || "(untitled)"}
+                                </button>
+                              </EventContextMenu>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    {cell?.notes.map((nd) => (
+                      <span key={`${nd.note_id}:${nd.event_id ?? ""}`} className="calendar-notelink">
+                        <button className="calendar-notelink-open" title={`Open "${nd.title}"`} onClick={() => onOpenNote(nd.note_id)}>
+                          {nd.title || "Untitled"}
+                        </button>
+                        <button className="calendar-notelink-x" title="Unlink" aria-label="Unlink note" onClick={() => onUnlinkNote(nd)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      className="calendar-week-linknote"
+                      title={t("calendar.linkNote")}
+                      aria-label={t("calendar.linkNote")}
+                      onClick={() => onLinkNote(day)}
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
                     </button>
-                    <button className="calendar-notelink-x" title="Unlink" aria-label="Unlink note" onClick={() => onUnlinkNote(nd)}>
-                      <X className="h-3 w-3" />
+                  </div>
+                </ContextMenuTrigger>
+                <CalendarDayMenu day={day} actions={actions} />
+              </ContextMenu>
+            );
+          })}
+
+          {lanes > 0 && (
+            <div
+              className="calendar-week-alldaylane"
+              style={{ gridTemplateRows: `repeat(${lanes}, ${ALLDAY_LANE_REM}rem)` }}
+            >
+              {bars
+                .filter((b) => b.lane < lanes)
+                .map((b) => (
+                  <EventContextMenu
+                    key={b.event.id}
+                    day={days[b.colStart]}
+                    event={b.event}
+                    actions={actions}
+                  >
+                    <button
+                      className={`calendar-allday-bar${b.continuesLeft ? " continues-left" : ""}${
+                        b.continuesRight ? " continues-right" : ""
+                      }`}
+                      style={{
+                        gridColumn: `${b.colStart + 1} / span ${b.span}`,
+                        gridRow: b.lane + 1,
+                        ...barStyle(b.event.color),
+                      }}
+                      title={b.event.title}
+                      onClick={() => onEventClick(days[b.colStart], b.event)}
+                    >
+                      {b.event.title || "(untitled)"}
                     </button>
-                  </span>
+                  </EventContextMenu>
                 ))}
-                <button
-                  className="calendar-week-linknote"
-                  title="Link a note to this day"
-                  aria-label="Link a note to this day"
-                  onClick={() => onLinkNote(day)}
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
             </div>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       <div className="calendar-week-body">
@@ -707,39 +1026,49 @@ function WeekTimeGrid({
         {days.map((day) => {
           const key = dayKey(day);
           const cell = byDay.get(key);
-          const segments = timedSegmentsForDay(cell?.events ?? [], day);
+          const segments = packDay(cell?.events ?? [], day);
           return (
-            <div
-              key={key}
-              className="calendar-week-daycol"
-              style={{ height: `${HOURS.length * HOUR_HEIGHT_REM}rem` }}
-            >
-              {HOURS.map((h) => (
-                <button
-                  key={h}
-                  className="calendar-hour-slot"
-                  style={{ height: `${HOUR_HEIGHT_REM}rem` }}
-                  title={`New event at ${hourLabel(h)}`}
-                  aria-label={`New event at ${hourLabel(h)}`}
-                  onClick={() => onSlotClick(day, h)}
-                />
-              ))}
-              {segments.map(({ event, startHour, endHour }) => (
-                <button
-                  key={event.id}
-                  className="calendar-week-event"
-                  style={{
-                    top: `${startHour * HOUR_HEIGHT_REM}rem`,
-                    height: `${(endHour - startHour) * HOUR_HEIGHT_REM}rem`,
-                    ...(event.color ? { background: event.color, borderColor: event.color, color: "#fff" } : {}),
-                  }}
-                  title={event.title}
-                  onClick={() => onEventClick(day, event)}
+            // One menu per column rather than per hour slot — 168 triggers a
+            // week would be a lot of machinery for the same result; the clicked
+            // hour comes from the pointer position instead.
+            <ContextMenu key={key}>
+              <ContextMenuTrigger asChild>
+                <div
+                  className="calendar-week-daycol"
+                  style={{ height: `${HOURS.length * HOUR_HEIGHT_REM}rem` }}
+                  onContextMenuCapture={hourAt}
+                  onMouseDown={startDrag(day)}
                 >
-                  {event.title || "(untitled)"}
-                </button>
-              ))}
-            </div>
+                  {HOURS.map((h) => (
+                    <button
+                      key={h}
+                      className="calendar-hour-slot"
+                      style={{ height: `${HOUR_HEIGHT_REM}rem` }}
+                      title={`New event at ${hourLabel(h)}`}
+                      aria-label={`New event at ${hourLabel(h)}`}
+                      // Keyboard activation only (`detail === 0`). A MOUSE click
+                      // is the tail of the press the column already handled, so
+                      // letting it through here would open a second dialog —
+                      // and one that ignored where in the hour it landed.
+                      onClick={(e) => {
+                        if (e.detail === 0) onSlotRange(day, h * 60, (h + 1) * 60);
+                      }}
+                    />
+                  ))}
+                  {drag?.key === key && drag.moved && <DraftBlock drag={drag} />}
+                  {segments.map((segment) => (
+                    <WeekEventBlock
+                      key={segment.event.id}
+                      segment={segment}
+                      day={day}
+                      onEventClick={onEventClick}
+                      actions={actions}
+                    />
+                  ))}
+                </div>
+              </ContextMenuTrigger>
+              <CalendarDayMenu day={day} hour={ctxHour} actions={actions} />
+            </ContextMenu>
           );
         })}
       </div>
@@ -747,37 +1076,107 @@ function WeekTimeGrid({
   );
 }
 
+/** One timed event in the week grid: title, then its time — beside the title on
+ * a short block and under it on a tall one, because two lines don't fit under
+ * `SHORT_EVENT_MINUTES`. The block is flush to its column (`packDay` hands it a
+ * share of the width, so overlapping events sit side by side rather than on top
+ * of each other) and carries the accent stripe down its left edge from CSS. */
+function WeekEventBlock({
+  segment,
+  day,
+  onEventClick,
+  actions,
+}: {
+  segment: DaySegment;
+  day: Date;
+  onEventClick: (day: Date, event: CalEvent) => void;
+  actions: CalendarMenuActions;
+}) {
+  const dateLocale = useDateLocale();
+  const timeFormat = useTheme((s) => s.timeFormat);
+  const { event, startHour, endHour, col, cols } = segment;
+
+  const compact = (endHour - startHour) * 60 < SHORT_EVENT_MINUTES;
+  const at = (iso: string) => format(parseISO(iso), clockPattern(timeFormat), { locale: dateLocale });
+  const start = at(event.start);
+  const span = event.end ? `${start} – ${at(event.end)}` : start;
+  const label = event.title || "(untitled)";
+
+  return (
+    <EventContextMenu day={day} event={event} actions={actions}>
+      <button
+        className={`calendar-week-event${compact ? " compact" : ""}`}
+        style={{
+          top: `${startHour * HOUR_HEIGHT_REM}rem`,
+          height: `${(endHour - startHour) * HOUR_HEIGHT_REM}rem`,
+          // The 1px the width falls short of its share is the gap: between two
+          // side-by-side blocks, and between the last one and the column's rule.
+          left: `${(col / cols) * 100}%`,
+          width: `calc(${(1 / cols) * 100}% - 1px)`,
+          ...(event.color ? { background: event.color, color: contrastText(event.color) } : {}),
+        }}
+        // A narrow column clips both lines, so the tooltip carries the whole
+        // thing — including the end time a compact block has no room for.
+        title={`${label} · ${span}`}
+        onClick={() => onEventClick(day, event)}
+      >
+        <span className="calendar-week-event-title">{label}</span>
+        <span className="calendar-week-event-time">{compact ? start : span}</span>
+      </button>
+    </EventContextMenu>
+  );
+}
+
+/** The block a drag paints while it is being swept out — the same geometry as
+ * the real `.calendar-week-event`s beside it, labelled with the snapped span it
+ * would create. Non-interactive (CSS `pointer-events: none`), so the pointer
+ * keeps measuring the column underneath rather than this. */
+function DraftBlock({ drag }: { drag: SlotDrag }) {
+  const dateLocale = useDateLocale();
+  const timeFormat = useTheme((s) => s.timeFormat);
+  const { from, to } = dragRange(drag);
+  const label = (minutes: number) =>
+    format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60), clockPattern(timeFormat), {
+      locale: dateLocale,
+    });
+
+  return (
+    <div
+      className="calendar-week-draft"
+      style={{
+        top: `${(from / 60) * HOUR_HEIGHT_REM}rem`,
+        height: `${((to - from) / 60) * HOUR_HEIGHT_REM}rem`,
+      }}
+    >
+      {`${label(from)} – ${label(to)}`}
+    </div>
+  );
+}
+
 /** Create or edit a single event. Shows a Delete action when editing.
- * `hour` — set when opened by clicking a slot in the week view's hourly grid
- * (never alongside `event`) — pre-fills a one-hour timed block starting then. */
+ * `range` — set when opened from the week view's hourly grid (a clicked or
+ * dragged span) or the day menu's "New event" over an hour, never alongside
+ * `event` — pre-fills a timed block. Without it the new event is all-day. */
 function EventDialog({
   day,
   event,
-  hour,
+  range,
   onClose,
   onSaved,
   onError,
 }: {
   day: Date;
   event?: CalEvent;
-  hour?: number;
+  range?: TimeRange;
   onClose: () => void;
   onSaved: () => void;
   onError: (m: string) => void;
 }) {
   const { t } = useTranslation();
-  const initialStart = event
-    ? parseISO(event.start)
-    : hour !== undefined
-      ? set(day, { hours: hour, minutes: 0, seconds: 0, milliseconds: 0 })
-      : set(day, { hours: 0, minutes: 0, seconds: 0, milliseconds: 0 });
-  const initialEnd = event?.end
-    ? parseISO(event.end)
-    : hour !== undefined
-      ? addHours(initialStart, 1)
-      : null;
+  const initialStart = event ? parseISO(event.start) : (range?.start ?? startOfDay(day));
+  const initialEnd = event?.end ? parseISO(event.end) : (range?.end ?? null);
   const [title, setTitle] = useState(event?.title ?? "");
-  const [allDay, setAllDay] = useState(event?.all_day ?? hour === undefined);
+  const [allDay, setAllDay] = useState(event?.all_day ?? !range);
   const [start, setStart] = useState<Date>(initialStart);
   const [end, setEnd] = useState<Date | null>(initialEnd);
   const [color, setColor] = useState<string | null>(event?.color ?? null);

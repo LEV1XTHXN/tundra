@@ -171,6 +171,12 @@
     "nodeSize": "Node size",
     "lineLength": "Line length"
   },
+  "calendar": {
+    "newEvent": "New event",
+    "editEvent": "Edit event…",
+    "deleteEvent": "Delete event",
+    "linkNote": "Link a note to this day"
+  },
   "folderView": {
     "allNotes": "All notes",
     "galleryView": "Gallery view",

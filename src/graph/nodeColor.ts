@@ -3,23 +3,16 @@
  * modes (folder / tag / cluster). Reuses the app's existing TAG_PALETTE
  * (same swatches already seen on tag/property chips and Kanban cards) rather
  * than inventing a second palette, and is theme-invariant by design — like
- * every other TAG_PALETTE consumer, the same hex reads fine in both themes;
- * it's the SURROUNDING chrome (canvas background, edges, the dimmed/neutral
- * tones below) that needs a light/dark variant, not the palette itself.
+ * every other TAG_PALETTE consumer, the same hex reads fine in both themes.
+ *
+ * The SURROUNDING chrome (labels, edges, the neutral/dimmed tones, the hover
+ * pill) does need a light/dark variant, but those aren't defined here: they're
+ * `--graph-*` tokens in index.css, read back at theme-change time via
+ * `readPaletteColor` so there's one palette, not two.
  */
 import { TAG_PALETTE } from "@/store/tagColors";
 
 export type GraphColorMode = "folder" | "tag" | "cluster";
-
-/** Untagged notes in "by tag" mode, and the hovered-fade tone — a muted
- *  neutral gray close to the theme's own --muted-foreground at each theme's
- *  lightness (canvas fillStyle needs a resolved color, not a CSS var). */
-export const NEUTRAL_LIGHT = "#a1a1aa";
-export const NEUTRAL_DARK = "#71717a";
-
-/** The hover-dim tone for nodes outside the hovered node's neighborhood. */
-export const DIM_LIGHT = "#d4d4d8";
-export const DIM_DARK = "#3f3f46";
 
 function paletteColor(index: number): string {
   const n = TAG_PALETTE.length;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Event as CalEvent } from "@/services";
 import { addDays, eachDayOfInterval } from "date-fns";
-import { isSpanning, packWeek, toWeeks } from "./monthLayout";
+import { isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
 
 /** An all-day event over `[start, end]` (local dates, `end` inclusive). */
 function allDay(id: string, start: string, end?: string): CalEvent {
@@ -106,6 +106,106 @@ describe("packWeek", () => {
   it("normalises an event whose end precedes its start", () => {
     const bar = packWeek(w, [allDay("backwards", "2026-07-02", "2026-06-30")])[0];
     expect(bar).toMatchObject({ colStart: 1, span: 3 });
+  });
+});
+
+describe("packDay", () => {
+  const DAY = new Date("2026-07-02T00:00:00");
+  /** A timed event on the test day, from clock times. */
+  const on = (id: string, start: string, end?: string) =>
+    timed(id, `2026-07-02T${start}:00`, end ? `2026-07-02T${end}:00` : undefined);
+  /** `{ id: [startHour, endHour, col, cols] }`, for compact expectations. */
+  const boxes = (evs: CalEvent[]) =>
+    Object.fromEntries(
+      packDay(evs, DAY).map((s) => [s.event.id, [s.startHour, s.endHour, s.col, s.cols]]),
+    );
+
+  it("positions a block by fractional hours from midnight", () => {
+    expect(boxes([on("A", "09:30", "11:00")])).toEqual({ A: [9.5, 11, 0, 1] });
+  });
+
+  it("gives an event with no end a nominal half hour", () => {
+    expect(boxes([on("A", "09:00")])).toEqual({ A: [9, 9.5, 0, 1] });
+  });
+
+  it("floors a zero-length event at half an hour so it stays clickable", () => {
+    expect(boxes([on("A", "09:00", "09:00")])).toEqual({ A: [9, 9.5, 0, 1] });
+  });
+
+  it("leaves separate events at full width", () => {
+    expect(boxes([on("A", "09:00", "10:00"), on("B", "14:00", "15:00")])).toEqual({
+      A: [9, 10, 0, 1],
+      B: [14, 15, 0, 1],
+    });
+  });
+
+  it("splits two overlapping events side by side", () => {
+    expect(boxes([on("A", "09:00", "11:00"), on("B", "10:00", "12:00")])).toEqual({
+      A: [9, 11, 0, 2],
+      B: [10, 12, 1, 2],
+    });
+  });
+
+  it("splits three simultaneous events into thirds", () => {
+    expect(
+      boxes([on("A", "09:00", "12:00"), on("B", "09:30", "12:00"), on("C", "10:00", "12:00")]),
+    ).toEqual({
+      A: [9, 12, 0, 3],
+      B: [9.5, 12, 1, 3],
+      C: [10, 12, 2, 3],
+    });
+  });
+
+  it("widens a cluster only to its busiest moment, not to its member count", () => {
+    // C is chained to A through B, so all three share one cluster — but A has
+    // already ended when C starts, so C reuses A's column and two are enough.
+    expect(
+      boxes([on("A", "09:00", "10:00"), on("B", "09:30", "12:00"), on("C", "10:30", "11:00")]),
+    ).toEqual({
+      A: [9, 10, 0, 2],
+      B: [9.5, 12, 1, 2],
+      C: [10.5, 11, 0, 2],
+    });
+  });
+
+  it("keeps clusters independent, so one pile-up doesn't narrow the rest of the day", () => {
+    expect(
+      boxes([on("A", "09:00", "10:00"), on("B", "09:00", "10:00"), on("C", "14:00", "15:00")]),
+    ).toEqual({
+      A: [9, 10, 0, 2],
+      B: [9, 10, 1, 2],
+      C: [14, 15, 0, 1],
+    });
+  });
+
+  it("lets a block that starts exactly when another ends reuse its column", () => {
+    expect(boxes([on("A", "09:00", "10:00"), on("B", "10:00", "11:00")])).toEqual({
+      A: [9, 10, 0, 1],
+      B: [10, 11, 0, 1],
+    });
+  });
+
+  it("orders equal starts by length then title, so columns don't shuffle", () => {
+    const ids = packDay([on("Zulu", "09:00", "10:00"), on("Alpha", "09:00", "11:00")], DAY).map(
+      (s) => s.event.id,
+    );
+    expect(ids).toEqual(["Alpha", "Zulu"]);
+  });
+
+  it("excludes spanning events — they belong to the all-day strip", () => {
+    expect(
+      packDay(
+        [
+          allDay("holiday", "2026-07-02"),
+          timed("overnight", "2026-07-02T22:00:00", "2026-07-03T02:00:00"),
+        ],
+        DAY,
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores events on other days", () => {
+    expect(packDay([on("A", "09:00", "10:00")], new Date("2026-07-03T00:00:00"))).toEqual([]);
   });
 });
 

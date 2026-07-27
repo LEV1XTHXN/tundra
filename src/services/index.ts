@@ -253,6 +253,11 @@ export const calendar = {
   /** Remove a note→date link (matched exactly). */
   removeNoteDate: (id: string, date: NoteDate): Promise<null> =>
     unwrap(commands.removeNoteDate(id, date)),
+  /** Rewrite every event colour through an `old hex → new hex` map (keys lowercase);
+   *  returns how many events changed. Backs the palette migration — see
+   *  `store/paletteMigration.ts`. */
+  recolorEvents: (remap: Record<string, string>): Promise<number> =>
+    unwrap(commands.recolorEvents(remap)),
 };
 
 /**

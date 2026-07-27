@@ -13,16 +13,36 @@ import type { KanbanBoard } from "@/services";
  */
 const CONFIG_NAME = "tag-colors";
 
-/** A small fixed palette of readable swatches offered by the color pickers. */
+/**
+ * A small fixed palette of readable swatches offered by every color picker in
+ * the app — tag chips, Kanban columns, folder-table properties, graph nodes and
+ * calendar events all index into this one list rather than keeping their own.
+ *
+ * The swatches are pastels generated at a *single* OKLCH lightness and chroma
+ * (L 0.78 / C 0.11), one per hue, which is what makes them read as a set: no
+ * swatch is louder than its neighbours, and none of them fight the muted sage
+ * chrome the way the previous saturated primaries did.
+ *
+ * Two constraints the values have to keep if they're ever retuned:
+ *
+ *  - **Contrast on the graph canvas.** Nodes are drawn as bare dots with no
+ *    outline, so a swatch has to hold up against plain white. At this lightness
+ *    each one is ≈1.9–2.1:1 on `#ffffff` (and 8.5–9.4:1 on the dark canvas) —
+ *    lighter than this and the light-theme graph washes out.
+ *  - **One side of the `contrastText` threshold.** All eight sit at luminance
+ *    0.66–0.72, comfortably above the 0.6 cut, so every chip gets dark text.
+ *    A swatch that straddles the boundary makes label colour flip between
+ *    neighbouring hues, which looks like a bug.
+ */
 export const TAG_PALETTE = [
-  "#ef4444", // red
-  "#f97316", // orange
-  "#eab308", // amber
-  "#22c55e", // green
-  "#14b8a6", // teal
-  "#3b82f6", // blue
-  "#8b5cf6", // violet
-  "#ec4899", // pink
+  "#f69b94", // red
+  "#eea471", // orange
+  "#d3b460", // amber
+  "#85cb8f", // green
+  "#50cec9", // teal
+  "#7dbdfa", // blue
+  "#bda9f6", // violet
+  "#ed9ac1", // pink
 ] as const;
 
 interface TagColorsState {

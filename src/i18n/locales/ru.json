@@ -175,6 +175,12 @@
     "nodeSize": "Размер узлов",
     "lineLength": "Длина линий"
   },
+  "calendar": {
+    "newEvent": "Новое событие",
+    "editEvent": "Изменить событие…",
+    "deleteEvent": "Удалить событие",
+    "linkNote": "Привязать заметку к этому дню"
+  },
   "folderView": {
     "allNotes": "Все заметки",
     "galleryView": "Вид галереи",

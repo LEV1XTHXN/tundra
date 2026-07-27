@@ -9,6 +9,7 @@
 //!   mirrored into `NoteSummary` + the in-memory index exactly like `pinned`, so a
 //!   range query is served from the index without re-reading note files.
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -161,6 +162,43 @@ impl CalendarStore {
             }
         }
         self.persist(vault)
+    }
+
+    /// Rewrite event colours through an `old hex → new hex` map, persisting only
+    /// if something actually changed. Returns how many events were recoloured.
+    ///
+    /// Deliberately a *generic* remap rather than a palette-aware migration: the
+    /// palette itself lives in TypeScript (`TAG_PALETTE`), and keeping a second
+    /// copy of it here is exactly the drift the graph's `readPaletteColor` avoids.
+    /// The caller supplies the mapping; the core just applies it atomically.
+    ///
+    /// Lookups are case-insensitive on the stored colour (map keys must be
+    /// lowercase), so a hand-edited `calendar.json` written as `#EF4444` still
+    /// matches. The stored value becomes exactly what the map supplies.
+    pub fn recolor(&self, vault: &Vault, remap: &HashMap<String, String>) -> Result<usize> {
+        let changed = {
+            let mut events = self.events.write().unwrap();
+            let mut changed = 0;
+            for event in events.iter_mut() {
+                let Some(current) = event.color.as_deref() else {
+                    continue;
+                };
+                let Some(next) = remap.get(&current.to_ascii_lowercase()) else {
+                    continue;
+                };
+                if next != current {
+                    event.color = Some(next.clone());
+                    changed += 1;
+                }
+            }
+            changed
+        };
+        // No write when nothing matched — the common case once the migration has
+        // run, and it keeps the file's mtime honest for backup/sync.
+        if changed > 0 {
+            self.persist(vault)?;
+        }
+        Ok(changed)
     }
 
     /// Delete an event by id and persist.

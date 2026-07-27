@@ -30,28 +30,36 @@ import { useTheme } from "../store/theme";
 import { useTagColors } from "@/store/tagColors";
 import { ViewFrame } from "@/components/ViewFrame";
 import { GraphInfoPanel, type GraphStats } from "./GraphInfoPanel";
-import { drawNodeLabelBelow, drawNodeHoverBelow } from "./nodeLabel";
-import { NEUTRAL_DARK, NEUTRAL_LIGHT, DIM_DARK, DIM_LIGHT, clusterColor, paletteAssigner, type GraphColorMode } from "./nodeColor";
+import { drawNodeLabelBelow, drawNodeHoverBelow, setHoverPillColors } from "./nodeLabel";
+import { clusterColor, paletteAssigner, type GraphColorMode } from "./nodeColor";
+import { readPaletteColor } from "./paletteColor";
 
 /** Vault-scoped file the graph persists its view settings to (through Rust). */
 const GRAPH_VIEW_CONFIG = "graph-view.json";
 
-/** Node label text colour, per theme. Sigma resolves labels from the
- *  `labelColor` setting; the default `#000` is unreadable on the dark shell, so
- *  we switch to near-white there. (Hover labels sit on a white pill and stay
- *  dark in both themes — only the toggled-on labels need this.) */
-const LABEL_COLOR_LIGHT = "#000";
-const LABEL_COLOR_DARK = "#e4e4e7";
+/** The canvas chrome — everything that isn't a TAG_PALETTE node hue. These are
+ *  `--graph-*` tokens in index.css (defined right next to the palette) rather
+ *  than constants here, so the graph can't drift from the app's colours; sigma
+ *  needs resolved values, so they're read back with `readPaletteColor` whenever
+ *  the theme changes. The fallbacks are the light theme's values, used only if
+ *  a token is somehow missing.
+ *
+ *  Edges are deliberately their own token rather than reusing a text tone: they
+ *  are 1px lines, and an alpha colour at that width blends most of the way back
+ *  to the canvas and disappears, so each theme gets a solid pre-blended value
+ *  picked for contrast against that theme's actual canvas. */
+const GRAPH_TOKENS = {
+  label: ["--graph-label", "#171717"],
+  edge: ["--graph-edge", "#a8b0ac"],
+  neutral: ["--graph-neutral", "#8d9591"],
+  dim: ["--graph-dim", "#dce2de"],
+  pill: ["--graph-pill", "#ffffff"],
+  pillFg: ["--graph-pill-fg", "#171717"],
+} as const;
 
-/** Edges: thin, muted lines so nodes — carrying the real signal via
- *  color/size — pop instead of the canvas reading as a hairball. Solid,
- *  pre-blended tones rather than an alpha color: an `rgba()` at low alpha
- *  measured out to barely any contrast against the near-white light-mode
- *  canvas (a 32%-alpha mid-gray blends to ~82% of the way back to white —
- *  practically invisible on a thin 1px line), so these are picked for
- *  contrast against each theme's actual canvas background directly. */
-const EDGE_COLOR_LIGHT = "#a3a3a3"; // neutral-400 — clearly visible on the near-white canvas
-const EDGE_COLOR_DARK = "#52525b"; // neutral-600 — visible but muted on the near-black canvas
+const graphColor = (key: keyof typeof GRAPH_TOKENS): string =>
+  readPaletteColor(GRAPH_TOKENS[key][0], GRAPH_TOKENS[key][1]);
+
 const EDGE_SIZE = 1;
 
 /** Node sizing. Sigma v3 hit-tests via pixel-perfect WebGL color-picking, so a
@@ -119,10 +127,12 @@ export function GraphView() {
   // (theme-independent) build effect can read the live value at construction
   // without re-running on theme change — the theme-sync effect below updates
   // both the ref and, if sigma is already live, the running instance.
-  const labelColorRef = useRef(resolvedTheme === "dark" ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT);
-  const edgeColorRef = useRef(resolvedTheme === "dark" ? EDGE_COLOR_DARK : EDGE_COLOR_LIGHT);
-  const dimColorRef = useRef(resolvedTheme === "dark" ? DIM_DARK : DIM_LIGHT);
-  const neutralColorRef = useRef(resolvedTheme === "dark" ? NEUTRAL_DARK : NEUTRAL_LIGHT);
+  // The tokens resolve against <html>, which already carries the theme class,
+  // so these read the right value on first mount without consulting the store.
+  const labelColorRef = useRef(graphColor("label"));
+  const edgeColorRef = useRef(graphColor("edge"));
+  const dimColorRef = useRef(graphColor("dim"));
+  const neutralColorRef = useRef(graphColor("neutral"));
   // Per-graph, built once (the FOLDER/TAG value set is fixed for as long as
   // this graph snapshot is loaded): value → palette-color functions the
   // "color by" modes read from. Cluster ids need no assigner (indexes the
@@ -621,18 +631,20 @@ export function GraphView() {
     };
   }, [openNote, runLayout, scheduleSave]);
 
-  // Keep label/edge/dim/neutral colours in step with the theme without
-  // rebuilding sigma. Updates the refs (read by the build effect on first
+  // Keep the canvas chrome in step with the theme without rebuilding sigma.
+  // Depends on `resolvedTheme` not to read it, but to re-run AFTER the store
+  // has flipped the class on <html> — only then do the tokens resolve to the
+  // new theme's values. Updates the refs (read by the build effect on first
   // mount) and, if sigma is already live, pushes the new values and
   // recolors — the palette hues themselves are theme-invariant (see
   // `nodeColor.ts`), but "by tag"'s neutral fallback isn't, so a live theme
   // flip needs a recolor pass to actually change anything for that mode.
   useEffect(() => {
-    const dark = resolvedTheme === "dark";
-    labelColorRef.current = dark ? LABEL_COLOR_DARK : LABEL_COLOR_LIGHT;
-    edgeColorRef.current = dark ? EDGE_COLOR_DARK : EDGE_COLOR_LIGHT;
-    dimColorRef.current = dark ? DIM_DARK : DIM_LIGHT;
-    neutralColorRef.current = dark ? NEUTRAL_DARK : NEUTRAL_LIGHT;
+    labelColorRef.current = graphColor("label");
+    edgeColorRef.current = graphColor("edge");
+    dimColorRef.current = graphColor("dim");
+    neutralColorRef.current = graphColor("neutral");
+    setHoverPillColors(graphColor("pill"), graphColor("pillFg"));
     const s = sigmaRef.current;
     if (s) {
       s.setSetting("labelColor", { color: labelColorRef.current });

@@ -83,3 +83,55 @@ fn events_stored_in_config_not_cache() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A colour remap rewrites only the events whose colour is a key in the map,
+/// leaves uncoloured and unmapped events alone, and survives a reopen.
+#[test]
+fn recolor_rewrites_mapped_colors_and_persists() {
+    let (vault, dir) = temp_vault();
+    let store = CalendarStore::open(&vault).unwrap();
+
+    let mut old = event("Old palette", at(2026, 7, 1), None);
+    old.color = Some("#ef4444".into());
+    store.add(&vault, old).unwrap();
+
+    let mut custom = event("Hand-picked", at(2026, 7, 2), None);
+    custom.color = Some("#123456".into());
+    store.add(&vault, custom).unwrap();
+
+    store.add(&vault, event("No colour", at(2026, 7, 3), None)).unwrap();
+
+    let remap = HashMap::from([("#ef4444".to_string(), "#f69b94".to_string())]);
+    assert_eq!(store.recolor(&vault, &remap).unwrap(), 1);
+
+    let by_title = |events: &[Event], title: &str| {
+        events.iter().find(|e| e.title == title).unwrap().color.clone()
+    };
+    // Read back from disk, not just memory — the remap must have been persisted.
+    let reopened = CalendarStore::open(&vault).unwrap().list();
+    assert_eq!(by_title(&reopened, "Old palette"), Some("#f69b94".into()));
+    assert_eq!(by_title(&reopened, "Hand-picked"), Some("#123456".into()), "unmapped colour kept");
+    assert_eq!(by_title(&reopened, "No colour"), None);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Re-running a remap is a no-op — the migration is idempotent, which is what
+/// lets the frontend record its marker *after* the rewrite.
+#[test]
+fn recolor_is_idempotent_and_case_insensitive() {
+    let (vault, dir) = temp_vault();
+    let store = CalendarStore::open(&vault).unwrap();
+
+    // Uppercase on disk (a hand-edited calendar.json) still matches.
+    let mut ev = event("Shouty", at(2026, 7, 1), None);
+    ev.color = Some("#EF4444".into());
+    store.add(&vault, ev).unwrap();
+
+    let remap = HashMap::from([("#ef4444".to_string(), "#f69b94".to_string())]);
+    assert_eq!(store.recolor(&vault, &remap).unwrap(), 1);
+    assert_eq!(store.recolor(&vault, &remap).unwrap(), 0, "second pass changes nothing");
+    assert_eq!(store.list()[0].color, Some("#f69b94".into()));
+
+    std::fs::remove_dir_all(&dir).ok();
+}

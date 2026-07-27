@@ -14,9 +14,10 @@ import { inferSettings } from "graphology-layout-forceatlas2";
 
 import { links } from "@/services";
 import { useViewState } from "@/store/viewState";
+import { useTheme } from "@/store/theme";
+import { readPaletteColor } from "@/graph/paletteColor";
 import type { WidgetProps } from "./widgets";
 
-const MINI_GRAPH_NODE_COLOR = "#5b8def";
 const MINI_GRAPH_NODE_SIZE = 5;
 const MINI_GRAPH_NODE_DEGREE_SCALE = 1.6;
 
@@ -30,11 +31,16 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const setView = useViewState((s) => s.setView);
+  // Not read directly — sigma needs a resolved colour, so the node colour comes
+  // from the --graph-node token below. This is here so the widget rebuilds once
+  // the theme flips and the token resolves to the other theme's value.
+  const resolvedTheme = useTheme((s) => s.resolved);
   const [status, setStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const nodeColor = readPaletteColor("--graph-node", "#3b5249");
     let sigma: Sigma | undefined;
     let layout: FA2Layout | undefined;
     let stopTimer: ReturnType<typeof setTimeout> | undefined;
@@ -56,7 +62,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
             x: Math.random(),
             y: Math.random(),
             size: MINI_GRAPH_NODE_SIZE,
-            color: MINI_GRAPH_NODE_COLOR,
+            color: nodeColor,
           });
         }
         for (const edge of data.edges) {
@@ -76,7 +82,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
         sigma = new Sigma(graph, container, {
           allowInvalidContainer: true,
           renderLabels: false,
-          defaultNodeColor: MINI_GRAPH_NODE_COLOR,
+          defaultNodeColor: nodeColor,
         });
         sigma.on("clickNode", ({ node }) => onOpenNote(node));
 
@@ -96,7 +102,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
       layout?.kill();
       sigma?.kill();
     };
-  }, [refreshKey, onOpenNote]);
+  }, [refreshKey, onOpenNote, resolvedTheme]);
 
   return (
     <div className="mini-graph">

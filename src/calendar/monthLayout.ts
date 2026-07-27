@@ -1,12 +1,24 @@
 /**
- * Month-view layout maths: turning events into the continuous bars the grid
- * draws across a week row. All-day events (and any event covering more than one
- * calendar day) render as a single bar spanning the days they cover — clipped
- * at each week boundary and stacked into lanes so overlapping bars never
- * collide. Pure functions, no React: the grid just maps the result onto CSS
- * grid columns/rows.
+ * Calendar layout maths, for both grids. Two axes, same discipline:
+ *
+ * - `packWeek` — spanning events (all-day, or crossing a day boundary) become
+ *   continuous bars across a week row, clipped at each week boundary and stacked
+ *   into lanes so overlapping bars never collide.
+ * - `packDay` — the week view's timed events become blocks down ONE day column,
+ *   split into side-by-side columns wherever they overlap.
+ *
+ * Pure functions, no React: the grids just map the result onto CSS grid
+ * columns/rows (month) or absolute offsets (week).
  */
-import { differenceInCalendarDays, eachDayOfInterval, parseISO, startOfDay } from "date-fns";
+import {
+  addDays,
+  addMinutes,
+  differenceInCalendarDays,
+  differenceInMinutes,
+  eachDayOfInterval,
+  parseISO,
+  startOfDay,
+} from "date-fns";
 
 import type { Event as CalEvent } from "@/services";
 
@@ -99,6 +111,93 @@ export function packWeek(week: Date[], events: CalEvent[]): WeekBar[] {
     }
     return { ...bar, lane };
   });
+}
+
+/** One timed event's box within ONE day column of the week grid. */
+export interface DaySegment {
+  event: CalEvent;
+  /** Fractional hours from midnight — the block's top edge. */
+  startHour: number;
+  /** Fractional hours from midnight — the block's bottom edge. */
+  endHour: number;
+  /** 0-based column within its overlap cluster, 0 = leftmost. */
+  col: number;
+  /** How many columns the cluster splits into (>= 1). */
+  cols: number;
+}
+
+/**
+ * Lay out the timed events that begin AND end on `day` as blocks down its
+ * column, as fractional hour offsets from midnight. Anything `isSpanning`
+ * (all-day, or crossing a day boundary) is excluded: it draws as one continuous
+ * bar in the all-day strip instead of a block per day — the same split
+ * `dayItems` makes for month cells. The clipping below is therefore a no-op for
+ * the events that survive the filter, kept as the guard that a block can never
+ * escape its own column.
+ *
+ * Overlapping blocks split the column between them rather than stacking on top
+ * of each other: events are grouped into *clusters* (maximal runs of mutually
+ * reachable overlap), and each cluster is divided into as many columns as its
+ * busiest moment needs.
+ */
+export function packDay(events: CalEvent[], day: Date): DaySegment[] {
+  const dayStart = startOfDay(day);
+  const dayEnd = addDays(dayStart, 1);
+
+  const spans: Omit<DaySegment, "col" | "cols">[] = [];
+  for (const ev of events) {
+    if (isSpanning(ev)) continue;
+    const evStart = parseISO(ev.start);
+    // Untimed-end events get a nominal 30min block so they're visible/clickable.
+    const evEnd = ev.end ? parseISO(ev.end) : addMinutes(evStart, 30);
+    if (evEnd <= dayStart || evStart >= dayEnd) continue;
+    const clippedStart = evStart < dayStart ? dayStart : evStart;
+    const clippedEnd = evEnd > dayEnd ? dayEnd : evEnd;
+    const startHour = differenceInMinutes(clippedStart, dayStart) / 60;
+    // A floor of half an hour: a zero-length event would otherwise be an
+    // invisible, unclickable block.
+    const endHour = Math.max(differenceInMinutes(clippedEnd, dayStart) / 60, startHour + 0.5);
+    spans.push({ event: ev, startHour, endHour });
+  }
+
+  // Earliest first, then longest, then a name/id tiebreak — the same four keys
+  // `packWeek` sorts on, and for the same reason: without a total order the
+  // column assignment would shuffle between renders on equal starts.
+  spans.sort(
+    (a, b) =>
+      a.startHour - b.startHour ||
+      b.endHour - a.endHour ||
+      a.event.title.localeCompare(b.event.title) ||
+      a.event.id.localeCompare(b.event.id),
+  );
+
+  const out: DaySegment[] = [];
+  // The cluster being built, and where each of its columns is currently free.
+  // A cluster ends at the first block starting at or after EVERY open column's
+  // end — i.e. the first moment the day column is empty again.
+  let cluster: DaySegment[] = [];
+  let colEnds: number[] = [];
+
+  /** Stamp the finished cluster's width onto every member and emit it. */
+  const flush = () => {
+    for (const seg of cluster) seg.cols = colEnds.length;
+    out.push(...cluster);
+    cluster = [];
+    colEnds = [];
+  };
+
+  for (const span of spans) {
+    if (colEnds.length > 0 && span.startHour >= Math.max(...colEnds)) flush();
+    // Leftmost column whose last occupant has already ended. Touching blocks
+    // (one ends exactly as the next starts) share a column — they don't overlap.
+    let col = colEnds.findIndex((end) => end <= span.startHour);
+    if (col === -1) col = colEnds.length;
+    colEnds[col] = span.endHour;
+    cluster.push({ ...span, col, cols: 1 });
+  }
+  if (cluster.length > 0) flush();
+
+  return out;
 }
 
 /** Split a flat run of grid days into rows of 7 — the month grid's week rows. */

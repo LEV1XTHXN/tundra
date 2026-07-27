@@ -3,6 +3,7 @@
 //! resolve the open vault and delegate straight to `tundra-core`. Every command
 //! is `#[specta::specta]` so `tauri-specta` can generate matching TS types.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};

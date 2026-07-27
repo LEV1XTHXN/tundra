@@ -204,6 +204,14 @@ export const commands = {
 	 */
 	calendarRange: (start: string, end: string) => typedError<CalendarRange_Serialize, CoreError>(__TAURI_INVOKE("calendar_range", { start, end })),
 	/**
+	 *  Rewrite event colours through an `old hex → new hex` map, returning how many
+	 *  events changed. Backs the frontend's one-time palette migration: the palette
+	 *  lives in TypeScript, so the mapping is supplied by the caller rather than
+	 *  duplicated here. Map keys must be lowercase (the lookup lowercases the stored
+	 *  colour).
+	 */
+	recolorEvents: (remap: { [key in string]: string }) => typedError<number, CoreError>(__TAURI_INVOKE("recolor_events", { remap })),
+	/**
 	 *  Link a note to a date (optionally a specific event), stored on the note's meta
 	 *  and mirrored into the index.
 	 */

@@ -27,6 +27,20 @@ function labelColor(data: NodeLabelData, settings: LabelSettings): string {
 /** Gap (px) between the bottom of the node and the top of its label. */
 const LABEL_GAP = 2;
 
+/* Hover-pill colours. Sigma's `defaultDrawNodeHover` receives only its own
+   label settings — there's no slot to thread app state through — so the theme
+   is pushed in from GraphView's resolvedTheme effect instead, mirroring how
+   that effect already updates the label/edge/dim/neutral refs. Defaults match
+   the light theme so the first paint is right even if the push hasn't run. */
+let pillBackground = "#ffffff";
+let pillForeground = "#171717";
+
+/** Point the hover pill at the current theme's `--graph-pill*` tokens. */
+export function setHoverPillColors(background: string, foreground: string): void {
+  pillBackground = background;
+  pillForeground = foreground;
+}
+
 /** Baseline y for a label centered under a node of the given drawn size. */
 function labelBaselineY(data: NodeLabelData, size: number): number {
   return data.y + data.size + LABEL_GAP + size;
@@ -57,7 +71,7 @@ export const drawNodeHoverBelow: NodeHoverFn = (context, data, settings) => {
   const left = data.x - boxW / 2;
   const r = 3;
 
-  context.fillStyle = "#fff";
+  context.fillStyle = pillBackground;
   context.shadowOffsetX = 0;
   context.shadowOffsetY = 0;
   context.shadowBlur = 8;
@@ -72,11 +86,10 @@ export const drawNodeHoverBelow: NodeHoverFn = (context, data, settings) => {
   context.fill();
   context.shadowBlur = 0;
 
-  // The pill background above is hardcoded white regardless of theme, so the
-  // text must be too — the theme-aware `labelColor()` (used by the plain,
-  // always-on labels below) would resolve to a light gray in dark mode and
-  // go nearly invisible on this white pill.
-  context.fillStyle = "#000";
+  // Paired with the pill background above rather than taken from
+  // `labelColor()`: the plain always-on labels sit on the canvas, this one sits
+  // on the pill, and the two surfaces are different colours.
+  context.fillStyle = pillForeground;
   context.textAlign = "center";
   context.fillText(data.label, data.x, top + size);
   context.textAlign = "left";

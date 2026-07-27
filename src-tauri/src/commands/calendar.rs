@@ -31,6 +31,21 @@ pub fn delete_event(state: State<AppState>, id: String) -> Result<(), CoreError>
     current_calendar(&state)?.delete(&current(&state)?, &id)
 }
 
+/// Rewrite event colours through an `old hex → new hex` map, returning how many
+/// events changed. Backs the frontend's one-time palette migration: the palette
+/// lives in TypeScript, so the mapping is supplied by the caller rather than
+/// duplicated here. Map keys must be lowercase (the lookup lowercases the stored
+/// colour).
+#[tauri::command]
+#[specta::specta]
+pub fn recolor_events(
+    state: State<AppState>,
+    remap: HashMap<String, String>,
+) -> Result<u32, CoreError> {
+    let changed = current_calendar(&state)?.recolor(&current(&state)?, &remap)?;
+    Ok(changed as u32)
+}
+
 /// Everything on the calendar in the inclusive `[start, end]` day range: both
 /// standalone events and note→date links (served from the in-memory index).
 #[tauri::command]

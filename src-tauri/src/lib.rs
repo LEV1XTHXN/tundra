@@ -97,6 +97,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::update_event,
             commands::delete_event,
             commands::calendar_range,
+            commands::recolor_events,
             commands::add_note_date,
             commands::remove_note_date,
             commands::set_note_property,
