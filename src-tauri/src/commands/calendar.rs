@@ -24,11 +24,25 @@ pub fn update_event(state: State<AppState>, event: CalendarEvent) -> Result<(), 
     current_calendar(&state)?.update(&current(&state)?, event)
 }
 
-/// Delete an event by id.
+/// Delete an event by id. For a repeating event this removes the whole series —
+/// see `delete_event_occurrence` for a single day.
 #[tauri::command]
 #[specta::specta]
 pub fn delete_event(state: State<AppState>, id: String) -> Result<(), CoreError> {
     current_calendar(&state)?.delete(&current(&state)?, &id)
+}
+
+/// Delete ONE occurrence of a repeating event: the day joins the series' skip
+/// list, leaving the rest of the series intact. A no-op on an event that doesn't
+/// repeat (the caller wants `delete_event` for those).
+#[tauri::command]
+#[specta::specta]
+pub fn delete_event_occurrence(
+    state: State<AppState>,
+    id: String,
+    date: NaiveDate,
+) -> Result<(), CoreError> {
+    current_calendar(&state)?.skip_occurrence(&current(&state)?, &id, date)
 }
 
 /// Rewrite event colours through an `old hex → new hex` map, returning how many

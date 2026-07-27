@@ -28,6 +28,8 @@ export type {
   GraphNode,
   GraphEdge,
   Event,
+  Repeat,
+  RepeatUnit,
   NoteDate,
   NoteDateEntry,
   CalendarRange,
@@ -242,8 +244,12 @@ export const calendar = {
   createEvent: (event: Event): Promise<Event> => unwrap(commands.createEvent(event)),
   /** Update an existing event (matched by id). */
   updateEvent: (event: Event): Promise<null> => unwrap(commands.updateEvent(event)),
-  /** Delete an event by id. */
+  /** Delete an event by id — for a repeating event, the whole series. */
   deleteEvent: (id: string): Promise<null> => unwrap(commands.deleteEvent(id)),
+  /** Delete ONE day of a repeating event (ISO `YYYY-MM-DD`), leaving the rest of
+   *  the series in place. */
+  deleteEventOccurrence: (id: string, date: string): Promise<null> =>
+    unwrap(commands.deleteEventOccurrence(id, date)),
   /** Everything in the inclusive `[start, end]` day range (ISO `YYYY-MM-DD`): events + note→date links. */
   range: (start: string, end: string): Promise<CalendarRange> =>
     unwrap(commands.calendarRange(start, end)),

@@ -196,8 +196,17 @@ export const commands = {
 	createEvent: (event: Event_Deserialize) => typedError<Event_Serialize, CoreError>(__TAURI_INVOKE("create_event", { event })),
 	/**  Update an existing event (matched by id). */
 	updateEvent: (event: Event_Deserialize) => typedError<null, CoreError>(__TAURI_INVOKE("update_event", { event })),
-	/**  Delete an event by id. */
+	/**
+	 *  Delete an event by id. For a repeating event this removes the whole series —
+	 *  see `delete_event_occurrence` for a single day.
+	 */
 	deleteEvent: (id: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_event", { id })),
+	/**
+	 *  Delete ONE occurrence of a repeating event: the day joins the series' skip
+	 *  list, leaving the rest of the series intact. A no-op on an event that doesn't
+	 *  repeat (the caller wants `delete_event` for those).
+	 */
+	deleteEventOccurrence: (id: string, date: string) => typedError<null, CoreError>(__TAURI_INVOKE("delete_event_occurrence", { id, date })),
 	/**
 	 *  Everything on the calendar in the inclusive `[start, end]` day range: both
 	 *  standalone events and note→date links (served from the in-memory index).
@@ -432,6 +441,10 @@ export type CoreError =
  *  tells the UI to render the day span and ignore the clock time. (Range overlap
  *  is computed on the UTC calendar date — a local-timezone refinement can come
  *  later without changing the on-disk shape.)
+ * 
+ *  With `repeat` set the record is a *series anchor* rather than a single entry:
+ *  a range query returns one clone per occurrence, each carrying the day it falls
+ *  on in `occurrence`.
  */
 export type Event = Event_Serialize | Event_Deserialize;
 
@@ -441,6 +454,10 @@ export type Event = Event_Serialize | Event_Deserialize;
  *  tells the UI to render the day span and ignore the clock time. (Range overlap
  *  is computed on the UTC calendar date — a local-timezone refinement can come
  *  later without changing the on-disk shape.)
+ * 
+ *  With `repeat` set the record is a *series anchor* rather than a single entry:
+ *  a range query returns one clone per occurrence, each carrying the day it falls
+ *  on in `occurrence`.
  */
 export type Event_Deserialize = {
 	id: string,
@@ -454,6 +471,16 @@ export type Event_Deserialize = {
 	 */
 	note_ids?: string[],
 	color?: string | null,
+	/**  How the event repeats, if it does. */
+	repeat?: Repeat_Deserialize | null,
+	/**
+	 *  The day THIS instance of a repeating event starts on. Set only on the
+	 *  clones a range query expands, and stripped again on the way back in
+	 *  (`normalize`) — it is an annotation about which occurrence the UI is
+	 *  holding, never part of the stored record. `None` on everything else,
+	 *  including the anchor as it sits on disk.
+	 */
+	occurrence?: string | null,
 };
 
 /**
@@ -462,6 +489,10 @@ export type Event_Deserialize = {
  *  tells the UI to render the day span and ignore the clock time. (Range overlap
  *  is computed on the UTC calendar date — a local-timezone refinement can come
  *  later without changing the on-disk shape.)
+ * 
+ *  With `repeat` set the record is a *series anchor* rather than a single entry:
+ *  a range query returns one clone per occurrence, each carrying the day it falls
+ *  on in `occurrence`.
  */
 export type Event_Serialize = {
 	id: string,
@@ -475,6 +506,16 @@ export type Event_Serialize = {
 	 */
 	note_ids?: string[],
 	color?: string | null,
+	/**  How the event repeats, if it does. */
+	repeat?: Repeat_Serialize | null,
+	/**
+	 *  The day THIS instance of a repeating event starts on. Set only on the
+	 *  clones a range query expands, and stripped again on the way back in
+	 *  (`normalize`) — it is an annotation about which occurrence the UI is
+	 *  holding, never part of the stored record. `None` on everything else,
+	 *  including the anchor as it sits on disk.
+	 */
+	occurrence?: string | null,
 };
 
 export type FolderNode = FolderNode_Serialize | FolderNode_Deserialize;
@@ -903,6 +944,63 @@ export type Note_Serialize = {
 	modified: string,
 	meta: NoteMeta_Serialize,
 	blocks: Block_Serialize[],
+};
+
+/**
+ *  How an event repeats. Attached to the ONE stored event (the series anchor);
+ *  the individual occurrences are never written to disk — [`CalendarStore::events_in_range`]
+ *  expands them per query, which is what keeps an open-ended series finite.
+ */
+export type Repeat = Repeat_Serialize | Repeat_Deserialize;
+
+/**
+ *  The unit a repeat counts in. "Daily", "weekly" and "yearly" are `interval: 1`
+ *  of the matching unit; a user-defined span of N days is `Day` with `interval: N`
+ *  — one shape rather than a separate "custom" variant that would need its own
+ *  expansion branch.
+ */
+export type RepeatUnit = "day" | "week" | "year";
+
+/**
+ *  How an event repeats. Attached to the ONE stored event (the series anchor);
+ *  the individual occurrences are never written to disk — [`CalendarStore::events_in_range`]
+ *  expands them per query, which is what keeps an open-ended series finite.
+ */
+export type Repeat_Deserialize = {
+	unit: RepeatUnit,
+	/**
+	 *  Every N units. Clamped to >= 1 on write: a 0 would step nowhere and spin
+	 *  the expansion loop forever.
+	 */
+	interval: number,
+	/**
+	 *  The last day that may carry an occurrence; `None` means the series runs
+	 *  indefinitely (which costs nothing — expansion is bounded by the query).
+	 */
+	until?: string | null,
+	/**  Occurrence days the user deleted one at a time. Kept sorted and unique. */
+	skip?: string[],
+};
+
+/**
+ *  How an event repeats. Attached to the ONE stored event (the series anchor);
+ *  the individual occurrences are never written to disk — [`CalendarStore::events_in_range`]
+ *  expands them per query, which is what keeps an open-ended series finite.
+ */
+export type Repeat_Serialize = {
+	unit: RepeatUnit,
+	/**
+	 *  Every N units. Clamped to >= 1 on write: a 0 would step nowhere and spin
+	 *  the expansion loop forever.
+	 */
+	interval: number,
+	/**
+	 *  The last day that may carry an occurrence; `None` means the series runs
+	 *  indefinitely (which costs nothing — expansion is bounded by the query).
+	 */
+	until?: string | null,
+	/**  Occurrence days the user deleted one at a time. Kept sorted and unique. */
+	skip?: string[],
 };
 
 /**  One ranked search result. */

@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { format, type Locale } from "date-fns";
 import { useLocale } from "@/store/locale";
+import type { TimeFormatPref } from "@/store/theme";
 import type { Language } from "@/i18n";
 
 const LOADERS: Record<Language, () => Promise<Locale>> = {
@@ -31,6 +32,15 @@ export function formatCap(date: Date | number, fmt: string, locale?: Locale): st
   const out = format(date, fmt, { locale });
   return out.charAt(0).toLocaleUpperCase(locale?.code) + out.slice(1);
 }
+
+/**
+ * The date-fns pattern for a wall-clock time under the user's clock-format
+ * setting. One helper so every readout of a time — the calendar's day rows, week
+ * blocks and drag draft, and the event dialog's time fields — can't drift into
+ * three different formats.
+ */
+export const clockPattern = (timeFormat: TimeFormatPref) =>
+  timeFormat === "24h" ? "HH:mm" : "h:mm a";
 
 export function useDateLocale(): Locale | undefined {
   const language = useLocale((s) => s.language);

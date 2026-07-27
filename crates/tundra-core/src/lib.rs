@@ -17,7 +17,9 @@ pub mod spellcheck;
 pub mod vault;
 pub mod watcher;
 
-pub use calendar::{range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry};
+pub use calendar::{
+    range_query, CalendarRange, CalendarStore, Event, NoteDate, NoteDateEntry, Repeat, RepeatUnit,
+};
 pub use import::SourceFile;
 pub use kanban::{KanbanBoard, KanbanColumn, KanbanStore};
 pub use spellcheck::{Misspelling, SpellChecker};

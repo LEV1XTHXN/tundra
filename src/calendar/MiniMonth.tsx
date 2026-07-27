@@ -33,6 +33,20 @@ import { formatCap, useDateLocale } from "@/i18n/dateLocale";
 /** Weeks start Monday throughout the calendar (date-fns: 0 = Sunday, 1 = Monday). */
 const WEEK_STARTS_ON = 1;
 
+/** A day's share of the highlighted span, as class suffixes: the two ends get
+ *  their own so CSS can round the outside corners and square the join, and a
+ *  one-day range is both ends at once. */
+function rangeClass(day: Date, range: MiniMonthProps["range"]): string {
+  if (!range) return "";
+  const start = startOfDay(range.start);
+  const end = startOfDay(range.end ?? range.start);
+  const at = startOfDay(day);
+  if (at < start || at > end) return "";
+  return ` in-range${isSameDay(at, start) ? " range-start" : ""}${
+    isSameDay(at, end) ? " range-end" : ""
+  }`;
+}
+
 export interface MiniMonthProps {
   /** A day inside the shown month. */
   cursor: Date;
@@ -42,6 +56,19 @@ export interface MiniMonthProps {
   onSelectDay: (date: Date) => void;
   /** Ringed day, when the caller tracks a selection (the sidebar's current day). */
   selected?: Date | null;
+  /**
+   * A highlighted day span (the event dialog's start → end). Presentation only:
+   * the CLICKS stay the caller's to interpret, because "which end of the range
+   * does this click set" is the caller's own gesture, not the month's.
+   */
+  range?: { start: Date; end?: Date | null } | null;
+  /**
+   * `true` (default): fetch the month's events to dot the days that have some.
+   * `false` skips the query — for callers whose month is a *picker* rather than a
+   * view of the vault (the event dialog), where the dots mean nothing and the
+   * round-trip happens every time the dialog opens.
+   */
+  showMarks?: boolean;
   /**
    * `true` (default): day cells are squares sized in JS to fit BOTH the
    * available width and height, so the whole month is always visible without
@@ -58,6 +85,8 @@ export function MiniMonth({
   onCursorChange,
   onSelectDay,
   selected,
+  range,
+  showMarks = true,
   fitHeight = true,
 }: MiniMonthProps) {
   const { t } = useTranslation();
@@ -106,6 +135,7 @@ export function MiniMonth({
   }, [fitHeight, weeks]);
 
   useEffect(() => {
+    if (!showMarks) return;
     let cancelled = false;
     calendar
       .range(gridStartKey, gridEndKey)
@@ -124,7 +154,7 @@ export function MiniMonth({
     return () => {
       cancelled = true;
     };
-  }, [gridStartKey, gridEndKey]);
+  }, [gridStartKey, gridEndKey, showMarks]);
 
   // In fit-height mode the columns are fixed px squares; otherwise they share
   // the width evenly and the cells' aspect-ratio (CSS) keeps them square.
@@ -162,7 +192,7 @@ export function MiniMonth({
               key={key}
               className={`mini-calendar-day${dim ? " dim" : ""}${isToday(day) ? " today" : ""}${
                 isSelected ? " selected" : ""
-              }${marked.has(key) ? " has-events" : ""}`}
+              }${marked.has(key) ? " has-events" : ""}${rangeClass(day, range)}`}
               onClick={() => onSelectDay(day)}
               title={format(day, "EEEE, MMM d, yyyy", { locale: dateLocale })}
             >

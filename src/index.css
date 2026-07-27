@@ -1255,6 +1255,33 @@ body,
   background: currentColor;
   opacity: 0.7;
 }
+/* The picked day span (the event dialog's month). Drawn as one continuous band
+   rather than a mark per day — the cells have no gap between them, so a square
+   middle with rounded ends reads as a single range. */
+.mini-calendar-day.in-range {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border-radius: 0;
+}
+.mini-calendar-day.range-start {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+.mini-calendar-day.range-end {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+/* The two ends are the span itself, not just its edge — filled solid so a
+   one-day "range" still looks chosen rather than faintly tinted. */
+.mini-calendar-day.range-start,
+.mini-calendar-day.range-end {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+.mini-calendar-day.range-start::before,
+.mini-calendar-day.range-end::before {
+  display: none;
+}
 
 /* Home dashboard's Storage widget — note/tag/group counts at a glance. */
 .storage-stats {
@@ -2914,7 +2941,77 @@ body,
 .calendar-notelink-x:hover {
   color: var(--destructive);
 }
-/* Event / link dialogs */
+/* Event / link dialogs.
+
+   The EVENT dialog is a two-column form: a month on the left picks the day (or a
+   span of days), everything else — times, all-day, colour, repeat — stacks on the
+   right. That's wider than the shared dialog's `sm:max-w-sm`, so it sets its own
+   width here rather than in the shared component, which every other dialog in the
+   app is sized by. */
+.calendar-event-dialog {
+  max-width: min(34rem, calc(100vw - 2rem));
+}
+.calendar-event-body {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+/* The title line doubles as the dialog's heading (the accessible one is
+   sr-only): no box, just a rule under it, at heading size. */
+.calendar-title-input.calendar-title-input {
+  height: auto;
+  padding: 0 0 0.35rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 1.05rem;
+  font-family: var(--font-heading, inherit);
+}
+.calendar-title-input.calendar-title-input:focus-visible {
+  box-shadow: none;
+  outline: none;
+  border-bottom-color: var(--ring);
+}
+.calendar-event-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.calendar-time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.calendar-time-dash {
+  color: var(--muted-foreground);
+}
+.calendar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.calendar-field-label {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.calendar-repeat-span,
+.calendar-repeat-until {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+.calendar-repeat-interval {
+  width: 4rem;
+}
+/* Which days the highlight in the month actually means, in words. */
+.calendar-event-summary {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
 .calendar-form {
   display: flex;
   flex-direction: column;
@@ -2939,11 +3036,12 @@ body,
 }
 .calendar-swatches {
   display: flex;
-  gap: 0.35rem;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 .calendar-swatch {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 999px;
   border: 2px solid transparent;
   cursor: pointer;
@@ -3051,12 +3149,24 @@ body,
 .calendar-week-alldays > .calendar-week-gutter {
   border-right: none;
 }
+/* The day headers are also a create surface: press and sweep sideways to name a
+   run of days (an all-day event over the span), the horizontal twin of the hour
+   grid's vertical drag. Hence the height — there has to be something to grab —
+   and the centred, stacked label that uses it. */
 .calendar-week-daycol-head {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.35rem;
   border-right: 1px solid var(--divider);
+  cursor: pointer;
+}
+/* The days a sweep currently covers, previewed as it runs. */
+.calendar-week-daycol-head.selecting {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 /* Sunday's rule would land on the window edge now that the grid is flush — the
    same reset `.calendar-cell:last-child` does in month mode. The day columns are
@@ -3064,15 +3174,23 @@ body,
 .calendar-week-daycol-head:last-child {
   border-right: none;
 }
+/* Name over number, both centred — the two-letter form is the header's headline,
+   so it gets the size, and the date sits under it. */
 .calendar-week-daylabel {
   display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  font-size: 0.72rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--muted-foreground);
+}
+.calendar-week-dayname {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.calendar-week-daycol-head.today .calendar-week-dayname {
+  color: var(--foreground);
 }
 .calendar-week-daycol-head.today .calendar-daynum {
   background: var(--primary);
@@ -3231,7 +3349,8 @@ body,
 }
 /* The span a click-and-drag is sweeping out, before the dialog opens. The same
    box a `.calendar-week-event` would occupy so what you drag is what you get —
-   full column width bar the same 1px, since a new event overlaps nothing yet.
+   a lone block's share of the column (width set inline, from the same constant),
+   since a new event overlaps nothing yet.
    Above the blocks because it's the thing being manipulated, and transparent to
    the pointer so the drag keeps measuring the day column under it. It keeps the
    outline the blocks dropped: this one is a preview, not an object, and
@@ -3239,7 +3358,6 @@ body,
 .calendar-week-draft {
   position: absolute;
   left: 0;
-  width: calc(100% - 1px);
   z-index: 2;
   pointer-events: none;
   padding: 0.15rem 0.4rem;
@@ -3278,6 +3396,41 @@ body,
 }
 .date-time-picker-colon {
   color: var(--muted-foreground);
+}
+
+/* TimeField — a typed clock time with a quarter-hour pick list. Narrow enough
+   that two sit side by side as a "9:00 – 14:30" pair, and centred, because the
+   text it holds is always the same four or five characters. */
+.time-field.time-field {
+  width: 6rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 96 marks: capped and scrolled rather than paged, so the list opens straight
+   onto the current time (scrolled into view when it opens). */
+.time-field-menu {
+  width: 7rem;
+  max-height: 15rem;
+  overflow-y: auto;
+  gap: 0;
+  padding: 0.25rem;
+}
+.time-field-mark {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.time-field-mark:hover {
+  background: var(--accent);
+}
+.time-field-mark.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 /* --- Settings: Backup section (Phase 3 step 3) ----------------------- */

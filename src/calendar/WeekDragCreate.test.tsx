@@ -10,7 +10,7 @@
  * CalendarContextMenu.test.tsx's right-click-at-an-hour case.)
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { set, startOfDay, startOfWeek } from "date-fns";
 import type { Event as CalEvent } from "@/services";
 import "@/i18n";
@@ -99,12 +99,12 @@ describe("week view drag-to-create", () => {
     fireEvent.mouseUp(document.body, { clientY: to });
   }
 
-  /** The dialog's Start and End, as the pickers render them. */
+  /** The dialog's start and end, as its two time fields hold them. */
   async function dialogTimes() {
     const dialog = await screen.findByRole("dialog");
-    return within(dialog)
-      .getAllByText(/\d{1,2}:\d{2}( [AP]M)?$/)
-      .map((el) => el.textContent);
+    return Array.from(dialog.querySelectorAll<HTMLInputElement>("input.time-field")).map(
+      (el) => el.value,
+    );
   }
 
   it("opens the dialog on the dragged span, snapped to 15 minutes", async () => {

@@ -10,7 +10,7 @@
  * grid actually renders.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { format, set, startOfDay } from "date-fns";
 import type { Event as CalEvent } from "@/services";
 import "@/i18n";
@@ -144,9 +144,11 @@ describe("calendar context menus", () => {
     fireEvent.contextMenu(column, { clientY: 800 });
     fireEvent.click(await screen.findByText("New event"));
 
-    // Scoped to the dialog — the hour gutter shows "14:00" too.
+    // The dialog's start time field, not the hour gutter behind it — which
+    // shows "14:00" too.
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/(14:00|2:00 PM)/)).toBeTruthy();
+    const start = dialog.querySelector<HTMLInputElement>("input.time-field")!;
+    expect(start.value).toMatch(/^(14:00|2:00 PM)$/);
   });
 
   it("creates on the day that was right-clicked", async () => {
@@ -155,8 +157,8 @@ describe("calendar context menus", () => {
     fireEvent.contextMenu(dayCell(OTHER.getDate()));
     fireEvent.click(await screen.findByText("New event"));
 
-    // The event dialog opens on that day — the picker's trigger shows the date.
-    expect(await screen.findByText(format(OTHER, "MMM d, yyyy"))).toBeTruthy();
+    // The event dialog opens on that day — its summary line names it.
+    expect(await screen.findByText(format(OTHER, "EEEE, MMM d"))).toBeTruthy();
     expect(screen.getByText("Create")).toBeTruthy();
   });
 });

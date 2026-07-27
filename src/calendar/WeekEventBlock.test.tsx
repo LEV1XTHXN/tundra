@@ -114,11 +114,11 @@ describe("week view event block", () => {
     expect(block().title).toMatch(/^Standup · (09:00 – 09:30|9:00 AM – 9:30 AM)$/);
   });
 
-  it("gives a lone event the full column, one pixel shy of the rule", async () => {
+  it("gives a lone event most of the column, leaving bare grid on the right", async () => {
     await renderWeek([event("Lab Work", at(9), at(11))]);
 
     expect(block().style.left).toBe("0%");
-    expect(block().style.width).toBe("calc(100% - 1px)");
+    expect(block().style.width).toBe("calc(80% - 1px)");
     expect(block().style.top).toBe("31.5rem");
     expect(block().style.height).toBe("7rem");
   });
@@ -127,8 +127,8 @@ describe("week view event block", () => {
     await renderWeek([event("A", at(9), at(11)), event("B", at(10), at(12))]);
 
     expect(block(0).style.left).toBe("0%");
-    expect(block(1).style.left).toBe("50%");
-    for (const b of blocks()) expect(b.style.width).toBe("calc(50% - 1px)");
+    expect(block(1).style.left).toBe("40%");
+    for (const b of blocks()) expect(b.style.width).toBe("calc(40% - 1px)");
   });
 
   it("falls back to the nominal half hour when an event has no end", async () => {

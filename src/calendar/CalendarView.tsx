@@ -10,7 +10,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   addDays,
-  addHours,
   addMinutes,
   addMonths,
   addWeeks,
@@ -18,6 +17,7 @@ import {
   endOfMonth,
   endOfWeek,
   format,
+  isSameDay,
   isSameMonth,
   isToday,
   parseISO,
@@ -29,14 +29,23 @@ import { Link2, Plus, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { calendar, notes } from "@/services";
-import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary } from "@/services";
+import type { Event as CalEvent, NoteDate, NoteDateEntry, NoteSummary, Repeat } from "@/services";
 import { useTheme } from "@/store/theme";
-import type { TimeFormatPref } from "@/store/theme";
 import { contrastText, TAG_PALETTE } from "@/store/tagColors";
 import { useViewState } from "@/store/viewState";
-import { formatCap, useDateLocale } from "@/i18n/dateLocale";
+import { clockPattern, formatCap, useDateLocale } from "@/i18n/dateLocale";
 import { localizeError } from "@/i18n/errors";
 import { ViewFrame } from "@/components/ViewFrame";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -47,11 +56,20 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DateTimePicker } from "@/components/DateTimePicker";
+import { TimeField } from "@/components/TimeField";
 import { Button } from "@/components/ui/button";
 import { CalendarDayMenu, EventContextMenu } from "./CalendarContextMenu";
 import type { CalendarMenuActions } from "./CalendarContextMenu";
-import { isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
+import { MiniMonth } from "./MiniMonth";
+import { eventKey, isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
 import type { DaySegment } from "./monthLayout";
 
 type Mode = "month" | "week";
@@ -97,6 +115,13 @@ const ALLDAY_LANE_REM = 1.4;
  * if it grew freely — so the cap is a flat number. */
 const WEEK_ALLDAY_LANES = 3;
 
+/** How much of a day column's width the timed blocks fill, as a percentage. The
+ * remaining sliver on the right is deliberate empty column: it keeps a block
+ * visibly detached from the next day's rule, and leaves bare grid to click or
+ * drag on beside an event rather than only above and below it. Overlapping
+ * blocks split THIS width between them, not the full column. */
+const WEEK_EVENT_WIDTH_PCT = 80;
+
 /** Month-cell metrics, in rem. These MUST match the corresponding heights in
  * index.css (`.calendar-cell-head`, `.calendar-event-row`, `.calendar-more`):
  * the grid computes how many rows fit in a cell from them, so a drift here shows
@@ -115,7 +140,7 @@ const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
  * `range` pre-fills a NEW event's times: the hour a menu was opened over, or the
  * span a drag swept out in the week grid. Absent means all-day. */
 type DialogState =
-  | { kind: "event"; day: Date; event?: CalEvent; range?: TimeRange }
+  | { kind: "event"; day: Date; event?: CalEvent; range?: TimeRange; allDay?: boolean }
   | { kind: "linkNote"; day: Date }
   | null;
 
@@ -127,11 +152,6 @@ const rangeOnDay = (day: Date, startMin: number, endMin: number): TimeRange => (
   start: addMinutes(startOfDay(day), startMin),
   end: addMinutes(startOfDay(day), endMin),
 });
-
-/** The date-fns pattern for a wall-clock time under the user's clock-format
- * setting. One helper so the calendar's three time readouts — a month day row,
- * a week block, the drag draft — can't drift into three different formats. */
-const clockPattern = (timeFormat: TimeFormatPref) => (timeFormat === "24h" ? "HH:mm" : "h:mm a");
 
 export function CalendarView({
   onOpenNote,
@@ -230,11 +250,32 @@ export function CalendarView({
     [load, onError, t],
   );
 
-  // Deleting straight from the context menu — no confirmation, matching the
-  // event dialog's own Delete button.
+  // Deleting the whole record: a plain event, or every occurrence of a series.
   const deleteEvent = useCallback(
     (ev: CalEvent) => {
       calendar.deleteEvent(ev.id).then(load).catch((e) => onError(localizeError(e, t)));
+    },
+    [load, onError, t],
+  );
+
+  // One occurrence of a repeating event has two possible meanings for "delete",
+  // so it — and only it — asks first. Everything else goes straight through, as
+  // it always has.
+  const [confirmDelete, setConfirmDelete] = useState<CalEvent | null>(null);
+  const requestDelete = useCallback(
+    (ev: CalEvent) => {
+      if (ev.repeat && ev.occurrence) setConfirmDelete(ev);
+      else deleteEvent(ev);
+    },
+    [deleteEvent],
+  );
+  const deleteOccurrence = useCallback(
+    (ev: CalEvent) => {
+      if (!ev.occurrence) return;
+      calendar
+        .deleteEventOccurrence(ev.id, ev.occurrence)
+        .then(load)
+        .catch((e) => onError(localizeError(e, t)));
     },
     [load, onError, t],
   );
@@ -256,9 +297,9 @@ export function CalendarView({
         }),
       onLinkNote: (day) => setDialog({ kind: "linkNote", day }),
       onEditEvent: (day, event) => setDialog({ kind: "event", day, event }),
-      onDeleteEvent: deleteEvent,
+      onDeleteEvent: requestDelete,
     }),
-    [deleteEvent],
+    [requestDelete],
   );
 
   // Clicking a day in the month grid drills into it: the week view, on that
@@ -322,6 +363,21 @@ export function CalendarView({
           onSlotRange={(day, startMin, endMin) =>
             setDialog({ kind: "event", day, range: rangeOnDay(day, startMin, endMin) })
           }
+          // A sweep across the day headers names days, not hours: an all-day
+          // event over the span. The times it carries are the ordinary defaults,
+          // so unticking "All day" in the dialog lands on a sensible hour rather
+          // than on midnight.
+          onDaySpan={(from, to) =>
+            setDialog({
+              kind: "event",
+              day: from,
+              allDay: true,
+              range: {
+                start: addMinutes(startOfDay(from), DEFAULT_EVENT_HOUR * 60),
+                end: addMinutes(startOfDay(to), DEFAULT_EVENT_HOUR * 60 + DEFAULT_EVENT_MINUTES),
+              },
+            })
+          }
           onEventClick={(day, event) => setDialog({ kind: "event", day, event })}
           onOpenNote={onOpenNote}
           onUnlinkNote={unlinkNote}
@@ -335,12 +391,34 @@ export function CalendarView({
           day={dialog.day}
           event={dialog.event}
           range={dialog.range}
+          allDay={dialog.allDay}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
             load();
           }}
+          // Delete leaves the dialog and joins the grid's own delete path, so
+          // an occurrence gets the same "this day or all of them?" question
+          // wherever it was triggered from.
+          onDelete={(ev) => {
+            setDialog(null);
+            requestDelete(ev);
+          }}
           onError={onError}
+        />
+      )}
+      {confirmDelete && (
+        <DeleteSeriesDialog
+          event={confirmDelete}
+          onClose={() => setConfirmDelete(null)}
+          onDeleteDay={() => {
+            deleteOccurrence(confirmDelete);
+            setConfirmDelete(null);
+          }}
+          onDeleteSeries={() => {
+            deleteEvent(confirmDelete);
+            setConfirmDelete(null);
+          }}
         />
       )}
       {dialog?.kind === "linkNote" && (
@@ -367,7 +445,9 @@ type DayItem =
   | { kind: "note"; note: NoteDateEntry };
 
 const itemKey = (item: DayItem) =>
-  item.kind === "event" ? `e:${item.event.id}` : `n:${item.note.note_id}:${item.note.event_id ?? ""}`;
+  item.kind === "event"
+    ? `e:${eventKey(item.event)}`
+    : `n:${item.note.note_id}:${item.note.event_id ?? ""}`;
 
 /**
  * Month mode's grid: a weekday header over one row per week. Within a week row,
@@ -555,7 +635,7 @@ function MonthGrid({
                                       .filter((b) => b.colStart <= col && col < b.colStart + b.span)
                                       .map((b) => (
                                         <EventContextMenu
-                                          key={b.event.id}
+                                          key={eventKey(b.event)}
                                           day={day}
                                           event={b.event}
                                           actions={actions}
@@ -614,7 +694,7 @@ function MonthGrid({
                     .filter((b) => b.lane < lanes)
                     .map((b) => (
                       <EventContextMenu
-                        key={b.event.id}
+                        key={eventKey(b.event)}
                         day={week[b.colStart]}
                         event={b.event}
                         actions={actions}
@@ -782,6 +862,7 @@ function WeekTimeGrid({
   events,
   byDay,
   onSlotRange,
+  onDaySpan,
   onEventClick,
   onOpenNote,
   onUnlinkNote,
@@ -792,6 +873,7 @@ function WeekTimeGrid({
   events: CalEvent[];
   byDay: Map<string, { events: CalEvent[]; notes: NoteDateEntry[] }>;
   onSlotRange: (day: Date, startMinutes: number, endMinutes: number) => void;
+  onDaySpan: (from: Date, to: Date) => void;
   onEventClick: (day: Date, event: CalEvent) => void;
   onOpenNote: (id: string) => void;
   onUnlinkNote: (nd: NoteDateEntry) => void;
@@ -865,6 +947,59 @@ function WeekTimeGrid({
     };
   }, [drag, rem, onSlotRange]);
 
+  // The horizontal twin of the hour drag above: a sweep across the day headers
+  // picks out a run of DAYS. `anchor`/`current` are column indices (either may
+  // be the later one — sweeping right to left is allowed), and `moved` keeps a
+  // plain click from meaning anything, so clicking a day header still does
+  // nothing rather than silently creating an event.
+  const headRowRef = useRef<HTMLDivElement | null>(null);
+  const [daySweep, setDaySweep] = useState<{ anchor: number; current: number; startX: number; moved: boolean } | null>(null);
+
+  // Which column an x-coordinate is over, read off the headers' own rects rather
+  // than computed from the grid template — the gutter makes the columns uneven,
+  // and a measurement can't drift from the CSS the way a copy of it would.
+  const columnAt = useCallback((clientX: number) => {
+    const heads = headRowRef.current?.querySelectorAll<HTMLElement>(".calendar-week-daycol-head");
+    if (!heads?.length) return 0;
+    for (let i = 0; i < heads.length; i++) {
+      if (clientX < heads[i].getBoundingClientRect().right) return i;
+    }
+    return heads.length - 1;
+  }, []);
+
+  const startDaySweep = (col: number) => (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setDaySweep({ anchor: col, current: col, startX: e.clientX, moved: false });
+  };
+
+  useEffect(() => {
+    if (!daySweep) return;
+    const onMove = (e: MouseEvent) => {
+      const col = columnAt(e.clientX);
+      const moved = daySweep.moved || Math.abs(e.clientX - daySweep.startX) > DRAG_THRESHOLD_PX;
+      if (col === daySweep.current && moved === daySweep.moved) return;
+      setDaySweep({ ...daySweep, current: col, moved });
+    };
+    const onUp = () => {
+      const { anchor, current, moved } = daySweep;
+      setDaySweep(null);
+      if (moved) onDaySpan(days[Math.min(anchor, current)], days[Math.max(anchor, current)]);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.classList.add("calendar-dragging");
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("calendar-dragging");
+    };
+  }, [daySweep, columnAt, days, onDaySpan]);
+
+  const sweptDays = daySweep?.moved
+    ? { from: Math.min(daySweep.anchor, daySweep.current), to: Math.max(daySweep.anchor, daySweep.current) }
+    : null;
+
   // The all-day strip: one row of lane-packed bars across the whole week.
   const bars = useMemo(() => packWeek(days, events), [days, events]);
   const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
@@ -875,17 +1010,24 @@ function WeekTimeGrid({
   return (
     <div className="calendar-week">
       <div className="calendar-week-header">
-        <div className="calendar-week-daylabels">
+        <div className="calendar-week-daylabels" ref={headRowRef}>
           <div className="calendar-week-gutter" />
-          {days.map((day) => (
+          {days.map((day, col) => (
             // The header's menu creates an all-day event on this day (no `hour`).
             <ContextMenu key={dayKey(day)}>
               <ContextMenuTrigger asChild>
-                <div className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}`}>
+                <div
+                  className={`calendar-week-daycol-head${isToday(day) ? " today" : ""}${
+                    sweptDays && sweptDays.from <= col && col <= sweptDays.to ? " selecting" : ""
+                  }`}
+                  onMouseDown={startDaySweep(col)}
+                >
                   <div className="calendar-week-daylabel">
                     {/* `EEEEEE` — the same two-letter short form the month grid
                         uses, in every language ("Mo", "Пн", "Di"). */}
-                    <span>{format(day, "EEEEEE", { locale: dateLocale })}</span>
+                    <span className="calendar-week-dayname">
+                      {format(day, "EEEEEE", { locale: dateLocale })}
+                    </span>
                     <span className="calendar-daynum">{format(day, "d")}</span>
                   </div>
                 </div>
@@ -936,7 +1078,7 @@ function WeekTimeGrid({
                           <div className="calendar-day-popover-list">
                             {dayBars.map((b) => (
                               <EventContextMenu
-                                key={b.event.id}
+                                key={eventKey(b.event)}
                                 day={day}
                                 event={b.event}
                                 actions={actions}
@@ -991,7 +1133,7 @@ function WeekTimeGrid({
                 .filter((b) => b.lane < lanes)
                 .map((b) => (
                   <EventContextMenu
-                    key={b.event.id}
+                    key={eventKey(b.event)}
                     day={days[b.colStart]}
                     event={b.event}
                     actions={actions}
@@ -1060,7 +1202,7 @@ function WeekTimeGrid({
                   {drag?.key === key && drag.moved && <DraftBlock drag={drag} />}
                   {segments.map((segment) => (
                     <WeekEventBlock
-                      key={segment.event.id}
+                      key={eventKey(segment.event)}
                       segment={segment}
                       day={day}
                       onEventClick={onEventClick}
@@ -1111,10 +1253,11 @@ function WeekEventBlock({
         style={{
           top: `${startHour * HOUR_HEIGHT_REM}rem`,
           height: `${(endHour - startHour) * HOUR_HEIGHT_REM}rem`,
-          // The 1px the width falls short of its share is the gap: between two
-          // side-by-side blocks, and between the last one and the column's rule.
-          left: `${(col / cols) * 100}%`,
-          width: `calc(${(1 / cols) * 100}% - 1px)`,
+          // Blocks share `WEEK_EVENT_WIDTH_PCT` of the column, not all of it —
+          // the rest stays bare on the right. The 1px the width falls short of
+          // its share is the gap between two side-by-side blocks.
+          left: `${(col / cols) * WEEK_EVENT_WIDTH_PCT}%`,
+          width: `calc(${(1 / cols) * WEEK_EVENT_WIDTH_PCT}% - 1px)`,
           ...(event.color ? { background: event.color, color: contrastText(event.color) } : {}),
         }}
         // A narrow column clips both lines, so the tooltip carries the whole
@@ -1148,6 +1291,9 @@ function DraftBlock({ drag }: { drag: SlotDrag }) {
       style={{
         top: `${(from / 60) * HOUR_HEIGHT_REM}rem`,
         height: `${((to - from) / 60) * HOUR_HEIGHT_REM}rem`,
+        // Inline rather than in CSS so it can't drift from the real block's
+        // width, which comes from the same constant.
+        width: `calc(${WEEK_EVENT_WIDTH_PCT}% - 1px)`,
       }}
     >
       {`${label(from)} – ${label(to)}`}
@@ -1155,50 +1301,163 @@ function DraftBlock({ drag }: { drag: SlotDrag }) {
   );
 }
 
-/** Create or edit a single event. Shows a Delete action when editing.
+/** Minutes past midnight of a local instant — the form `TimeField` speaks. */
+const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
+/** The last minute of a day, so a time nudged forward can't roll into the next. */
+const LAST_MINUTE = 24 * 60 - 1;
+/** What "Every N days" starts at when it's first chosen. Not 1 — that's already
+ *  the Daily entry above it, so opening on 1 would look like a broken duplicate. */
+const DEFAULT_CUSTOM_DAYS = 2;
+/** Where a new event lands when nothing named a time — the toolbar's "+ Event"
+ *  and a month cell's "New event". Mid-morning rather than midnight: the dialog
+ *  leads with its two time fields, so it has to open on a time worth keeping. */
+const DEFAULT_EVENT_HOUR = 9;
+
+/** The Repeat dropdown's entries. Everything except `custom` is `interval: 1` of
+ *  one unit; `custom` is the same shape with a user-supplied day count. */
+type RepeatChoice = "none" | "daily" | "weekly" | "yearly" | "custom";
+
+/** Which entry a stored repeat shows as. A non-day unit stays on its named entry
+ *  whatever its interval, so a hand-written "every 3 weeks" in calendar.json is
+ *  never silently rewritten to days by merely opening the dialog. */
+function repeatChoiceOf(repeat: Repeat | null | undefined): RepeatChoice {
+  if (!repeat) return "none";
+  if (repeat.unit === "week") return "weekly";
+  if (repeat.unit === "year") return "yearly";
+  return repeat.interval === 1 ? "daily" : "custom";
+}
+
+/**
+ * Create or edit an event: a title across the top, a month to pick the day (or a
+ * span of days) on the left, and its times, colour and repeat on the right.
+ *
+ * The date lives ONLY in the month — clicking a day starts a range and clicking
+ * a second one closes it — and the clock times only in the two `TimeField`s, so
+ * "when" is never split across two controls that could disagree.
+ *
  * `range` — set when opened from the week view's hourly grid (a clicked or
  * dragged span) or the day menu's "New event" over an hour, never alongside
- * `event` — pre-fills a timed block. Without it the new event is all-day. */
+ * `event` — pre-fills a timed block. Without it the new event is all-day.
+ *
+ * Editing any occurrence of a repeating event edits the whole series; the core
+ * re-anchors the times it gets back (see `rebase_onto_series`).
+ */
 function EventDialog({
   day,
   event,
   range,
+  allDay: allDayDefault,
   onClose,
   onSaved,
+  onDelete,
   onError,
 }: {
   day: Date;
   event?: CalEvent;
   range?: TimeRange;
+  /** Open with "All day" already ticked — a span swept across the day headers,
+   *  which names days and no hours. */
+  allDay?: boolean;
   onClose: () => void;
   onSaved: () => void;
+  onDelete: (event: CalEvent) => void;
   onError: (m: string) => void;
 }) {
   const { t } = useTranslation();
-  const initialStart = event ? parseISO(event.start) : (range?.start ?? startOfDay(day));
+  const dateLocale = useDateLocale();
+  const initialStart = event
+    ? parseISO(event.start)
+    : (range?.start ?? addMinutes(startOfDay(day), DEFAULT_EVENT_HOUR * 60));
   const initialEnd = event?.end ? parseISO(event.end) : (range?.end ?? null);
+
   const [title, setTitle] = useState(event?.title ?? "");
-  const [allDay, setAllDay] = useState(event?.all_day ?? !range);
-  const [start, setStart] = useState<Date>(initialStart);
-  const [end, setEnd] = useState<Date | null>(initialEnd);
+  // A new event is timed unless the user says otherwise. All-day is one tick
+  // away, and the reverse default would open the dialog with its two headline
+  // controls greyed out.
+  const [allDay, setAllDay] = useState(event?.all_day ?? allDayDefault ?? false);
+  const [startDay, setStartDay] = useState(startOfDay(initialStart));
+  const [endDay, setEndDay] = useState(startOfDay(initialEnd ?? initialStart));
+  const [startMin, setStartMin] = useState(minutesOf(initialStart));
+  const [endMin, setEndMin] = useState(
+    initialEnd ? minutesOf(initialEnd) : Math.min(LAST_MINUTE, minutesOf(initialStart) + DEFAULT_EVENT_MINUTES),
+  );
   const [color, setColor] = useState<string | null>(event?.color ?? null);
+  const [repeat, setRepeat] = useState<Repeat | null>(event?.repeat ?? null);
+  const [monthCursor, setMonthCursor] = useState(startOfDay(initialStart));
+  // Whether the next click in the month CLOSES the range rather than starting a
+  // new one. Starts false, so the first click on an opened dialog always means
+  // "this day", however many days the event already covers.
+  const [pickingEnd, setPickingEnd] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const oneDay = isSameDay(startDay, endDay);
+
+  const pickDay = (picked: Date) => {
+    const at = startOfDay(picked);
+    if (pickingEnd && at >= startDay) {
+      setEndDay(at);
+      setPickingEnd(false);
+    } else {
+      setStartDay(at);
+      setEndDay(at);
+      setPickingEnd(true);
+      // Collapsing a multi-day span onto one day can leave the times crossed —
+      // 14:00 → 09:00 was a perfectly good overnight span a moment ago.
+      if (endMin < startMin) setEndMin(Math.min(LAST_MINUTE, startMin + DEFAULT_EVENT_MINUTES));
+    }
+  };
+
+  // The two times can't cross on a single day, so each end pushes the other
+  // rather than letting the pair go backwards: moving the start carries its
+  // duration along, moving the end pulls the start down with it.
+  const changeStart = (minutes: number) => {
+    if (oneDay && minutes > endMin) {
+      setEndMin(Math.min(LAST_MINUTE, minutes + Math.max(0, endMin - startMin)));
+    }
+    setStartMin(minutes);
+  };
+  const changeEnd = (minutes: number) => {
+    if (oneDay && minutes < startMin) setStartMin(minutes);
+    setEndMin(minutes);
+  };
+
+  const chooseRepeat = (choice: RepeatChoice) => {
+    if (choice === "none") return setRepeat(null);
+    // `until`/`skip` survive a change of pattern — they answer "how long does
+    // this run for", which is a separate question from "how often".
+    const kept = { until: repeat?.until ?? null, skip: repeat?.skip ?? [] };
+    if (choice === "weekly") return setRepeat({ unit: "week", interval: 1, ...kept });
+    if (choice === "yearly") return setRepeat({ unit: "year", interval: 1, ...kept });
+    if (choice === "daily") return setRepeat({ unit: "day", interval: 1, ...kept });
+    const current = repeat?.unit === "day" ? repeat.interval : 1;
+    setRepeat({
+      unit: "day",
+      interval: current > 1 ? current : DEFAULT_CUSTOM_DAYS,
+      ...kept,
+    });
+  };
+
+  const choice = repeatChoiceOf(repeat);
 
   const save = async () => {
     setBusy(true);
     try {
       // All-day events pin to local midnight; the store keeps UTC and the
       // day-span math (byDay, calendar.range) handles display from that.
-      const startInstant = allDay ? startOfDay(start) : start;
-      const endInstant = end ? (allDay ? startOfDay(end) : end) : null;
+      const startInstant = allDay ? startDay : addMinutes(startDay, startMin);
+      const endInstant = allDay ? endDay : addMinutes(endDay, endMin);
       const payload: CalEvent = {
         id: event?.id ?? "",
         title: title.trim(),
         start: startInstant.toISOString(),
-        end: endInstant ? endInstant.toISOString() : null,
+        end: endInstant.toISOString(),
         all_day: allDay,
         note_ids: event?.note_ids ?? [],
         color,
+        repeat,
+        // Carried back untouched: it tells the core WHICH occurrence these
+        // instants came from, which is what lets it re-anchor the series.
+        occurrence: event?.occurrence ?? null,
       };
       if (event) await calendar.updateEvent(payload);
       else await calendar.createEvent(payload);
@@ -1210,85 +1469,209 @@ function EventDialog({
     }
   };
 
-  const remove = async () => {
-    if (!event) return;
-    setBusy(true);
-    try {
-      await calendar.deleteEvent(event.id);
-      onSaved();
-    } catch (e) {
-      onError(localizeError(e, t));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{event ? "Edit event" : "New event"}</DialogTitle>
+      <DialogContent className="calendar-event-dialog">
+        {/* The title input IS the dialog's heading, so the accessible one is
+            hidden rather than drawn twice. */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>{event ? t("calendar.editEventTitle") : t("calendar.newEvent")}</DialogTitle>
         </DialogHeader>
-        <div className="calendar-form">
-          <Input autoFocus placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <label className="calendar-check">
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> All day
-          </label>
-          <div className="calendar-form-row">
-            <span>Start</span>
-            <DateTimePicker value={start} onChange={setStart} showTime={!allDay} />
-          </div>
-          <div className="calendar-form-row">
-            <span>End</span>
-            {end ? (
-              <>
-                <DateTimePicker value={end} onChange={setEnd} showTime={!allDay} />
-                <Button type="button" variant="ghost" size="icon" onClick={() => setEnd(null)} aria-label="Remove end date">
-                  <X className="h-4 w-4" />
-                </Button>
-              </>
-            ) : (
-              <Button type="button" variant="outline" onClick={() => setEnd(addHours(start, 1))}>
-                + Add end
-              </Button>
-            )}
-          </div>
-          <div className="calendar-form-row">
-            <span>Colour</span>
-            <div className="calendar-swatches">
-              <button
-                type="button"
-                className={`calendar-swatch none${color === null ? " active" : ""}`}
-                title="None"
-                onClick={() => setColor(null)}
+        <Input
+          autoFocus
+          className="calendar-title-input"
+          placeholder={t("calendar.addName")}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <div className="calendar-event-body">
+          <MiniMonth
+            cursor={monthCursor}
+            onCursorChange={setMonthCursor}
+            onSelectDay={pickDay}
+            range={{ start: startDay, end: endDay }}
+            showMarks={false}
+            fitHeight={false}
+          />
+          <div className="calendar-event-fields">
+            <div className="calendar-time-row">
+              <TimeField
+                value={startMin}
+                onChange={changeStart}
+                disabled={allDay}
+                aria-label={t("calendar.startTime")}
               />
-              {COLORS.map((c) => (
+              <span className="calendar-time-dash">–</span>
+              <TimeField
+                value={endMin}
+                onChange={changeEnd}
+                disabled={allDay}
+                aria-label={t("calendar.endTime")}
+              />
+            </div>
+
+            <label className="calendar-check">
+              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
+              {t("calendar.allDay")}
+            </label>
+
+            <div className="calendar-field">
+              <span className="calendar-field-label">{t("calendar.colour")}</span>
+              <div className="calendar-swatches">
                 <button
                   type="button"
-                  key={c}
-                  className={`calendar-swatch${color === c ? " active" : ""}`}
-                  style={{ background: c }}
-                  onClick={() => setColor(c)}
+                  className={`calendar-swatch none${color === null ? " active" : ""}`}
+                  title={t("calendar.colourNone")}
+                  aria-label={t("calendar.colourNone")}
+                  onClick={() => setColor(null)}
                 />
-              ))}
+                {COLORS.map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    className={`calendar-swatch${color === c ? " active" : ""}`}
+                    style={{ background: c }}
+                    aria-label={c}
+                    onClick={() => setColor(c)}
+                  />
+                ))}
+              </div>
             </div>
+
+            <div className="calendar-field">
+              <Select value={choice} onValueChange={(v) => chooseRepeat(v as RepeatChoice)}>
+                <SelectTrigger className="calendar-repeat-select" aria-label={t("calendar.repeat")}>
+                  <SelectValue placeholder={t("calendar.repeat")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t("calendar.repeatNever")}</SelectItem>
+                  <SelectItem value="daily">{t("calendar.repeatDaily")}</SelectItem>
+                  <SelectItem value="weekly">{t("calendar.repeatWeekly")}</SelectItem>
+                  <SelectItem value="yearly">{t("calendar.repeatYearly")}</SelectItem>
+                  <SelectItem value="custom">{t("calendar.repeatCustom")}</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {choice === "custom" && repeat && (
+                <div className="calendar-repeat-span">
+                  <span>{t("calendar.every")}</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    className="calendar-repeat-interval"
+                    aria-label={t("calendar.repeatCustom")}
+                    value={repeat.interval}
+                    onChange={(e) =>
+                      setRepeat({ ...repeat, interval: Math.max(1, Number(e.target.value) || 1) })
+                    }
+                  />
+                  <span>{t("calendar.days")}</span>
+                </div>
+              )}
+
+              {repeat && (
+                <div className="calendar-repeat-until">
+                  {repeat.until ? (
+                    <>
+                      <span className="calendar-field-label">{t("calendar.until")}</span>
+                      <DateTimePicker
+                        value={parseISO(repeat.until)}
+                        onChange={(d) => setRepeat({ ...repeat, until: dayKey(d) })}
+                        showTime={false}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("calendar.untilClear")}
+                        onClick={() => setRepeat({ ...repeat, until: null })}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRepeat({ ...repeat, until: dayKey(addMonths(startDay, 1)) })}
+                    >
+                      {t("calendar.untilAdd")}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Which days the event actually covers is otherwise only readable
+                off the month's highlight — spelled out here so a two-day span
+                can't be mistaken for a mis-click. */}
+            <p className="calendar-event-summary">
+              {oneDay
+                ? formatCap(startDay, "EEEE, MMM d", dateLocale)
+                : `${formatCap(startDay, "MMM d", dateLocale)} – ${formatCap(endDay, "MMM d", dateLocale)}`}
+            </p>
           </div>
         </div>
         <DialogFooter className="calendar-dialog-footer">
           {event && (
-            <Button variant="outline" className="calendar-delete" disabled={busy} onClick={remove}>
-              <Trash2 className="h-4 w-4" /> Delete
+            <Button
+              variant="outline"
+              className="calendar-delete"
+              disabled={busy}
+              onClick={() => onDelete(event)}
+            >
+              <Trash2 className="h-4 w-4" /> {t("common.delete")}
             </Button>
           )}
           <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={save} disabled={busy}>
-            {event ? "Save" : "Create"}
+            {event ? t("common.save") : t("calendar.create")}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** "Delete this day, or all of them?" — the one question a repeating event has
+ *  to ask, since both answers are things people mean. Only ever shown for an
+ *  expanded occurrence; everything else deletes without a prompt. */
+function DeleteSeriesDialog({
+  event,
+  onClose,
+  onDeleteDay,
+  onDeleteSeries,
+}: {
+  event: CalEvent;
+  onClose: () => void;
+  onDeleteDay: () => void;
+  onDeleteSeries: () => void;
+}) {
+  const { t } = useTranslation();
+  const dateLocale = useDateLocale();
+  const on = event.occurrence ? formatCap(parseISO(event.occurrence), "MMM d, yyyy", dateLocale) : "";
+
+  return (
+    <AlertDialog open onOpenChange={(o) => !o && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{event.title || t("common.untitled")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("calendar.deleteRepeatingPrompt")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction variant="outline" onClick={onDeleteDay}>
+            {t("calendar.deleteThisDay", { date: on })}
+          </AlertDialogAction>
+          <AlertDialogAction variant="destructive" onClick={onDeleteSeries}>
+            {t("calendar.deleteSeries")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

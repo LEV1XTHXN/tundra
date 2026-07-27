@@ -6,6 +6,11 @@ events and multi-day periods are filled bars drawn as ONE continuous span across
 the days they cover. That second part is why the grid isn't a plain 42-cell CSS
 grid.
 
+How events are *created and edited* — the dialog, typed times, and repeats — is
+[`calendar-events.md`](calendar-events.md). One thing from there matters to every
+grid: a repeating event is expanded into several events sharing one `id`, so React
+keys and per-event lookups must use `eventKey(ev)`, not `ev.id`.
+
 ## Where the outer lines come from
 
 The grid runs flush to the main pane on every side — no `--view-padding-x` gutter,

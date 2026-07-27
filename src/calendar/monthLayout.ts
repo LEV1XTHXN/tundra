@@ -37,6 +37,15 @@ export interface WeekBar {
   continuesRight: boolean;
 }
 
+/**
+ * A rendered event's identity. A repeating event is ONE stored record expanded
+ * into many occurrences by the core, so several events in a grid legitimately
+ * share an `id` — the day pins down which one. Use this, never the bare id, for
+ * React keys and per-event lookups.
+ */
+export const eventKey = (ev: CalEvent): string =>
+  ev.occurrence ? `${ev.id}@${ev.occurrence}` : ev.id;
+
 /** The inclusive day span an event covers, normalised (a backwards `end` is
  *  swapped, a missing `end` means a single day) — the same rule the view's
  *  per-day bucketing uses. */
