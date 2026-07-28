@@ -73,10 +73,14 @@ jobs:
           - platform: windows-latest
             rust-target: ""
             args: "--bundles nsis"
-          - platform: macos-14
+          # Both macOS builds run on the same Apple Silicon runner: the Intel
+          # DMG is cross-compiled. GitHub retired the free Intel runner
+          # (macos-13) in Dec 2025, and every dependency here is pure Rust
+          # (plus cc/zstd-sys/blake3), so it cross-compiles with the Xcode SDK.
+          - platform: macos-15
             rust-target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
-          - platform: macos-13
+          - platform: macos-15
             rust-target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
 

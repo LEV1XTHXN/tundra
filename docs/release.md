@@ -14,8 +14,9 @@ routinely breaks on WebView2, so each OS builds on its own native runner.
 - **`.github/workflows/release.yml`** — triggered by pushing a `v*` tag (or
   `workflow_dispatch` with an existing tag). Job 1 creates a **draft
   prerelease** whose body is `.github/RELEASE_NOTES_BETA.md` verbatim; job 2 is
-  a four-way matrix (`ubuntu-22.04`, `windows-latest`, `macos-14`, `macos-13`)
-  that uploads into that release by id.
+  a four-way matrix (`ubuntu-22.04`, `windows-latest`, and `macos-15` twice —
+  once native arm64, once cross-compiled to Intel) that uploads into that
+  release by id.
 
   The two-job split matters: if every matrix leg let `tauri-action`
   find-or-create the release itself, they race and you get duplicate drafts
@@ -168,9 +169,15 @@ to `release.yml` — no other structural change is required.
   The apt list already avoids `libwebkit2gtk-4.0-dev` (which doesn't exist
   there), so it's a one-word change — but the glibc floor rises 2.35 → 2.39, so
   update the deb/AppImage compatibility line in the release notes.
-- **If `macos-13` (the last Intel image) is retired**, build the Intel DMG on
-  `macos-14` with `--target x86_64-apple-darwin`. Every dependency is pure Rust
-  (plus `cc`/`zstd-sys`/`blake3`), so it cross-compiles fine with the Xcode SDK.
+- **macOS runner labels rot fast.** GitHub supports only the latest two macOS
+  versions and retires the rest — `macos-13` (the last *free Intel* image) went
+  away in December 2025, and `macos-14` was deprecated soon after. A retired
+  label doesn't fail loudly: the job just sits on "waiting for a runner to pick
+  up this job" until GitHub cancels it ~24h later. That's why both macOS legs
+  now run on one Apple Silicon label with the Intel DMG cross-compiled — there
+  is only one label to bump when 15 ages out. Check the current labels at
+  <https://github.com/actions/runner-images> before a release if it's been a
+  while.
 
 ## Deferred: the webview CSP
 
