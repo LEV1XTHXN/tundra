@@ -24,6 +24,8 @@ would also have to, drop a note here.
 - [`folder-groups.md`](folder-groups.md) — collapsible folder groups, per-folder icons, and the removal of sidebar tree pinning (Home's "Pin to Home" kept).
 - [`calendar-month-view.md`](calendar-month-view.md) — the month grid's per-week rows + all-day bar overlay, the rem-constants-must-match-CSS contract behind "+N more", the shared `calendarCursor`/mini-month sidebar, and the day/event right-click menus that replaced the cells' hover buttons.
 - [`calendar-events.md`](calendar-events.md) — the event dialog (month-picks-the-day, typed `TimeField`s), and repeating events: one stored anchor expanded per range query, the occurrence-edit rebase rule, and "delete this day vs the whole series".
+- [`attachments-linux-media.md`](attachments-linux-media.md) — why `<video>`/`<audio>` attachments are fetched into a `blob:` URL on Linux (GStreamer can't read `asset://`), and what that costs in memory.
+- [`release.md`](release.md) — how a release is cut: the two GitHub Actions workflows, the version touchpoints, the pre-tag checklist and fresh-profile first-run test, signing status, and the deferred webview CSP.
 
 ## Conventions
 

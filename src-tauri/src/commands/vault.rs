@@ -4,14 +4,20 @@ use super::spellcheck::{enabled_languages, read_lang_dicts};
 
 /// Suggested default vault location for the "don't make me think" path:
 /// `{Documents}/Tundra` (CLAUDE.md §5.1).
+///
+/// Falls back to `{Home}/Tundra` when there is no Documents directory: on Linux
+/// `document_dir()` resolves through XDG user-dirs, which minimal installs and
+/// containers don't configure — without the fallback the one-click onboarding
+/// button just errors there. Windows and macOS always have a Documents folder.
 #[tauri::command]
 #[specta::specta]
 pub fn default_vault_path(app: AppHandle) -> Result<String, CoreError> {
-    let docs = app
+    let base = app
         .path()
         .document_dir()
+        .or_else(|_| app.path().home_dir())
         .map_err(|e| CoreError::Vault(e.to_string()))?;
-    Ok(docs.join("Tundra").to_string_lossy().into_owned())
+    Ok(base.join("Tundra").to_string_lossy().into_owned())
 }
 
 /// The last vault opened, if any — lets the app skip onboarding on relaunch.

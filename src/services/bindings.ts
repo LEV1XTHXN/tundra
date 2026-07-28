@@ -8,6 +8,11 @@ export const commands = {
 	/**
 	 *  Suggested default vault location for the "don't make me think" path:
 	 *  `{Documents}/Tundra` (CLAUDE.md §5.1).
+	 * 
+	 *  Falls back to `{Home}/Tundra` when there is no Documents directory: on Linux
+	 *  `document_dir()` resolves through XDG user-dirs, which minimal installs and
+	 *  containers don't configure — without the fallback the one-click onboarding
+	 *  button just errors there. Windows and macOS always have a Documents folder.
 	 */
 	defaultVaultPath: () => typedError<string, CoreError>(__TAURI_INVOKE("default_vault_path")),
 	/**  The last vault opened, if any — lets the app skip onboarding on relaunch. */

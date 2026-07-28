@@ -21,3 +21,12 @@ returns no misspellings rather than flagging every word. Once you add the files,
 Recommended source: a permissively-licensed `en_US` Hunspell dictionary such as
 the SCOWL-derived set shipped by LibreOffice/Firefox. Keep the upstream license
 file alongside these when you vendor them.
+
+**Do not delete this file.** While no dictionary is vendored, this README *is*
+the `bundle.resources` entry in `tauri.conf.json` — it is what keeps a
+`dictionaries/` directory present in shipped bundles, so
+`resource_dir().join("dictionaries")` resolves and spellcheck degrades to inert
+instead of erroring. (It is listed by explicit path rather than a `*` glob on
+purpose: a glob that matches zero files fails `tauri build` with a confusing
+error.) When you vendor a real pair, switch the entry back to
+`"resources/dictionaries/*": "dictionaries/"` in the same commit.

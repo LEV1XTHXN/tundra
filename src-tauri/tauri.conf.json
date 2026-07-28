@@ -39,7 +39,27 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/dictionaries/*": "dictionaries/"
+      "resources/dictionaries/README.md": "dictionaries/README.md"
+    },
+    "copyright": "Copyright (c) 2026 Egor Simakov, Daniil Slastenov",
+    "publisher": "Egor Simakov, Daniil Slastenov",
+    "category": "Productivity",
+    "shortDescription": "Local-first, Notion-style, Markdown-aware note app.",
+    "longDescription": "Tundra is a local-first desktop note app. Notes are trees of typed blocks stored as plain JSON on your own file system — no cloud, no account. Folders, wiki-links, a graph view, full-text search, a calendar, Kanban boards, templates and one-click vault backup.",
+    "licenseFile": "../LICENSE",
+    "linux": {
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3"]
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }
