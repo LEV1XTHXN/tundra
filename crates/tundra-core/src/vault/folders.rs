@@ -3,7 +3,7 @@ use super::*;
 impl Vault {
     /// Create a folder (and any missing parents) under `notes/`. Idempotent.
     pub fn create_folder(&self, rel: &str) -> Result<()> {
-        let abs = self.abs_folder_path(rel);
+        let abs = self.abs_folder_path(rel)?;
         fs::create_dir_all(&abs)?;
         let rel_path = self.rel_to_notes(&abs);
         self.index.write().unwrap().folders.insert(rel_path);
@@ -16,7 +16,10 @@ impl Vault {
         if is_root(rel) {
             return Err(CoreError::Vault("cannot rename the notes root".into()));
         }
-        let old_abs = self.abs_folder_path(rel);
+        // `new_name` is joined onto the parent below without going through
+        // `abs_folder_path`, so it needs its own guard.
+        validate_name(new_name)?;
+        let old_abs = self.abs_folder_path(rel)?;
         if !old_abs.is_dir() {
             return Err(CoreError::NotFound(rel.to_string()));
         }
@@ -40,7 +43,7 @@ impl Vault {
         if is_root(rel) {
             return Err(CoreError::Vault("cannot move the notes root".into()));
         }
-        let old_abs = self.abs_folder_path(rel);
+        let old_abs = self.abs_folder_path(rel)?;
         if !old_abs.is_dir() {
             return Err(CoreError::NotFound(rel.to_string()));
         }
@@ -48,7 +51,7 @@ impl Vault {
             .file_name()
             .ok_or_else(|| CoreError::Vault("folder path has no name".into()))?
             .to_owned();
-        let new_parent_abs = self.abs_folder_path(new_parent_rel);
+        let new_parent_abs = self.abs_folder_path(new_parent_rel)?;
         fs::create_dir_all(&new_parent_abs)?;
         let new_abs = new_parent_abs.join(&name);
         if new_abs.starts_with(&old_abs) {
@@ -73,7 +76,7 @@ impl Vault {
         if is_root(rel) {
             return Err(CoreError::Vault("cannot delete the notes root".into()));
         }
-        let abs = self.abs_folder_path(rel);
+        let abs = self.abs_folder_path(rel)?;
         if !abs.is_dir() {
             return Err(CoreError::NotFound(rel.to_string()));
         }
@@ -89,12 +92,17 @@ impl Vault {
     }
 
     /// Resolve a `/`-separated folder path (relative to `notes/`) to an
-    /// absolute path. `""` (or any all-slash string) means the notes root.
-    pub(super) fn abs_folder_path(&self, rel: &str) -> PathBuf {
+    /// absolute path; `""` (or any all-slash string) means the notes root.
+    /// Refuses anything that would escape `notes/` — this is the single
+    /// chokepoint for
+    /// every folder path that reaches the filesystem, so the check lives here
+    /// rather than in each caller — see `paths::validate_rel`.
+    pub(super) fn abs_folder_path(&self, rel: &str) -> Result<PathBuf> {
+        validate_rel(rel)?;
         let mut p = self.notes_dir();
         for comp in rel.split('/').filter(|c| !c.is_empty()) {
             p.push(comp);
         }
-        p
+        Ok(p)
     }
 }

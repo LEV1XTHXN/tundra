@@ -21,7 +21,7 @@ impl Vault {
     /// tail of the create path, so the summary is populated the same way whether
     /// the note is created at the root or inside a folder.
     fn persist_new(&self, note: Note, folder_rel: &str) -> Result<Note> {
-        let dir = self.abs_folder_path(folder_rel);
+        let dir = self.abs_folder_path(folder_rel)?;
         fs::create_dir_all(&dir)?;
         let path = first_available(&dir, &slugify(&note.title));
         self.write_note_at(&path, &note)?;
@@ -169,7 +169,7 @@ impl Vault {
         }
         .ok_or_else(|| CoreError::NotFound(id.to_string()))?;
 
-        let new_dir = self.abs_folder_path(new_folder_rel);
+        let new_dir = self.abs_folder_path(new_folder_rel)?;
         fs::create_dir_all(&new_dir)?;
         let stem = old_path
             .file_stem()
