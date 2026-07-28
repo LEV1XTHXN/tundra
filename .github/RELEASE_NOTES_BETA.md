@@ -105,6 +105,14 @@ in Syncthing/Dropbox — it's just files.
 - **The webview runs without a Content-Security-Policy** in this build. It
   makes no network requests of any kind, so the exposure is small, but a policy
   is on the list for 0.2.
+- **The Linux AppImage bundles its own copy of WebKitGTK and ~160 other system
+  libraries**, frozen at build time. That's what makes it run anywhere, but it
+  also means it does *not* pick up your distro's security updates for the
+  browser engine or the image decoders — only a new Tundra release refreshes
+  them. The `.deb` and `.rpm` link against your system's libraries and are
+  patched by your distro, so **prefer them if your distro provides
+  WebKit2GTK 4.1**. Windows (WebView2) and macOS (WKWebView) use the
+  OS-provided engine and update themselves.
 - **x86-64 only.** No Linux ARM or Windows ARM builds yet.
 
 ## Feedback
