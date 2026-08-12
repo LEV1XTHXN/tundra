@@ -103,9 +103,10 @@ export const vault = {
   /** Every vault ever opened/created, most-recently-opened first (CLAUDE.md
    *  §5.1's known-vaults registry) — backs the Settings vault switcher. */
   listKnown: (): Promise<VaultInfo[]> => unwrap(commands.listKnownVaults()),
-  /** Remove a vault from the known-vaults list ONLY — its files on disk are
-   *  never touched. */
-  forget: (path: string): Promise<null> => unwrap(commands.forgetVault(path)),
+  /** Delete a vault: its whole folder goes to the OS trash (recoverable — not
+   *  erased) and it leaves the known-vaults list. Resolves `true` when the
+   *  deleted vault was the open one, which leaves NO vault open. */
+  delete: (path: string): Promise<boolean> => unwrap(commands.deleteVault(path)),
 };
 
 /**

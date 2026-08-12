@@ -27,6 +27,23 @@ pub fn last_vault(app: AppHandle) -> Result<Option<String>, CoreError> {
     Ok(load_config(&app).last_vault)
 }
 
+/// True when `requested` names the vault already open at `current`.
+///
+/// Compares canonicalized paths so a symlinked, trailing-slash or otherwise
+/// differently-spelled path — e.g. whatever the native folder picker hands back
+/// for a vault the app already has open — still counts as the same vault. Falls
+/// back to raw string equality when canonicalization fails (path gone, no
+/// permission), which is the honest answer with no filesystem to consult.
+pub(super) fn is_same_vault(current: &str, requested: &str) -> bool {
+    match (
+        std::fs::canonicalize(current),
+        std::fs::canonicalize(requested),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => current == requested,
+    }
+}
+
 /// Open (or create) the vault at `path`, remember it, and return its info.
 #[tauri::command]
 #[specta::specta]
@@ -51,6 +68,26 @@ pub fn open_vault(
     app.asset_protocol_scope()
         .allow_directory(&attachments_dir, true)
         .map_err(|e| CoreError::Io(e.to_string()))?;
+
+    // Already open? Then there is nothing to do, and re-opening would in fact
+    // BREAK the session: this process still holds every handle for that vault,
+    // including the `SearchIndex`'s Tantivy `IndexWriter` and with it the
+    // exclusive lock on `.vault/cache/search/`. Constructing a second writer for
+    // the same directory below fails with `LockBusy`, and — since the old one is
+    // only dropped at the state swap at the end — it fails on every retry too,
+    // leaving the vault unopenable until the app restarts.
+    //
+    // The frontend does exactly this whenever it reboots under a Rust process
+    // that did not: a webview reload re-runs the boot effect, which calls
+    // `open_vault(last_vault)` again. Returning the info it already asked for is
+    // both correct and what makes a reload recoverable. The asset-protocol scope
+    // was re-granted just above, and this path is already at the front of the
+    // known-vaults registry, so there is no bookkeeping left to redo.
+    if let Some(open) = state.vault.lock().unwrap().as_ref() {
+        if is_same_vault(&open.info().path, &info.path) {
+            return Ok(info);
+        }
+    }
 
     // Open the search index and bring it up to date incrementally — not a
     // full rebuild every launch (Phase 1 step 9).
@@ -135,13 +172,108 @@ pub fn list_known_vaults(app: AppHandle) -> Result<Vec<VaultInfo>, CoreError> {
 }
 
 /// Remove `path` from the known-vaults registry ONLY — the vault's files on
-/// disk are never touched. Use this to declutter the switcher after moving a
-/// vault or abandoning one; to actually delete a vault, remove its folder
-/// outside the app first.
+/// disk are never touched. Used internally by `delete_vault` after the folder
+/// is gone; not exposed as a command of its own, since "remove from the list
+/// but keep the files" isn't an action the UI offers.
+fn forget_vault(app: &AppHandle, path: &str) -> Result<(), CoreError> {
+    let mut cfg = load_config(app);
+    apply_forget(&mut cfg, path);
+    save_config(app, &cfg)
+}
+
+/// Decide whether `path` may be deleted at all, before anything touches the
+/// filesystem. Split out of `delete_vault` (and kept free of `AppHandle`) so
+/// the guards on the app's most destructive operation are unit-testable.
+///
+/// `reserved` are directories that must never be deleted even when they look
+/// like a vault — the user's home and Documents folders, which they may well
+/// have picked as a vault root at some point.
+pub(super) fn ensure_deletable(
+    cfg: &AppConfig,
+    path: &str,
+    reserved: &[std::path::PathBuf],
+) -> Result<(), CoreError> {
+    // Only vaults the user actually knows about can be deleted. This keeps the
+    // command surface from being a "recursively trash any directory" primitive:
+    // the only paths that ever reach the filesystem are ones the app itself put
+    // in the registry. Exact string match, the same comparison `apply_forget`
+    // uses — so a path that passes here is also one it can remove.
+    if !cfg.known_vaults.iter().any(|v| v.path == path) {
+        return Err(CoreError::Vault(format!(
+            "{path} is not a known vault — refusing to delete it"
+        )));
+    }
+
+    // A vault root is an arbitrary user-chosen folder, so nothing stops someone
+    // from having pointed the app at their home or Documents directory: those
+    // then hold a legitimate `.vault/`, and the core's guard would happily trash
+    // the lot. Deleting either is not a mistake anyone recovers from casually,
+    // so refuse and let them do it deliberately outside the app.
+    for dir in reserved {
+        if is_same_vault(path, &dir.to_string_lossy()) {
+            return Err(CoreError::Vault(format!(
+                "{path} is your {} folder — delete it yourself if you really mean to",
+                dir.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Delete the vault at `path`: move its whole folder to the OS trash and drop
+/// it from the known-vaults registry. Returns `true` when the deleted vault was
+/// the one currently open — the frontend uses that to fall back to onboarding.
+///
+/// Deleting the OPEN vault is allowed, which is why this tears the session down
+/// first (see below). Everything about this command is written on the
+/// assumption that it is the most destructive thing the app can do: the core's
+/// `trash_vault_dir` refuses anything that isn't recognisably a vault, and the
+/// two guards here refuse anything the *app* has no business deleting.
 #[tauri::command]
 #[specta::specta]
-pub fn forget_vault(app: AppHandle, path: String) -> Result<(), CoreError> {
-    let mut cfg = load_config(&app);
-    apply_forget(&mut cfg, &path);
-    save_config(&app, &cfg)
+pub fn delete_vault(
+    app: AppHandle,
+    state: State<AppState>,
+    path: String,
+) -> Result<bool, CoreError> {
+    // Serialize against `open_vault` — a delete interleaved with an open could
+    // tear down handles the open just installed, or trash a folder a concurrent
+    // `Vault::open` is busy re-creating.
+    let _opening = state.opening.lock().unwrap();
+
+    let reserved: Vec<std::path::PathBuf> = [app.path().home_dir(), app.path().document_dir()]
+        .into_iter()
+        .flatten()
+        .collect();
+    ensure_deletable(&load_config(&app), &path, &reserved)?;
+
+    // If this is the open vault, release every handle on it BEFORE touching the
+    // filesystem. Order matters: the watcher's callback owns clones of the
+    // search and link `Arc`s (see `open_vault`), so dropping the watcher first
+    // is what actually lets the `SearchIndex` drop — and with it Tantivy's
+    // exclusive lock on `.vault/cache/search/`, which Windows will not let us
+    // move a directory out from under.
+    let was_open = state
+        .vault
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|v| is_same_vault(&v.info().path, &path));
+    if was_open {
+        *state.watcher.lock().unwrap() = None;
+        *state.search.lock().unwrap() = None;
+        *state.links.lock().unwrap() = None;
+        *state.calendar.lock().unwrap() = None;
+        *state.kanban.lock().unwrap() = None;
+        *state.spellcheck.lock().unwrap() = None;
+        *state.vault.lock().unwrap() = None;
+    }
+
+    tundra_core::trash_vault_dir(std::path::Path::new(&path))?;
+
+    // Only now forget it: if trashing failed we kept the entry, so the user can
+    // see the error and try again rather than losing track of a vault that is
+    // still on disk.
+    forget_vault(&app, &path)?;
+    Ok(was_open)
 }

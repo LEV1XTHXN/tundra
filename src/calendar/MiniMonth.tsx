@@ -5,7 +5,10 @@
  * the Calendar view is open — so the little month exists once, not twice.
  *
  * Presentation + its own `calendar.range` fetch for the dots; the cursor and
- * the selected day are owned by the caller.
+ * the selected day are owned by the caller. Because the fetch is its own, so is
+ * the invalidation: the dots refresh on `viewState.calendarRevision`, which the
+ * Calendar view bumps whenever it writes — otherwise a newly-added event would
+ * only appear here after navigating away and back.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,6 +32,8 @@ import { useTranslation } from "react-i18next";
 
 import { calendar } from "@/services";
 import { formatCap, useDateLocale } from "@/i18n/dateLocale";
+import { useViewState } from "@/store/viewState";
+import { rangeQueryKeys } from "./monthLayout";
 
 /** Weeks start Monday throughout the calendar (date-fns: 0 = Sunday, 1 = Monday). */
 const WEEK_STARTS_ON = 1;
@@ -134,11 +139,21 @@ export function MiniMonth({
     if (el) setCell(Math.max(0, Math.floor(Math.min(el.clientWidth / 7, el.clientHeight / weeks))));
   }, [fitHeight, weeks]);
 
+  // The query window is wider than the grid — see `rangeQueryKeys`. The dots
+  // are keyed by local day, so days outside the grid simply never get looked up.
+  const [queryStart, queryEnd] = rangeQueryKeys(gridStart, gridEnd);
+
+  // The dots are a cache of someone else's data: the Calendar view writes events,
+  // and it and this month are siblings in the shell. Since this component owns
+  // its fetch, it owns the invalidation too — refetching whenever that shared
+  // revision moves, rather than only when its own month does.
+  const revision = useViewState((s) => s.calendarRevision);
+
   useEffect(() => {
     if (!showMarks) return;
     let cancelled = false;
     calendar
-      .range(gridStartKey, gridEndKey)
+      .range(queryStart, queryEnd)
       .then((r) => {
         if (cancelled) return;
         const next = new Set<string>();
@@ -154,7 +169,7 @@ export function MiniMonth({
     return () => {
       cancelled = true;
     };
-  }, [gridStartKey, gridEndKey, showMarks]);
+  }, [queryStart, queryEnd, showMarks, revision]);
 
   // In fit-height mode the columns are fixed px squares; otherwise they share
   // the width evenly and the cells' aspect-ratio (CSS) keeps them square.

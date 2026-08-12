@@ -33,12 +33,17 @@ export const commands = {
 	 */
 	listKnownVaults: () => typedError<VaultInfo[], CoreError>(__TAURI_INVOKE("list_known_vaults")),
 	/**
-	 *  Remove `path` from the known-vaults registry ONLY — the vault's files on
-	 *  disk are never touched. Use this to declutter the switcher after moving a
-	 *  vault or abandoning one; to actually delete a vault, remove its folder
-	 *  outside the app first.
+	 *  Delete the vault at `path`: move its whole folder to the OS trash and drop
+	 *  it from the known-vaults registry. Returns `true` when the deleted vault was
+	 *  the one currently open — the frontend uses that to fall back to onboarding.
+	 * 
+	 *  Deleting the OPEN vault is allowed, which is why this tears the session down
+	 *  first (see below). Everything about this command is written on the
+	 *  assumption that it is the most destructive thing the app can do: the core's
+	 *  `trash_vault_dir` refuses anything that isn't recognisably a vault, and the
+	 *  two guards here refuse anything the *app* has no business deleting.
 	 */
-	forgetVault: (path: string) => typedError<null, CoreError>(__TAURI_INVOKE("forget_vault", { path })),
+	deleteVault: (path: string) => typedError<boolean, CoreError>(__TAURI_INVOKE("delete_vault", { path })),
 	/**
 	 *  List every file under an arbitrary source folder (e.g. an Obsidian vault
 	 *  the user picked via the native folder dialog) — pure FS read, no vault
@@ -443,9 +448,17 @@ export type CoreError =
 /**
  *  A first-class calendar event. A single day/instant when `end` is `None`; a
  *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
- *  tells the UI to render the day span and ignore the clock time. (Range overlap
- *  is computed on the UTC calendar date — a local-timezone refinement can come
- *  later without changing the on-disk shape.)
+ *  tells the UI to render the day span and ignore the clock time.
+ * 
+ *  **Range queries are answered on the UTC calendar date** ([`Event::day_span`]),
+ *  and that is the contract, not an oversight: this crate has no idea what the
+ *  caller's timezone is. A caller presenting *local* days must therefore widen
+ *  its query window by a day on each side and re-derive each event's local day
+ *  itself — the frontend does exactly that in `rangeQueryKeys`
+ *  (`src/calendar/monthLayout.ts`), which is what keeps an all-day event pinned
+ *  to local midnight (`T22:00Z` the previous day at UTC+2) on the day the user
+ *  put it on. A timezone-aware refinement — all-day events as floating dates
+ *  rather than instants — can come later without changing the on-disk shape.
  * 
  *  With `repeat` set the record is a *series anchor* rather than a single entry:
  *  a range query returns one clone per occurrence, each carrying the day it falls
@@ -456,9 +469,17 @@ export type Event = Event_Serialize | Event_Deserialize;
 /**
  *  A first-class calendar event. A single day/instant when `end` is `None`; a
  *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
- *  tells the UI to render the day span and ignore the clock time. (Range overlap
- *  is computed on the UTC calendar date — a local-timezone refinement can come
- *  later without changing the on-disk shape.)
+ *  tells the UI to render the day span and ignore the clock time.
+ * 
+ *  **Range queries are answered on the UTC calendar date** ([`Event::day_span`]),
+ *  and that is the contract, not an oversight: this crate has no idea what the
+ *  caller's timezone is. A caller presenting *local* days must therefore widen
+ *  its query window by a day on each side and re-derive each event's local day
+ *  itself — the frontend does exactly that in `rangeQueryKeys`
+ *  (`src/calendar/monthLayout.ts`), which is what keeps an all-day event pinned
+ *  to local midnight (`T22:00Z` the previous day at UTC+2) on the day the user
+ *  put it on. A timezone-aware refinement — all-day events as floating dates
+ *  rather than instants — can come later without changing the on-disk shape.
  * 
  *  With `repeat` set the record is a *series anchor* rather than a single entry:
  *  a range query returns one clone per occurrence, each carrying the day it falls
@@ -491,9 +512,17 @@ export type Event_Deserialize = {
 /**
  *  A first-class calendar event. A single day/instant when `end` is `None`; a
  *  multi-day time period when `end` is set. Times are stored in UTC; `all_day`
- *  tells the UI to render the day span and ignore the clock time. (Range overlap
- *  is computed on the UTC calendar date — a local-timezone refinement can come
- *  later without changing the on-disk shape.)
+ *  tells the UI to render the day span and ignore the clock time.
+ * 
+ *  **Range queries are answered on the UTC calendar date** ([`Event::day_span`]),
+ *  and that is the contract, not an oversight: this crate has no idea what the
+ *  caller's timezone is. A caller presenting *local* days must therefore widen
+ *  its query window by a day on each side and re-derive each event's local day
+ *  itself — the frontend does exactly that in `rangeQueryKeys`
+ *  (`src/calendar/monthLayout.ts`), which is what keeps an all-day event pinned
+ *  to local midnight (`T22:00Z` the previous day at UTC+2) on the day the user
+ *  put it on. A timezone-aware refinement — all-day events as floating dates
+ *  rather than instants — can come later without changing the on-disk shape.
  * 
  *  With `repeat` set the record is a *series anchor* rather than a single entry:
  *  a range query returns one clone per occurrence, each carrying the day it falls

@@ -443,7 +443,7 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.vault-switcher-item-forget {
+.vault-switcher-item-delete {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -457,9 +457,22 @@ body,
   color: var(--muted-foreground);
   cursor: pointer;
 }
-.vault-switcher-item-forget:hover {
+.vault-switcher-item-delete:hover:not(:disabled) {
   background: var(--destructive);
   color: var(--destructive-foreground);
+}
+.vault-switcher-item-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The full path in the delete-vault confirmation — this dialog removes a whole
+   folder from disk, so the exact folder is part of the question being asked. */
+.vault-switcher-delete-path {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  word-break: break-all;
+  color: var(--foreground);
 }
 .vault-switcher-actions {
   display: flex;
@@ -1245,15 +1258,27 @@ body,
   background: var(--accent);
   pointer-events: none;
 }
+/* "This day has something on it": a dot under the number. Horizontal centring is
+   spelled out rather than left to the static position of an abspos child in a
+   flex container — that resolves to "as if it were the sole flex item" per the
+   flexbox spec, which is exactly the kind of late-spec corner WebKitGTK gets
+   wrong (CLAUDE.md §8.8), and a dot pinned to the cell's left edge reads as no
+   dot at all. `z-index` puts it over the today/selected circle, whose lower edge
+   it grazes in small cells; `currentColor` is what keeps it legible there —
+   inside the filled today circle the text colour is already `--background`. */
 .mini-calendar-day.has-events::after {
   content: "";
   position: absolute;
-  bottom: 0.15rem;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0.08rem;
   width: 0.25rem;
   height: 0.25rem;
   border-radius: 999px;
   background: currentColor;
-  opacity: 0.7;
+  opacity: 0.8;
+  z-index: 2;
+  pointer-events: none;
 }
 /* The picked day span (the event dialog's month). Drawn as one continuous band
    rather than a mark per day — the cells have no gap between them, so a square

@@ -16,6 +16,10 @@ interface AppSidebarProps {
   /** Switch to a different (known, opened-elsewhere, or brand-new) vault —
    *  from `useVaultSession`; the vault-name switcher's only entry point. */
   onSwitchVault: (path: string) => Promise<void>;
+  /** Delete a vault — its folder goes to the OS trash. Also from
+   *  `useVaultSession`, which handles the "you just deleted the open vault"
+   *  case by dropping the app back to onboarding. */
+  onDeleteVault: (path: string) => Promise<void>;
   onError: (message: string) => void;
 }
 
@@ -39,6 +43,7 @@ export function AppSidebar({
   deletion,
   creation,
   onSwitchVault,
+  onDeleteVault,
   onError,
 }: AppSidebarProps) {
   const view = useViewState((s) => s.view);
@@ -50,7 +55,12 @@ export function AppSidebar({
 
   return (
     <aside className="sidebar">
-      <VaultSwitcher vaultInfo={vaultInfo} onSwitch={onSwitchVault} onError={onError} />
+      <VaultSwitcher
+        vaultInfo={vaultInfo}
+        onSwitch={onSwitchVault}
+        onDelete={onDeleteVault}
+        onError={onError}
+      />
       {view === "calendar" ? (
         <CalendarSidebar />
       ) : (

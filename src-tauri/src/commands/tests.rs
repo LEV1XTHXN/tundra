@@ -336,6 +336,74 @@ fn remember_vault_dedupes_by_path_and_moves_to_front() {
     assert_eq!(cfg.last_vault.as_deref(), Some("/vaults/a"));
 }
 
+/// `is_same_vault` guards `open_vault`'s early return, which is what makes a
+/// webview reload survivable — re-opening the vault this process already holds
+/// would fight its own Tantivy writer lock. It has to see through the spelling
+/// differences a folder picker can introduce, hence the canonicalization.
+#[test]
+fn same_vault_sees_through_path_spelling() {
+    let dir = std::env::temp_dir().join(format!("tundra-samevault-test-{}", uuid::Uuid::new_v4()));
+    let other = dir.join("elsewhere");
+    std::fs::create_dir_all(&other).expect("create temp dirs");
+    let root = dir.to_string_lossy().into_owned();
+
+    assert!(is_same_vault(&root, &root), "identical paths are the same vault");
+    assert!(
+        is_same_vault(&root, &format!("{root}/.")),
+        "an uncanonical spelling of the same directory is the same vault"
+    );
+    assert!(
+        is_same_vault(&root, &other.join("..").to_string_lossy()),
+        "a path that resolves back to the root is the same vault"
+    );
+    assert!(
+        !is_same_vault(&root, &other.to_string_lossy()),
+        "a different directory is a different vault"
+    );
+
+    // Nonexistent paths can't be canonicalized — fall back to string equality
+    // rather than reporting two unrelated missing paths as the same vault.
+    let gone = dir.join("gone").to_string_lossy().into_owned();
+    assert!(is_same_vault(&gone, &gone));
+    assert!(!is_same_vault(&gone, &root));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `delete_vault` trashes a real directory, so `ensure_deletable` runs before
+/// anything touches the filesystem. Without the registry check the command
+/// surface would be "recursively trash any directory the webview names"; the
+/// reserved-directory check covers the user who once picked their home or
+/// Documents folder as a vault root, where the core's "does it look like a
+/// vault?" guard would happily say yes.
+#[test]
+fn delete_vault_guards_reject_unknown_and_reserved_paths() {
+    let mut cfg = AppConfig::default();
+    let home = std::env::temp_dir().join(format!("tundra-home-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&home).expect("create fake home");
+    let home_str = home.to_string_lossy().into_owned();
+    apply_remember(&mut cfg, &VaultInfo { name: "Vault".into(), path: "/vaults/a".into() });
+    apply_remember(&mut cfg, &VaultInfo { name: "Home".into(), path: home_str.clone() });
+
+    let reserved = std::slice::from_ref(&home);
+    assert!(ensure_deletable(&cfg, "/vaults/a", reserved).is_ok());
+    assert!(
+        ensure_deletable(&cfg, "/vaults/never-registered", &[]).is_err(),
+        "a path outside the known-vaults registry must not be deletable"
+    );
+    assert!(
+        ensure_deletable(&cfg, &home_str, reserved).is_err(),
+        "a registered vault that IS the home folder must not be deletable"
+    );
+    // Reserved directories are matched by resolved path, not spelling — a
+    // registry entry written with a different-but-equivalent path still hits.
+    let spelled = format!("{home_str}/.");
+    apply_remember(&mut cfg, &VaultInfo { name: "Home".into(), path: spelled.clone() });
+    assert!(ensure_deletable(&cfg, &spelled, reserved).is_err());
+
+    std::fs::remove_dir_all(&home).ok();
+}
+
 /// `apply_forget` drops a vault from the registry and clears `last_vault`
 /// only when it pointed at the forgotten path — forgetting a vault that
 /// isn't the last-open one must leave `last_vault` alone.

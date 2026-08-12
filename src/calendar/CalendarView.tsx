@@ -69,10 +69,8 @@ import { Button } from "@/components/ui/button";
 import { CalendarDayMenu, EventContextMenu } from "./CalendarContextMenu";
 import type { CalendarMenuActions } from "./CalendarContextMenu";
 import { MiniMonth } from "./MiniMonth";
-import { eventKey, isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
+import { eventKey, isSpanning, packDay, packWeek, rangeQueryKeys, toWeeks } from "./monthLayout";
 import type { DaySegment } from "./monthLayout";
-
-type Mode = "month" | "week";
 
 /** Optional event colours. Reuses the app's shared TAG_PALETTE (tag chips,
  *  Kanban cards, folder properties, graph nodes) rather than keeping a sixth
@@ -162,12 +160,14 @@ export function CalendarView({
 }) {
   const { t } = useTranslation();
   const dateLocale = useDateLocale();
-  const [mode, setMode] = useState<Mode>("month");
-  // A date inside the currently-shown period; navigation moves it by month/week.
-  // Shared state (`useViewState`) rather than local, because the shell sidebar's
-  // mini month drives the same cursor from outside this view. Jumps to the Home
-  // widget's clicked day when set (consumed once — see useViewState's
-  // calendarTarget doc comment).
+  // Which grid, and a date inside the period it shows; navigation moves the
+  // cursor by month/week. Both are shared state (`useViewState`) rather than
+  // local, because the shell sidebar's mini month drives them from outside this
+  // view — picking a day there drills into that day's week. The cursor also
+  // jumps to the Home widget's clicked day when set (consumed once — see
+  // useViewState's calendarTarget doc comment).
+  const mode = useViewState((s) => s.calendarMode);
+  const setMode = useViewState((s) => s.setCalendarMode);
   const cursor = useViewState((s) => s.calendarCursor);
   const setCursor = useViewState((s) => s.setCalendarCursor);
   useEffect(() => {
@@ -199,7 +199,10 @@ export function CalendarView({
 
   const load = useCallback(() => {
     calendar
-      .range(dayKey(gridStart), dayKey(gridEnd))
+      // Deliberately wider than the grid — see `rangeQueryKeys`. `byDay` below
+      // buckets by local day, and the cells only read the keys they draw, so
+      // the extra days never render.
+      .range(...rangeQueryKeys(gridStart, gridEnd))
       .then((r) => {
         setEvents(r.events);
         setNoteDates(r.note_dates);
@@ -208,6 +211,17 @@ export function CalendarView({
   }, [gridStart, gridEnd, onError]);
 
   useEffect(() => load(), [load]);
+
+  // What every path that WROTE something ends on, rather than plain `load`. The
+  // other calendar surfaces — the sidebar's mini month, Home's Calendar widget —
+  // fetch their own dots and are siblings in the shell, so a write here reaches
+  // them only through the shared revision. Navigation keeps using `load`: moving
+  // the cursor changed nothing anyone else has cached.
+  const bumpCalendar = useViewState((s) => s.bumpCalendar);
+  const reload = useCallback(() => {
+    load();
+    bumpCalendar();
+  }, [load, bumpCalendar]);
 
   // Bucket events + note-date links by day key for O(1) per-cell lookup. An event
   // is placed on every day of its (inclusive) span, so multi-day periods render
@@ -245,17 +259,20 @@ export function CalendarView({
   const unlinkNote = useCallback(
     (nd: NoteDateEntry) => {
       const date: NoteDate = { date: nd.date, event_id: nd.event_id };
-      calendar.removeNoteDate(nd.note_id, date).then(load).catch((e) => onError(localizeError(e, t)));
+      calendar
+        .removeNoteDate(nd.note_id, date)
+        .then(reload)
+        .catch((e) => onError(localizeError(e, t)));
     },
-    [load, onError, t],
+    [reload, onError, t],
   );
 
   // Deleting the whole record: a plain event, or every occurrence of a series.
   const deleteEvent = useCallback(
     (ev: CalEvent) => {
-      calendar.deleteEvent(ev.id).then(load).catch((e) => onError(localizeError(e, t)));
+      calendar.deleteEvent(ev.id).then(reload).catch((e) => onError(localizeError(e, t)));
     },
-    [load, onError, t],
+    [reload, onError, t],
   );
 
   // One occurrence of a repeating event has two possible meanings for "delete",
@@ -274,10 +291,10 @@ export function CalendarView({
       if (!ev.occurrence) return;
       calendar
         .deleteEventOccurrence(ev.id, ev.occurrence)
-        .then(load)
+        .then(reload)
         .catch((e) => onError(localizeError(e, t)));
     },
-    [load, onError, t],
+    [reload, onError, t],
   );
 
   // Everything the right-click menus can dispatch. The same create/edit paths
@@ -310,7 +327,7 @@ export function CalendarView({
       setCursor(day);
       setMode("week");
     },
-    [setCursor],
+    [setCursor, setMode],
   );
 
   const calendarActions = (
@@ -395,7 +412,7 @@ export function CalendarView({
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
-            load();
+            reload();
           }}
           // Delete leaves the dialog and joins the grid's own delete path, so
           // an occurrence gets the same "this day or all of them?" question
@@ -427,7 +444,7 @@ export function CalendarView({
           onClose={() => setDialog(null)}
           onLinked={() => {
             setDialog(null);
-            load();
+            reload();
           }}
           onError={onError}
         />

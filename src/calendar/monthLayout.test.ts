@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Event as CalEvent } from "@/services";
 import { addDays, eachDayOfInterval } from "date-fns";
-import { isSpanning, packDay, packWeek, toWeeks } from "./monthLayout";
+import { isSpanning, packDay, packWeek, rangeQueryKeys, toWeeks } from "./monthLayout";
 
 /** An all-day event over `[start, end]` (local dates, `end` inclusive). */
 function allDay(id: string, start: string, end?: string): CalEvent {
@@ -34,6 +34,23 @@ function week(mondayIso: string) {
   const start = new Date(`${mondayIso}T00:00:00`);
   return eachDayOfInterval({ start, end: addDays(start, 6) });
 }
+
+describe("rangeQueryKeys", () => {
+  it("pads a day past each end of the visible grid", () => {
+    // The pad is what keeps an all-day event pinned to local midnight — which
+    // the core sees on the ADJACENT UTC day — inside the answer. Without it a
+    // week query starting Monday drops that Monday's all-day events east of
+    // Greenwich, and its Sunday ones west of it.
+    const days = week("2026-08-10");
+    expect(rangeQueryKeys(days[0], days[6])).toEqual(["2026-08-09", "2026-08-17"]);
+  });
+
+  it("pads across a month boundary", () => {
+    expect(rangeQueryKeys(new Date("2026-08-01T00:00:00"), new Date("2026-08-31T00:00:00"))).toEqual(
+      ["2026-07-31", "2026-09-01"],
+    );
+  });
+});
 
 describe("isSpanning", () => {
   it("treats all-day events as bars, whatever their length", () => {

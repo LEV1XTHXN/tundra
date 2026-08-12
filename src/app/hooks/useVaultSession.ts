@@ -17,6 +17,10 @@ export interface VaultSession {
    *  by onboarding AND by the vault switcher to switch to a known/new vault.
    *  There's no separate "switch" command: `open_vault` already does it. */
   switchVault: (path: string) => Promise<void>;
+  /** Delete the vault at `path` — its folder goes to the OS trash. Deleting
+   *  the OPEN vault leaves the app with none, so it lands back on onboarding.
+   *  Throws on failure, like every other service call. */
+  deleteVault: (path: string) => Promise<void>;
 }
 
 /**
@@ -54,6 +58,31 @@ export function useVaultSession(
       }
     },
     [refreshTree, t],
+  );
+
+  const deleteVault = useCallback(
+    async (path: string) => {
+      try {
+        // Rust tells us whether it just closed the vault we were working in; if
+        // so there is nothing open any more, so drop back to onboarding rather
+        // than rendering a shell over a folder that's in the trash. Deliberately
+        // no `refreshTree()` here — with no vault open it would only throw.
+        const wasOpen = await useKnownVaults.getState().remove(path);
+        if (wasOpen) {
+          setVaultInfo(null);
+          useViewState.getState().resetForVaultSwitch();
+        }
+      } catch (e) {
+        // Rust closes the open vault *before* it moves the folder (it has to —
+        // Windows won't move a directory with the search index locked inside).
+        // So a failure at the trash step leaves the core with no vault open
+        // while the UI still shows one, and every subsequent command would
+        // fail with "no vault is open". Re-open it, then report the failure.
+        if (vaultInfo?.path === path) await vault.open(path).catch(() => {});
+        throw e;
+      }
+    },
+    [vaultInfo],
   );
 
   // On launch, reopen the last vault so returning users skip onboarding.
@@ -94,5 +123,14 @@ export function useVaultSession(
     }
   }, [switchVault, t]);
 
-  return { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault };
+  return {
+    vaultInfo,
+    booting,
+    error,
+    setError,
+    onChooseFolder,
+    onUseDefault,
+    switchVault,
+    deleteVault,
+  };
 }

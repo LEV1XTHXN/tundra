@@ -30,6 +30,11 @@ tantivy.workspace = true
 # One-click vault backup (Phase 3 step 3): a single .zip of the whole vault
 # (excluding the rebuildable .vault/cache/), written outside the vault.
 zip = "2"
+# Deleting a vault moves its folder to the OS trash rather than erasing it
+# (see vault/delete.rs): the vault is the user's life's work, so the one
+# destructive whole-vault operation has to stay recoverable. Pure Rust on
+# Linux (freedesktop spec) — no extra system libraries for the AppImage.
+trash = "5"
 # Multilingual spellcheck (Phase 3 step 4): pure-Rust, Hunspell-compatible.
 # `unstable-suggestions` enables `WordEntry::suggest` (replacement suggestions).
 zspell = { version = "0.5", features = ["unstable-suggestions"] }

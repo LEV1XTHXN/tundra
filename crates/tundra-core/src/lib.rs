@@ -28,8 +28,8 @@ pub use error::{CoreError, Result};
 pub use index::{extract_text, SearchHit, SearchIndex};
 pub use links::{extract_link_ids, GraphData, GraphEdge, GraphNode, LinkIndex, LINK_INLINE_TYPE};
 pub use vault::{
-    AttachmentKind, CleanupReport, ChangeEvent, FolderNode, TemplateSummary, TreeNode, Vault,
-    VaultInfo,
+    trash_vault_dir, AttachmentKind, CleanupReport, ChangeEvent, FolderNode, TemplateSummary,
+    TreeNode, Vault, VaultInfo,
 };
 pub use watcher::Watcher;
 

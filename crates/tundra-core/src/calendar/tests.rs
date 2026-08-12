@@ -364,3 +364,33 @@ fn zero_interval_is_clamped_to_one() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// The UTC-calendar-date contract, from the store's side.
+///
+/// An all-day event the user put on Monday 2026-08-10 is pinned to LOCAL
+/// midnight, so east of Greenwich it is stored as the previous UTC day. The
+/// store answers on the UTC date and cannot know better — which is exactly why
+/// a caller presenting local days pads its window by a day on each side
+/// (`rangeQueryKeys`, src/calendar/monthLayout.ts). Both halves are asserted
+/// here so the frontend's padding never looks like an unexplained fudge.
+#[test]
+fn a_local_midnight_event_needs_the_padded_window() {
+    let (vault, dir) = temp_vault();
+    let store = CalendarStore::open(&vault).unwrap();
+
+    // Monday 2026-08-10 00:00 at UTC+2 == 2026-08-09T22:00Z.
+    let local_monday_midnight = day(2026, 8, 9).and_hms_opt(22, 0, 0).unwrap().and_utc();
+    let mut monday = event("All-day Monday", local_monday_midnight, None);
+    monday.all_day = true;
+    store.add(&vault, monday).unwrap();
+
+    // The bare Mon–Sun week: the event's UTC day falls just outside it.
+    assert!(store.events_in_range(day(2026, 8, 10), day(2026, 8, 16)).is_empty());
+
+    // The same week padded a day each side — the window the frontend asks for.
+    let hits = store.events_in_range(day(2026, 8, 9), day(2026, 8, 17));
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "All-day Monday");
+
+    std::fs::remove_dir_all(&dir).ok();
+}

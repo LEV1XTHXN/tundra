@@ -66,9 +66,17 @@ pub struct Repeat {
 
 /// A first-class calendar event. A single day/instant when `end` is `None`; a
 /// multi-day time period when `end` is set. Times are stored in UTC; `all_day`
-/// tells the UI to render the day span and ignore the clock time. (Range overlap
-/// is computed on the UTC calendar date — a local-timezone refinement can come
-/// later without changing the on-disk shape.)
+/// tells the UI to render the day span and ignore the clock time.
+///
+/// **Range queries are answered on the UTC calendar date** ([`Event::day_span`]),
+/// and that is the contract, not an oversight: this crate has no idea what the
+/// caller's timezone is. A caller presenting *local* days must therefore widen
+/// its query window by a day on each side and re-derive each event's local day
+/// itself — the frontend does exactly that in `rangeQueryKeys`
+/// (`src/calendar/monthLayout.ts`), which is what keeps an all-day event pinned
+/// to local midnight (`T22:00Z` the previous day at UTC+2) on the day the user
+/// put it on. A timezone-aware refinement — all-day events as floating dates
+/// rather than instants — can come later without changing the on-disk shape.
 ///
 /// With `repeat` set the record is a *series anchor* rather than a single entry:
 /// a range query returns one clone per occurrence, each carrying the day it falls

@@ -13,10 +13,12 @@ interface KnownVaultsState {
   vaults: VaultInfo[];
   loaded: boolean;
   /** Re-read the registry — call after any vault open (a switch/create moves
-   *  it to the front) and after forgetting one. */
+   *  it to the front) and after deleting one. */
   refresh: () => Promise<void>;
-  /** Remove a vault from the list ONLY; its files on disk are untouched. */
-  forget: (path: string) => Promise<void>;
+  /** Delete a vault: its folder goes to the OS trash and it leaves the list.
+   *  Resolves `true` if the deleted vault was the open one — the caller then
+   *  has no vault open and must fall back to onboarding (`useVaultSession`). */
+  remove: (path: string) => Promise<boolean>;
 }
 
 export const useKnownVaults = create<KnownVaultsState>((set, get) => ({
@@ -26,8 +28,9 @@ export const useKnownVaults = create<KnownVaultsState>((set, get) => ({
     const vaults = await vault.listKnown().catch(() => []);
     set({ vaults, loaded: true });
   },
-  forget: async (path) => {
-    await vault.forget(path);
+  remove: async (path) => {
+    const wasOpen = await vault.delete(path);
     set({ vaults: get().vaults.filter((v) => v.path !== path) });
+    return wasOpen;
   },
 }));

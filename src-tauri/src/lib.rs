@@ -53,7 +53,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::open_vault,
             commands::current_vault,
             commands::list_known_vaults,
-            commands::forget_vault,
+            commands::delete_vault,
             commands::import_scan_folder,
             commands::import_read_text_file,
             commands::import_copy_attachment,

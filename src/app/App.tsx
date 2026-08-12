@@ -38,7 +38,7 @@ import { useAppShortcuts } from "./hooks/useAppShortcuts";
 
 export default function App() {
   const { treeData, noteSummaries, refreshTree } = useVaultTree();
-  const { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault } =
+  const { vaultInfo, booting, error, setError, onChooseFolder, onUseDefault, switchVault, deleteVault } =
     useVaultSession(refreshTree);
   useAppStores(vaultInfo);
 
@@ -99,6 +99,7 @@ export default function App() {
         deletion={deletion}
         creation={creation}
         onSwitchVault={switchVault}
+        onDeleteVault={deleteVault}
         onError={setError}
       />
 

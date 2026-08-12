@@ -20,6 +20,11 @@ export type AppView =
   | "templates"
   | "template";
 
+/** Which grid the Calendar view is showing. Lives in the store rather than in
+ *  CalendarView because the shell sidebar's mini month drills into a day's WEEK
+ *  from outside the view — see {@link ViewState.calendarMode}. */
+export type CalendarMode = "month" | "week";
+
 /**
  * A single entry in the browser-style navigation history — the composite
  * "location" the back/forward buttons restore. Everything the shell needs to
@@ -105,6 +110,23 @@ interface ViewState {
    *  it is view state, never part of a navigation location. */
   calendarCursor: Date;
   setCalendarCursor: (date: Date) => void;
+
+  /** Whether the Calendar view is showing the month grid or one week. Shares the
+   *  cursor's home for the same reason: picking a day in the sidebar's mini month
+   *  means "show me that day's week", which needs BOTH halves — the cursor says
+   *  which week, this says to draw a week at all. Transient view state, never
+   *  part of a navigation location. */
+  calendarMode: CalendarMode;
+  setCalendarMode: (mode: CalendarMode) => void;
+
+  /** Bumped whenever this app writes calendar data (an event created, edited or
+   *  deleted; a note linked to or unlinked from a day). Not the data — a
+   *  cache-invalidation token, which is view state: the calendar surfaces are
+   *  siblings in the shell, each fetching for itself, so a write in one has no
+   *  other way to reach the others. The mini month (sidebar AND Home's widget)
+   *  refetches its dots on every change. */
+  calendarRevision: number;
+  bumpCalendar: () => void;
 
   /** Clear every reference to the PREVIOUS vault's notes/folders (open note,
    *  expanded folders, folder-table path, template-edit id, calendar target)
@@ -210,24 +232,37 @@ export const useViewState = create<ViewState>((set, get) => {
   setCalendarTarget: (date) => set({ calendarTarget: date }),
   openCalendarOn: (date) => {
     // Move the cursor too, so an already-mounted Calendar view (which only
-    // consumes `calendarTarget` on mount) still jumps to the clicked day.
-    set({ calendarTarget: date, calendarCursor: date });
+    // consumes `calendarTarget` on mount) still jumps to the clicked day. Week
+    // mode as well: this is a *day* the user picked, and the month grid would
+    // show that day no differently from the one already on screen.
+    set({ calendarTarget: date, calendarCursor: date, calendarMode: "week" });
     recordNav({ view: "calendar" });
   },
 
   calendarCursor: new Date(),
   setCalendarCursor: (date) => set({ calendarCursor: date }),
 
+  calendarMode: "month",
+  setCalendarMode: (mode) => set({ calendarMode: mode }),
+
+  calendarRevision: 0,
+  bumpCalendar: () => set((state) => ({ calendarRevision: state.calendarRevision + 1 })),
+
   resetForVaultSwitch: () =>
-    set({
+    set((state) => ({
       ...HOME_LOCATION,
       expandedFolders: new Set(),
       calendarTarget: null,
       calendarCursor: new Date(),
+      calendarMode: "month",
+      // Home is where a switch lands, and its Calendar widget stays mounted
+      // across it — holding the OLD vault's dots until something invalidates
+      // them.
+      calendarRevision: state.calendarRevision + 1,
       // Wipe the history — the previous vault's notes/folders are meaningless
       // here, so back/forward must start fresh at Home.
       navHistory: [HOME_LOCATION],
       navIndex: 0,
-    }),
+    })),
   };
 });

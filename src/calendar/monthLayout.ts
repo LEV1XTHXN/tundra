@@ -9,6 +9,9 @@
  *
  * Pure functions, no React: the grids just map the result onto CSS grid
  * columns/rows (month) or absolute offsets (week).
+ *
+ * Also home to `rangeQueryKeys`, the shared local-days → query-window rule both
+ * grids and the mini month fetch through.
  */
 import {
   addDays,
@@ -16,11 +19,32 @@ import {
   differenceInCalendarDays,
   differenceInMinutes,
   eachDayOfInterval,
+  format,
   parseISO,
   startOfDay,
+  subDays,
 } from "date-fns";
 
 import type { Event as CalEvent } from "@/services";
+
+/**
+ * The `[start, end]` day keys to ask `calendar.range` for, to cover a grid
+ * spanning the LOCAL days `first…last`.
+ *
+ * Padded one day on each side, and that padding is the whole point. Events are
+ * stored as instants and the core filters them on their **UTC** calendar date,
+ * while everything here is local: an all-day event pinned to local midnight is
+ * `T22:00Z` the previous day at UTC+2, so an unpadded query for a week starting
+ * Monday drops that Monday's all-day events outright. No UTC offset exceeds
+ * ±14h, so ±1 day is always a sufficient superset — correct at every offset and
+ * across DST, unlike passing a single offset the core would have to trust.
+ *
+ * The surplus costs nothing: every consumer re-derives each event's LOCAL day
+ * ({@link eventDaySpan}) and clips to what it actually draws.
+ */
+export function rangeQueryKeys(first: Date, last: Date): [string, string] {
+  return [format(subDays(first, 1), "yyyy-MM-dd"), format(addDays(last, 1), "yyyy-MM-dd")];
+}
 
 /** One event's bar within ONE week row. */
 export interface WeekBar {

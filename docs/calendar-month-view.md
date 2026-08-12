@@ -183,10 +183,73 @@ Because the sidebar and the grid are siblings in the shell, the month cursor
 lives in `useViewState` as `calendarCursor` (transient view state, deliberately
 NOT part of a `NavLocation`), not in `CalendarView`'s local state.
 
+**`calendarMode` is there for the same reason.** Clicking a day in the mini month
+drills into that day's week, the same gesture a month cell performs — which needs
+both halves: the cursor says *which* week, the mode says to draw a week at all.
+With the mode kept local to `CalendarView` the click was invisible, because the
+month grid is a function of the cursor's *month* and every day in it yields the
+same month. The ‹ › arrows deliberately do **not** touch the mode (paging is not
+picking a day), and neither does the sidebar's "Today", which means "go to now"
+in whichever grid is up. `openCalendarOn` — Home's Calendar widget — sets both,
+so a mini month means one thing wherever it appears. The event dialog's
+`MiniMonth` is a *picker* and navigates nothing.
+
 The little month itself is `src/calendar/MiniMonth.tsx`, shared with Home's
 Calendar widget. Its `fitHeight` prop is the only difference between the two:
 Home is freely resizable and needs cells sized in JS to fit both dimensions;
 the fixed-width sidebar takes its natural height with `aspect-ratio: 1` cells.
+
+A day carrying an event or a note→date link gets a **dot under its number**
+(`.has-events::after`), from the month's own `calendar.range` fetch — the third
+thing `showMarks={false}` turns off in the event dialog's picker, where the vault's
+contents mean nothing.
+
+Because the fetch is the month's own, so is the invalidation. `useViewState`
+carries a `calendarRevision` counter — a cache-invalidation token, not data,
+which is why it belongs in view state — and `MiniMonth` refetches whenever it
+moves. `CalendarView` bumps it from `reload`, which every path that *wrote*
+something ends on (event created/edited/deleted, occurrence skipped, note
+linked/unlinked); navigation keeps calling plain `load`, since moving the cursor
+changed nothing anyone else cached. Without this the surfaces are siblings that
+can't hear each other, and a new event only reached the mini month after
+switching views and coming back. `resetForVaultSwitch` bumps it too: a switch
+lands on Home, whose Calendar widget stays mounted holding the old vault's dots.
+
+The dot centres itself with an explicit
+`left: 50%` + `translateX(-50%)` rather than leaning on the static position of an
+absolutely-positioned child of a flex container: that resolves to "as if it were
+the sole flex item" per the flexbox spec, a late-spec corner worth not trusting on
+WebKitGTK (§8.8) — get it wrong and the dot pins to the cell's left edge, which
+reads as no dot at all. `z-index: 2` keeps it over the today/selected circle,
+whose lower edge it grazes in small cells, and `currentColor` is what keeps it
+legible there: inside the filled today circle the text colour is already
+`--background`.
+
+## The query window is wider than the grid
+
+`calendar.range` is asked for one day either side of what's drawn —
+`rangeQueryKeys` in `monthLayout.ts`, used by both `CalendarView.load` and
+`MiniMonth`'s dot fetch.
+
+Events are stored as instants and the core filters them on their **UTC** calendar
+date (`Event::day_span`), while everything in the UI is local. An all-day event is
+pinned to *local* midnight, so at UTC+2 a Monday event is `T22:00Z` on the Sunday:
+an unpadded Mon–Sun query drops it outright, and the symptom reads as "all-day
+events on Monday are missing from week view" — only Monday, because only the
+first day of a range can be pushed out behind its start. Month view hid the same
+bug, since its range opens in the previous month's trailing week.
+
+No UTC offset exceeds ±14h, so ±1 day is always a sufficient superset — correct
+at every offset and across DST, unlike handing the core a single offset to trust.
+The surplus never renders: every consumer re-derives each event's local day
+(`eventDaySpan`) and clips to what it draws. The core's side of the contract is
+pinned by `a_local_midnight_event_needs_the_padded_window` in
+`crates/tundra-core/src/calendar/tests.rs`.
+
+A deeper fix — all-day events as *floating dates* rather than instants, the way
+RFC 5545 separates `DATE` from `DATE-TIME` — would also make them survive a
+timezone change or a Phase 4 sync between devices in different zones. That's a
+data migration of `calendar.json`, deliberately not done here.
 
 ## Month names are `LLLL`, not `MMMM`
 

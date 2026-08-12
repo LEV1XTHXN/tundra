@@ -14,7 +14,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { addDays, set, startOfDay, startOfWeek } from "date-fns";
+import { addDays, format, set, startOfDay, startOfWeek } from "date-fns";
 import type { Event as CalEvent } from "@/services";
 import "@/i18n";
 
@@ -34,6 +34,7 @@ vi.mock("@/services", () => ({
 }));
 
 const { CalendarView } = await import("./CalendarView");
+const { useViewState } = await import("@/store/viewState");
 
 /** Monday of the week the grid shows, and `n` days on from it. */
 const MONDAY = startOfWeek(startOfDay(new Date()), { weekStartsOn: 1 });
@@ -77,7 +78,13 @@ describe("week view all-day strip", () => {
     Element.prototype.scrollIntoView = () => {};
   });
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Mode and cursor are shared app state, so a test that moved either would
+    // otherwise hand the next one a different grid.
+    useViewState.getState().setCalendarMode("month");
+    useViewState.getState().setCalendarCursor(new Date());
+  });
   afterEach(cleanup);
 
   /** Render with `events` loaded, then switch to week mode and wait for the
@@ -88,6 +95,18 @@ describe("week view all-day strip", () => {
     fireEvent.click(screen.getByText("Week"));
     await waitFor(() => expect(bars().length + blocks().length).toBeGreaterThan(0));
   }
+
+  it("asks for a day past each end of the week", async () => {
+    // The regression behind "an all-day event on Monday is invisible in week
+    // view": the core filters on the UTC calendar date, and a Monday all-day
+    // event is stored as the previous UTC day east of Greenwich. An unpadded
+    // Mon–Sun query therefore never returns it. Everything else in this file
+    // stubs the fetch, so the arguments are the only place it can be caught.
+    await renderWeek([event({ id: "Conference", all_day: true, start: at(0, 0), end: at(2, 0) })]);
+
+    const key = (d: Date) => format(d, "yyyy-MM-dd");
+    expect(range).toHaveBeenLastCalledWith(key(day(-1)), key(day(7)));
+  });
 
   it("stretches a multi-day all-day event into one bar across its days", async () => {
     await renderWeek([

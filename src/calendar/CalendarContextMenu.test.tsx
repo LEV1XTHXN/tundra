@@ -32,6 +32,7 @@ vi.mock("@/services", () => ({
 }));
 
 const { CalendarView } = await import("./CalendarView");
+const { useViewState } = await import("@/store/viewState");
 
 /** A timed event on today, and a second day in the same month to create on
  *  (never the 1st — that cell renders "1 Jul", not a bare number). */
@@ -89,6 +90,11 @@ describe("calendar context menus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     range.mockResolvedValue({ events: [EVENT], note_dates: [] });
+    // Mode and cursor are shared app state (the sidebar's mini month drives them
+    // from outside the view), so the week-grid test above would otherwise hand
+    // the next one a week instead of the month it queries.
+    useViewState.getState().setCalendarMode("month");
+    useViewState.getState().setCalendarCursor(new Date());
   });
 
   // Vitest runs without `globals`, so testing-library's automatic afterEach

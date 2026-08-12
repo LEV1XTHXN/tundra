@@ -84,8 +84,9 @@ describe("month → week drill-in", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     range.mockResolvedValue({ events: [EVENT], note_dates: [] });
-    // The cursor is shared app state, so a test that moved it would otherwise
-    // hand the next one a different month.
+    // Mode and cursor are shared app state, so a test that moved either would
+    // otherwise hand the next one a different grid.
+    useViewState.getState().setCalendarMode("month");
     useViewState.getState().setCalendarCursor(new Date());
   });
 

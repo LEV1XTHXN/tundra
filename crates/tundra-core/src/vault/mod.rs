@@ -240,6 +240,7 @@ pub enum ChangeEvent {
 mod attachments;
 mod config;
 mod dates;
+mod delete;
 mod folders;
 mod indexing;
 mod notes;
@@ -251,6 +252,8 @@ mod watch;
 
 use indexing::*;
 use paths::*;
+
+pub use delete::trash_vault_dir;
 
 #[cfg(test)]
 mod tests;
