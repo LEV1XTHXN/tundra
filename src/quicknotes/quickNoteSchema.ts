@@ -7,6 +7,8 @@
  */
 import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
 
+import { lazyMediaBlockSpecs } from "@/editor/mediaBlockSpecs";
+
 export const quickNoteSchema = BlockNoteSchema.create({
   // Explicit allow-list (basic text, every list kind, attachments). Omitting
   // `heading` and `table` keeps the slash menu lean for fast capture. Default
@@ -21,8 +23,11 @@ export const quickNoteSchema = BlockNoteSchema.create({
     toggleListItem: defaultBlockSpecs.toggleListItem,
     codeBlock: defaultBlockSpecs.codeBlock,
     image: defaultBlockSpecs.image,
-    video: defaultBlockSpecs.video,
-    audio: defaultBlockSpecs.audio,
+    // Click-to-play, not BlockNote's defaults: a live `<video>`/`<audio>` takes
+    // the whole WebKitGTK web process down when GStreamer can't build an audio
+    // sink (see `src/editor/mediaBlockSpecs.tsx`).
+    video: lazyMediaBlockSpecs.video,
+    audio: lazyMediaBlockSpecs.audio,
     file: defaultBlockSpecs.file,
   },
 });

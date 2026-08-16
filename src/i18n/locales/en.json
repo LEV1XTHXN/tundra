@@ -312,7 +312,9 @@
     "saved": "Saved"
   },
   "editor": {
-    "openFile": "Open file"
+    "openFile": "Open file",
+    "playVideo": "Play video",
+    "playAudio": "Play audio"
   },
   "vaultSwitcher": {
     "title": "Vaults",

@@ -9,6 +9,24 @@ separator; the prerelease marker lives in the git tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux: opening a note with a video or audio block could kill the window.**
+  WebKitGTK aborts its entire web process (`SIGABRT`) when GStreamer cannot
+  produce an audio sink — a `RELEASE_ASSERT` in
+  `MediaPlayerPrivateGStreamer::createAudioSink()`. The AppImage triggered it
+  every time: it bundled GStreamer's core libraries but none of its plugins, so
+  the webview could see zero of them. Fixed on both sides — the AppImage now
+  ships the GStreamer plugin set (`bundleMediaFramework`), and video/audio
+  blocks render as click-to-play, so no media element is created until the user
+  asks for playback. See `docs/attachments-linux-media.md`.
+
+### Changed
+
+- Video and audio blocks now show a click-to-play placeholder instead of an
+  always-live player. Besides avoiding the crash above, opening a media-heavy
+  note no longer loads every attachment into memory up front.
+
 ## [0.1.0-beta.1] — 2026-07-28
 
 First public beta. Covers Phases 0–3 of the roadmap in `CLAUDE.md`.

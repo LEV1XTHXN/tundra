@@ -76,6 +76,56 @@ root.
 > `ubuntu-22.04`, whose libraries don't use RELR — so **don't** put `NO_STRIP`
 > in the workflow. The deb and rpm bundles are unaffected either way.
 
+> **Fedora hosts: the AppImage also needs `patchelf` and the GStreamer paths.**
+> ```sh
+> sudo dnf install patchelf     # one-time
+>
+> NO_STRIP=true \
+> GSTREAMER_PLUGINS_DIR=/usr/lib64/gstreamer-1.0 \
+> GSTREAMER_HELPERS_DIR=/usr/libexec/gstreamer-1.0 \
+> npm run tauri build
+> ```
+> `bundle.linux.appimage.bundleMediaFramework` (see below) runs
+> `linuxdeploy-plugin-gstreamer.sh`, which
+> 1. **requires `patchelf`** (it rewrites each bundled plugin's RPATH) and exits
+>    with `Error: patchelf not found` without it — this is a new prerequisite,
+>    earlier local builds never invoked this plugin; and
+> 2. only knows Debian's `/usr/lib/$(uname -m)-linux-gnu/gstreamer-1.0` layout.
+>    On Fedora it falls through to `/usr/lib/gstreamer-1.0`, doesn't find it, and
+>    **fails the build** with `Error: could not find plugins directory`. The two
+>    env vars above point it at Fedora's locations.
+>
+> CI is unaffected — `ubuntu-22.04` has the Debian layout and the workflow
+> already installs `patchelf` — so don't add any of this to the workflow.
+
+#### The AppImage must ship GStreamer plugins
+
+`src-tauri/tauri.conf.json` sets:
+
+```json
+"linux": { "appimage": { "bundleMediaFramework": true } }
+```
+
+This is **not optional**, and it defaults to `false`. `linuxdeploy` copies
+`libgstreamer-1.0.so.0` into the AppDir because WebKit links it, but GStreamer's
+plugins are `dlopen`ed rather than linked, so none get copied. GStreamer then
+resolves its plugin directory relative to its own `.so` — `$APPDIR/usr/lib/gstreamer-1.0`,
+which is empty — and never falls back to the system path. The result is a
+webview that can see **zero** GStreamer plugins, and WebKitGTK responds to a
+missing audio sink by aborting the whole web process: opening any note with a
+video or audio block kills the window. Full write-up in
+`docs/attachments-linux-media.md`.
+
+Verify it landed, on any built AppDir:
+
+```sh
+ls target/release/bundle/appimage/Tundra.AppDir/usr/lib/gstreamer-1.0/libgstautodetect.so
+LD_LIBRARY_PATH=target/release/bundle/appimage/Tundra.AppDir/usr/lib \
+  GST_REGISTRY=/tmp/r.bin gst-inspect-1.0 autoaudiosink
+```
+
+The second command must print factory details, not `No such element or plugin`.
+
 ### First-run test on a fresh profile
 
 This is the real "works out of the box" gate. Per-OS app config directories:
@@ -109,10 +159,14 @@ Check, in order:
    imported locale chunk resolved.
 8. Import an image **and** a PDF or video — the `asset://` and Linux `blob:`
    paths are different code (`src/services/index.ts`).
-9. Settings lists zero spellcheck languages, but adding a personal word still
-   succeeds.
-10. Backup writes an archive outside the vault.
-11. A second launch skips onboarding (`state.json` now has `lastVault`).
+9. **Play the video, and an audio file.** They render as click-to-play facades;
+   clicking must actually play. If playback fails here the AppImage shipped
+   without GStreamer plugins (see above) — and before click-to-play existed,
+   that state didn't fail quietly, it killed the window.
+10. Settings lists zero spellcheck languages, but adding a personal word still
+    succeeds.
+11. Backup writes an archive outside the vault.
+12. A second launch skips onboarding (`state.json` now has `lastVault`).
 
 Repeat the same checklist against the Windows and macOS artifacts before
 publishing the draft — including checking that the Gatekeeper/SmartScreen

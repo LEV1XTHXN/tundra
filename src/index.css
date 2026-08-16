@@ -1485,6 +1485,60 @@ body,
   cursor: pointer;
 }
 
+/* Video/audio blocks render this stand-in instead of a live media element until
+   the user clicks it. Deliberate: mounting `<video>`/`<audio>` aborts the whole
+   WebKitGTK web process when GStreamer has no audio sink — see
+   src/editor/mediaBlockSpecs.tsx. */
+.media-facade {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-facade:hover {
+  border-color: var(--accent-text);
+}
+
+.media-facade-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+
+.media-facade-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.media-facade-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-facade-hint {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
 .search-hit {
   display: flex;
   flex-direction: column;

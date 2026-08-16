@@ -318,7 +318,9 @@
     "saved": "Сохранено"
   },
   "editor": {
-    "openFile": "Открыть файл"
+    "openFile": "Открыть файл",
+    "playVideo": "Воспроизвести видео",
+    "playAudio": "Воспроизвести аудио"
   },
   "vaultSwitcher": {
     "title": "Хранилища",

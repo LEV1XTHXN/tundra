@@ -60,11 +60,88 @@ listener (Linux only) that strips a bare `accept="*/*"` from a file input just
 before its chooser opens, leaving the real media filters untouched. Installed
 from `main.tsx`.
 
+## A missing audio sink kills the whole web process
+
+**This is the most important thing on this page.** WebKitGTK does not degrade
+gracefully when GStreamer can't play something — for one specific failure it
+aborts the entire web process.
+
+When a media element starts loading, WebKit constructs a
+`MediaPlayerPrivateGStreamer`, whose constructor calls `createAudioSink()`,
+which ends in:
+
+```
+RELEASE_ASSERT(audioSink)   // MediaPlayerPrivateGStreamer.cpp:1592 (WebKitGTK 2.52)
+```
+
+If GStreamer cannot produce an audio sink — no `autoaudiosink`, no `pulsesink`,
+a broken audio stack, or a package that ships GStreamer's core libs without its
+plugins — that assert fires and the process takes `SIGABRT`. The observed stack:
+
+```
+abort
+WTFCrashWithInfo(int, char const*, char const*, int)
+WebCore::MediaPlayerPrivateGStreamer::createAudioSink()
+WebCore::MediaPlayerPrivateGStreamer::MediaPlayerPrivateGStreamer(MediaPlayer&)
+WebCore::MediaPlayerFactoryGStreamer::createMediaEnginePlayer(MediaPlayer&)
+WebCore::MediaPlayer::loadWithNextMediaEngine(...)
+WebCore::MediaPlayer::load(...)
+WebCore::HTMLMediaElement::loadResource(...)
+```
+
+Consequences that are easy to get wrong:
+
+- **It is not catchable.** It's a process-level abort, not a JS exception. No
+  error boundary, `try`/`catch`, or `onerror` handler sees it; the window dies.
+- **`preload="none"` does not help.** The player is built during
+  `MediaPlayer::load()`, before any buffering decision.
+- **Opening a note is enough.** No user interaction with the media is required.
+
+### What we do about it
+
+1. **`src/editor/mediaBlockSpecs.tsx`** replaces BlockNote's `video` and `audio`
+   blocks with click-to-play versions. Until the user clicks, the block renders a
+   static facade — no media element, and no `resolveFileUrl` call either. Wired
+   into both `src/editor/schema.ts` and `src/quicknotes/quickNoteSchema.ts`.
+   Block props, parsing and export are BlockNote's own, so note JSON is
+   unaffected.
+2. **`bundle.linux.appimage.bundleMediaFramework: true`** in
+   `src-tauri/tauri.conf.json`. Without it the AppImage bundles
+   `libgstreamer-1.0.so.0` (WebKit links it) but *no plugins* — they are
+   `dlopen`ed, so `linuxdeploy` never copies them. GStreamer resolves its plugin
+   directory relative to its own `.so`, so the bundled copy searches
+   `$APPDIR/usr/lib/gstreamer-1.0`, finds nothing, and never falls back to the
+   system path. See `docs/release.md` for the Fedora build caveat.
+
+deb/rpm are unaffected — they depend on `webkit2gtk4.1`, which pulls a complete
+system GStreamer.
+
+### Reproducing / regression-testing
+
+Blind GStreamer and open a note containing a video or audio block:
+
+```sh
+GST_PLUGIN_SYSTEM_PATH=/nonexistent GST_PLUGIN_PATH=/nonexistent npm run tauri dev
+```
+
+The note must render facades and stay alive. (Clicking a facade will fail to
+play — that's fine and expected; it just must not abort.) To check a built
+AppImage's bundled plugins directly:
+
+```sh
+LD_LIBRARY_PATH=<AppDir>/usr/lib GST_REGISTRY=/tmp/r.bin gst-inspect-1.0 autoaudiosink
+```
+
+That must print factory details, not `No such element or plugin`.
+
 ## Known limitation / follow-up
 
 The blob holds the **whole file in memory** for its session lifetime. That's
-fine for typical clips but not for very large video. True streaming playback on
-Linux would require the heavyweight route — a custom **GStreamer plugin**
+fine for typical clips but not for very large video. Click-to-play limits the
+damage — the fetch now happens on play rather than on note open, so a
+media-heavy note no longer pulls every attachment into memory just to be
+displayed — but a played file is still fully resident. True streaming playback
+on Linux would require the heavyweight route — a custom **GStreamer plugin**
 (`gstreamer-rs`) that teaches GStreamer the `asset://` scheme (see
 <https://yanovskyy.com/blog/en/tauri-webkit>). Deferred until large-media
 playback on Linux actually becomes a problem.
