@@ -8,14 +8,16 @@ import { useTagColors, useKanbanTags, useVaultTags } from "@/store/tagColors";
 import { useFolderViews } from "@/store/folderViews";
 import { useTemplates } from "@/store/templates";
 import { useFolderGroups } from "@/store/folderGroups";
+import { useWorkspace } from "@/store/workspace";
 import { migrateVaultPalette } from "@/store/paletteMigration";
 
 /**
  * Loads the persisted zustand stores at the right lifecycle point. App-scoped
  * preferences (keybindings, theme, usage streak) load once on mount, before any
  * shortcut can fire. Vault-scoped config (tag colors, kanban/vault tags, folder
- * views, templates, folder groups) re-loads whenever the open vault changes, so
- * switching vaults re-reads config rather than keeping the previous vault's.
+ * views, templates, folder groups, sidebar workspace) re-loads whenever the open
+ * vault changes, so switching vaults re-reads config rather than keeping the
+ * previous vault's.
  * Side-effect only — the stores expose the loaded data to their own consumers.
  *
  * This is also where a newly-opened vault gets its one-time colour migrations
@@ -67,5 +69,8 @@ export function useAppStores(vaultInfo: VaultInfo | null): void {
   }, [vaultInfo]);
   useEffect(() => {
     if (vaultInfo) void useFolderGroups.getState().load();
+  }, [vaultInfo]);
+  useEffect(() => {
+    if (vaultInfo) void useWorkspace.getState().load();
   }, [vaultInfo]);
 }

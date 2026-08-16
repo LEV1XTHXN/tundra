@@ -34,6 +34,7 @@ import { useEditorTemplates } from "./useEditorTemplates";
 import { useEditorClipboard } from "./useEditorClipboard";
 import { useEditorContextMenus } from "./useEditorContextMenus";
 import { useEditorShortcuts } from "./useEditorShortcuts";
+import { useScrollMemory } from "./useScrollMemory";
 import { EditorHeader } from "./EditorHeader";
 import { EditorContextMenu, SpellcheckMenu } from "./EditorMenus";
 import { TableOfContents } from "./TableOfContents";
@@ -156,6 +157,10 @@ function LoadedNoteEditor({
     markSaved: save.markSaved,
     onError,
   });
+
+  // Switching notes remounts this component, so leaving records the scroll
+  // offset and coming back restores it (see useScrollMemory).
+  useScrollMemory(editorPaneRef, note.id);
 
   useEditorClipboard({ editor, editorPaneRef, vaultPath, onError });
   const menus = useEditorContextMenus({ editor, editorPaneRef, onError });

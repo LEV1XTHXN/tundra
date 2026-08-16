@@ -5,6 +5,13 @@ import type { Icon, NoteSummary } from "@/services";
 import { localizeError } from "@/i18n/errors";
 import { useViewState } from "@/store/viewState";
 import { useFolderGroups } from "@/store/folderGroups";
+import { useWorkspace } from "@/store/workspace";
+
+/** The path a folder ends up at when its leaf name is replaced by `newName`. */
+function siblingPath(path: string, newName: string): string {
+  const cut = path.lastIndexOf("/");
+  return cut === -1 ? newName : `${path.slice(0, cut + 1)}${newName}`;
+}
 
 interface Params {
   refreshTree: () => Promise<NoteSummary[]>;
@@ -45,10 +52,7 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         const note = await notes.createIn(t("common.untitled"), folder);
         await refreshTree();
         // Reveal it in the tree — a collapsed parent would hide the new note.
-        if (folder) {
-          const { expandedFolders, toggleFolder } = useViewState.getState();
-          if (!expandedFolders.has(folder)) toggleFolder(folder);
-        }
+        if (folder) await useWorkspace.getState().expandFolder(folder);
         openNote(note.id);
       } catch (e) {
         setError(localizeError(e, t));
@@ -76,6 +80,12 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         // Moving a folder under another folder makes it non-top-level, so it can
         // no longer belong to a group — drop it from any (a move to root is fine).
         if (newParent !== "") await useFolderGroups.getState().dropFolder(path);
+        // Expansion is keyed by path, so the folder (and anything expanded
+        // under it) has to follow the move or the tree re-collapses.
+        const leaf = path.slice(path.lastIndexOf("/") + 1);
+        await useWorkspace
+          .getState()
+          .renameFolder(path, newParent === "" ? leaf : `${newParent}/${leaf}`);
         await refreshTree();
       } catch (e) {
         setError(localizeError(e, t));
@@ -107,6 +117,8 @@ export function useNoteActions({ refreshTree, setError, bumpEditor }: Params): N
         if (!path.includes("/")) {
           await useFolderGroups.getState().renameFolder(path, newName);
         }
+        // Same for the expanded set, which is keyed by path at every depth.
+        await useWorkspace.getState().renameFolder(path, siblingPath(path, newName));
         await refreshTree();
       } catch (e) {
         setError(localizeError(e, t));

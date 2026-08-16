@@ -6,6 +6,7 @@ import { localizeError } from "@/i18n/errors";
 import { useViewState } from "@/store/viewState";
 import { useTemplates } from "@/store/templates";
 import { useFolderGroups } from "@/store/folderGroups";
+import { useWorkspace } from "@/store/workspace";
 import type { PendingDelete } from "@/app/dialogs/DeleteConfirmDialog";
 
 interface Params {
@@ -84,6 +85,8 @@ export function useDeletion({ refreshTree, setError, returnFromTemplate }: Param
           await useFolderGroups.getState().dropFolder(pendingDelete.path);
         }
         await folders.delete(pendingDelete.path);
+        // Don't keep remembering a deleted folder (or its subfolders) as expanded.
+        await useWorkspace.getState().dropFolder(pendingDelete.path);
       }
       const list = await refreshTree();
       if (openNoteId && !list.some((n) => n.id === openNoteId)) {

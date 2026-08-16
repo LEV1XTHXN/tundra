@@ -41,7 +41,9 @@ export interface NavLocation {
 
 /**
  * UI view state ONLY (CLAUDE.md §8.5 / Phase 1 preamble: zustand holds view
- * state — open note id, expanded folders, current view — never note content).
+ * state — open note id, current view — never note content). Everything here is
+ * transient: view state that must survive a relaunch lives in a vault-config
+ * store instead (the nav tree's expanded folders are in `store/workspace.ts`).
  */
 interface ViewState {
   /** Which top-level view is active in the shell. */
@@ -77,9 +79,6 @@ interface ViewState {
   goBack: () => void;
   /** Step forward one entry in the history (no-op at the end). */
   goForward: () => void;
-
-  expandedFolders: ReadonlySet<string>;
-  toggleFolder: (path: string) => void;
 
   /** Whether the right-hand note-metadata inspector (backlinks, stats…) is open.
    *  UI-only preference; defaults closed so it never eats screen space unasked. */
@@ -128,10 +127,27 @@ interface ViewState {
   calendarRevision: number;
   bumpCalendar: () => void;
 
+  /** How far each visited note was scrolled (px from the top of its
+   *  `.editor-pane` scroller), keyed by note id — so switching away from a note
+   *  and back lands where you left off instead of at the title. The quick-note
+   *  scratchpad shares the map under its own constant key
+   *  (`QUICK_NOTE_SCROLL_KEY`). Session-only, by
+   *  design: it is throwaway per-note UI state (unlike the nav tree's expanded
+   *  folders, which are worth a config file), and a relaunch reloads notes from
+   *  disk where a stale offset could point anywhere.
+   *
+   *  Mutated IN PLACE by {@link rememberNoteScroll} rather than replaced, so the
+   *  high-frequency writes never notify the store's subscribers. Read it with
+   *  `useViewState.getState()`, never with a selector in a component. */
+  noteScroll: Map<string, number>;
+  /** Record where `noteId` is scrolled to (called as the editor unmounts). */
+  rememberNoteScroll: (noteId: string, top: number) => void;
+
   /** Clear every reference to the PREVIOUS vault's notes/folders (open note,
-   *  expanded folders, folder-table path, template-edit id, calendar target)
-   *  and land back on Home — called when switching to a different vault, so
-   *  none of those now-meaningless ids linger into the new one. */
+   *  folder-table path, template-edit id, calendar target) and land back on
+   *  Home — called when switching to a different vault, so none of those
+   *  now-meaningless ids linger into the new one. (Expanded folders reset
+   *  themselves: `store/workspace.ts` re-reads them from the new vault.) */
   resetForVaultSwitch: () => void;
 }
 
@@ -208,18 +224,6 @@ export const useViewState = create<ViewState>((set, get) => {
     set({ ...target, navIndex: navIndex + 1 });
   },
 
-  expandedFolders: new Set(),
-  toggleFolder: (path) =>
-    set((state) => {
-      const next = new Set(state.expandedFolders);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return { expandedFolders: next };
-    }),
-
   inspectorOpen: false,
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
@@ -248,10 +252,18 @@ export const useViewState = create<ViewState>((set, get) => {
   calendarRevision: 0,
   bumpCalendar: () => set((state) => ({ calendarRevision: state.calendarRevision + 1 })),
 
-  resetForVaultSwitch: () =>
+  noteScroll: new Map(),
+  rememberNoteScroll: (noteId, top) => {
+    // In-place on purpose — see the field's doc comment.
+    if (top > 0) get().noteScroll.set(noteId, top);
+    else get().noteScroll.delete(noteId);
+  },
+
+  resetForVaultSwitch: () => {
+    // The other vault's note ids mean nothing here; the map would only leak.
+    get().noteScroll.clear();
     set((state) => ({
       ...HOME_LOCATION,
-      expandedFolders: new Set(),
       calendarTarget: null,
       calendarCursor: new Date(),
       calendarMode: "month",
@@ -263,6 +275,7 @@ export const useViewState = create<ViewState>((set, get) => {
       // here, so back/forward must start fresh at Home.
       navHistory: [HOME_LOCATION],
       navIndex: 0,
-    })),
+    }));
+  },
   };
 });

@@ -4,7 +4,7 @@ import { folders } from "@/services";
 import type { NoteSummary } from "@/services";
 import { localizeError } from "@/i18n/errors";
 import { useFolderGroups } from "@/store/folderGroups";
-import { useViewState } from "@/store/viewState";
+import { useWorkspace } from "@/store/workspace";
 
 interface Params {
   refreshTree: () => Promise<NoteSummary[]>;
@@ -83,10 +83,7 @@ export function useCreationDialogs({ refreshTree, setError }: Params): CreationD
       if (groupId) await useFolderGroups.getState().assign(path, groupId);
       await refreshTree();
       // Reveal the new folder: its parent has to be expanded to be visible.
-      if (parent) {
-        const { expandedFolders, toggleFolder } = useViewState.getState();
-        if (!expandedFolders.has(parent)) toggleFolder(parent);
-      }
+      if (parent) await useWorkspace.getState().expandFolder(parent);
       setNewFolderOpen(false);
     } catch (e) {
       setError(localizeError(e, t));

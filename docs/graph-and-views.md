@@ -90,6 +90,53 @@ The graph persists its camera (zoom/pan) **and** its panel display settings
 all merged into one `settingsRef` object so writing one field never clobbers
 another. This is the same store Home's `home.json` will use in step 6.
 
+### Sidebar layout (`workspace.json`)
+
+The nav tree's **expanded folders** persist here, via `store/workspace.ts`
+(`{ "expandedFolders": ["Biology", "Biology/Cells"] }`, paths relative to the
+notes root). It used to live in `store/viewState.ts`, which is memory-only — so
+every relaunch dropped the user into a fully-collapsed tree. `viewState` is now
+strictly transient; anything in it that must outlive the process moves to a
+config-backed store like this one. Loaded per vault in `useAppStores`, alongside
+folder views and folder groups.
+
+Because expansion is keyed by **path**, the store has to be told when a path
+changes — `renameFolder(old, new)` (rename *and* move; it re-roots expanded
+descendants too) and `dropFolder(path)` (delete), called from `useNoteActions` /
+`useDeletion`, exactly like the `folderGroups` store's membership reconciliation.
+Without that, a renamed folder silently re-collapses and the stale path lingers
+in the file.
+
+Group collapse is **not** here: a group's `collapsed` flag already persists with
+the group itself in `folder-groups.json`.
+
+### Per-note scroll memory (session-only, stays in `viewState`)
+
+The counter-example to the paragraph above: `viewState.noteScroll` maps note id →
+scroll offset so toggling between two notes lands where you left each one instead
+of at the title. It deliberately does **not** get a config file — it's throwaway
+per-note UI state, and a relaunch re-reads notes from disk where a stale offset
+means little. It's also the one field in the store mutated in place (via
+`rememberNoteScroll`) so it never notifies subscribers; read it with
+`getState()`, never with a selector.
+
+The DOM half is `editor/useScrollMemory.ts`, held by `.editor-pane` (the actual
+scroll container). Restoring is not one assignment: the pane mounts with the
+note's content but banners/images settle their heights over the next frames, and
+an offset the content can't reach yet is silently clamped. So the target is
+re-applied per animation frame until it sticks, until 1.5 s passes, or until the
+user scrolls (`wheel`/`pointerdown`/`touchstart`/`keydown` — not `scroll`, which
+our own re-apply fires). The offset is tracked in a ref and written to the store
+on cleanup: by then React may have detached the node, and a detached element
+reports `scrollTop === 0`. Cleared on vault switch with the rest of the
+now-meaningless ids.
+
+The quick-note scratchpad uses the same hook on its own `.editor-pane` — it
+unmounts whenever you switch views, so the offset survives the round trip. Its
+key is the constant `QUICK_NOTE_SCROLL_KEY`, **not** the document's id:
+`quickNote.read()` hands back a fresh note (new uuid) until the scratchpad is
+first saved, so an id key would forget the offset on an empty scratchpad.
+
 ## Atomic-write test portability (fixed here)
 
 `vault::tests::interrupted_write_leaves_no_tmp_and_preserves_prior_version` used

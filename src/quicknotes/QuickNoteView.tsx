@@ -17,6 +17,7 @@ import { attachments, quickNote } from "@/services";
 import type { AttachmentKind, Note } from "@/services";
 import { toInitialContent } from "@/editor/blockContent";
 import { createDebouncedFlush, type DebouncedFlush } from "@/editor/debouncedFlush";
+import { QUICK_NOTE_SCROLL_KEY, useScrollMemory } from "@/editor/useScrollMemory";
 import { useTheme } from "@/store/theme";
 import { useActivity } from "@/store/activity";
 import { useBlockNoteDictionary } from "@/i18n/blockNoteDictionary";
@@ -122,6 +123,11 @@ function LoadedQuickNote({
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
+  // Same scroll memory as the note editor: the scratchpad grows long, and
+  // switching to another view and back used to drop you at the top of it.
+  const paneRef = useRef<HTMLDivElement>(null);
+  useScrollMemory(paneRef, QUICK_NOTE_SCROLL_KEY);
+
   const debouncedRef = useRef<DebouncedFlush | null>(null);
   if (debouncedRef.current === null) {
     debouncedRef.current = createDebouncedFlush(() => void flushRef.current(), {
@@ -149,7 +155,7 @@ function LoadedQuickNote({
       subtitle={t("quicknotes.subtitle")}
       fullBleed
     >
-      <div className="editor-pane quicknote">
+      <div className="editor-pane quicknote" ref={paneRef}>
         <BlockNoteView
           editor={editor}
           onChange={() => {

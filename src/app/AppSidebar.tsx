@@ -2,6 +2,7 @@ import type { TreeNode, VaultInfo } from "@/services";
 import { NavTree } from "@/nav/NavTree";
 import { CalendarSidebar } from "@/calendar/CalendarSidebar";
 import { useViewState } from "@/store/viewState";
+import { useWorkspace } from "@/store/workspace";
 import { VaultSwitcher } from "./VaultSwitcher";
 import type { NoteActions } from "./hooks/useNoteActions";
 import type { Deletion } from "./hooks/useDeletion";
@@ -33,8 +34,10 @@ interface AppSidebarProps {
  * (`CalendarSidebar`) — a calendar is navigated by date, not by note, so the
  * tree is dead weight there. Every other view keeps the tree.
  *
- * Nav *view* state (open note, expanded folders) is read straight from
- * `useViewState`; the mutation callbacks come from the action hooks via props.
+ * Nav *view* state (open note) is read straight from `useViewState`, and the
+ * expanded folders from `useWorkspace` (which persists them per vault, so the
+ * tree looks the same after a relaunch); the mutation callbacks come from the
+ * action hooks via props.
  */
 export function AppSidebar({
   vaultInfo,
@@ -48,8 +51,8 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const view = useViewState((s) => s.view);
   const openNoteId = useViewState((s) => s.openNoteId);
-  const expandedFolders = useViewState((s) => s.expandedFolders);
-  const toggleFolder = useViewState((s) => s.toggleFolder);
+  const expandedFolders = useWorkspace((s) => s.expandedFolders);
+  const toggleFolder = useWorkspace((s) => s.toggleFolder);
   const openNote = useViewState((s) => s.openNote);
   const openFolder = useViewState((s) => s.openFolder);
 
