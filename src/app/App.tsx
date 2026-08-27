@@ -47,11 +47,10 @@ export default function App() {
   // The ribbon's width is a grid track on `.app`, so the shell owns the class
   // that widens it when the ribbon is slid open.
   const ribbonExpanded = useTheme((s) => s.ribbonExpanded);
-  // The note-tree column is a grid track too, and it's per-view: a board or the
-  // graph canvas runs full width while Notes keeps its tree. Hidden means the
-  // aside isn't rendered at all — a zero-width track would still paint its
-  // right-hand border as a stray hairline.
-  const treeHidden = useTheme((s) => s.treeHiddenViews.has(currentView));
+  // The second column is a grid track too. Hidden means the aside isn't
+  // rendered at all — a zero-width track would still paint its right-hand
+  // border as a stray hairline.
+  const sidebarHidden = useTheme((s) => s.sidebarHidden);
   // Home's background customization (`store/homeBackground.ts`, written by
   // `Home.tsx`) bleeds behind the WHOLE shell — ribbon + sidebar, not just
   // Home's own body — but only while Home is actually showing; every other
@@ -94,7 +93,7 @@ export default function App() {
       className={cn(
         "app",
         ribbonExpanded && "ribbon-open",
-        treeHidden && "tree-hidden",
+        sidebarHidden && "tree-hidden",
         isHomeWithBackground && "home-bg",
       )}
       style={isHomeWithBackground ? homeBackgroundStyle(homeBackground, vaultInfo.path) : undefined}
@@ -102,7 +101,7 @@ export default function App() {
       <TopBarHost>
           <Ribbon onSearch={() => setSearchOpen(true)} />
 
-        {!treeHidden && (
+        {!sidebarHidden && (
           <AppSidebar
             vaultInfo={vaultInfo}
             treeData={treeData}

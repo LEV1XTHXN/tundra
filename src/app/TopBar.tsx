@@ -5,7 +5,7 @@
  * It has three parts:
  *
  *   - a fixed **lead** segment, as wide as the ribbon column, holding the two
- *     controls that belong to the shell rather than to any view: the note-tree
+ *     controls that belong to the shell rather than to any view: the sidebar
  *     toggle and the back/forward history buttons;
  *   - a **slot** the active view fills, via the {@link TopBar} portal below;
  *   - a **trail** for shell-owned chrome that has to sit after the view's own
@@ -41,7 +41,7 @@ export function TopBarHost({ children }: { children: ReactNode }) {
     <TopBarSlotContext.Provider value={slot}>
       <header className="topbar">
         <div className="topbar-lead">
-          <TreeToggle />
+          <SidebarToggle />
           <NavHistoryButtons />
         </div>
         <div className="topbar-slot" ref={setSlot} />
@@ -96,21 +96,21 @@ export function TopBar({ crumbs, title, subtitle, actions }: TopBarProps) {
 }
 
 /**
- * Shows/hides the note-tree column for the view that's open. The preference is
- * per-view and persisted (`store/theme.ts`), so a board stays full width while
- * Notes keeps its tree.
+ * Shows/hides the shell's second column — the note tree, or whatever the open
+ * view puts in its place. One flag for the whole app, persisted
+ * (`store/theme.ts`): it says how much chrome you want on screen, and that
+ * answer doesn't change just because you looked at the graph.
  */
-function TreeToggle() {
+function SidebarToggle() {
   const { t } = useTranslation();
-  const view = useViewState((s) => s.view);
-  const hidden = useTheme((s) => s.treeHiddenViews.has(view));
-  const toggleTree = useTheme((s) => s.toggleTree);
-  const label = hidden ? t("topbar.showTree") : t("topbar.hideTree");
+  const hidden = useTheme((s) => s.sidebarHidden);
+  const toggleSidebar = useTheme((s) => s.toggleSidebar);
+  const label = hidden ? t("topbar.showSidebar") : t("topbar.hideSidebar");
 
   return (
     <button
       className={cn("topbar-button", !hidden && "active")}
-      onClick={() => toggleTree(view)}
+      onClick={toggleSidebar}
       title={label}
       aria-label={label}
       aria-pressed={!hidden}

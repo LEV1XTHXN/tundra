@@ -51,13 +51,13 @@
     "tags": "Теги",
     "templates": "Шаблоны",
     "settings": "Настройки",
-    "collapseSidebar": "Свернуть боковую панель",
-    "expandSidebar": "Развернуть боковую панель",
+    "collapseSidebar": "Свернуть до значков",
+    "expandSidebar": "Развернуть со значками и подписями",
     "collapse": "Свернуть"
   },
   "topbar": {
-    "hideTree": "Скрыть дерево заметок",
-    "showTree": "Показать дерево заметок",
+    "hideSidebar": "Скрыть боковую панель",
+    "showSidebar": "Показать боковую панель",
     "hideInspector": "Скрыть сведения о заметке",
     "showInspector": "Показать сведения о заметке"
   },

@@ -51,13 +51,13 @@
     "tags": "Tags",
     "templates": "Vorlagen",
     "settings": "Einstellungen",
-    "collapseSidebar": "Seitenleiste einklappen",
-    "expandSidebar": "Seitenleiste ausklappen",
+    "collapseSidebar": "Auf Symbole verkleinern",
+    "expandSidebar": "Symbole und Beschriftungen zeigen",
     "collapse": "Einklappen"
   },
   "topbar": {
-    "hideTree": "Notizbaum ausblenden",
-    "showTree": "Notizbaum einblenden",
+    "hideSidebar": "Seitenleiste ausblenden",
+    "showSidebar": "Seitenleiste einblenden",
     "hideInspector": "Notizinfo ausblenden",
     "showInspector": "Notizinfo einblenden"
   },

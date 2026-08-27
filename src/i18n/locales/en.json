@@ -51,13 +51,13 @@
     "tags": "Tags",
     "templates": "Templates",
     "settings": "Settings",
-    "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse to icons",
+    "expandSidebar": "Expand to icons and labels",
     "collapse": "Collapse"
   },
   "topbar": {
-    "hideTree": "Hide note tree",
-    "showTree": "Show note tree",
+    "hideSidebar": "Hide sidebar",
+    "showSidebar": "Show sidebar",
     "hideInspector": "Hide note info",
     "showInspector": "Show note info"
   },

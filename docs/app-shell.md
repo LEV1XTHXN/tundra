@@ -17,36 +17,39 @@ exactly one header in the app:
 one variable each: `--ribbon-width` (`2.75rem` collapsed / `11rem` open) and the
 `.tree-hidden` modifier, which drops the middle column entirely.
 
-## Why the tree column is *dropped*, not collapsed
+## Why the second column is *dropped*, not collapsed
 
 `.sidebar` carries a `border-right` that spans the window. Squeezing the track to
 `0px` would leave that hairline painted down the middle of the view. So
 `App.tsx` stops rendering `<AppSidebar>` in step with the class:
 
 ```tsx
-const treeHidden = useTheme((s) => s.treeHiddenViews.has(currentView));
+const sidebarHidden = useTheme((s) => s.sidebarHidden);
 …
-{!treeHidden && <AppSidebar … />}
+{!sidebarHidden && <AppSidebar … />}
 ```
 
 Keep those two in sync. A `.tree-hidden` grid with the aside still mounted puts
 the sidebar in the main pane's track.
 
-## Tree visibility is per-view
+## Sidebar visibility is one flag for the whole app
 
-`treeHiddenViews` lives in `store/theme.ts` — app-scoped, in the same
-`appearance` settings blob as `ribbonExpanded`, because it's a preference about
-the app rather than about a vault's contents.
+`sidebarHidden` lives in `store/theme.ts` — app-scoped, in the same `appearance`
+settings blob as `ribbonExpanded`, because it's a preference about the app
+rather than about a vault's contents.
 
-It's a `Set<AppView>`, persisted as an array (`treeHiddenViews: string[]`; JSON
-has no Set). `TREE_HIDDEN_BY_DEFAULT` seeds it with `kanban`, `graph` and
-`settings`: a board, a canvas and a settings page have nothing to do with the
-note tree.
+It started out per-view, seeded hidden for Kanban, Graph and Settings on the
+grounds that a board and a canvas have nothing to do with the note tree. In use
+that was wrong: the toggle says how much chrome you want on screen, and that
+answer doesn't change because you glanced at the graph — so opening the tree and
+then losing it on the next view switch read as the app forgetting, not as it
+remembering nine separate things. One flag, one answer, persisted.
 
-The toggle in the bar's lead segment flips the flag **for the view that's
-open**, so the tree can stay on in Notes while Kanban runs full width. There is
-deliberately no global "show tree" switch — that arrangement wouldn't be
-reachable with one.
+The column isn't always the tree, which is the other half of why one flag works:
+Calendar fills it with a mini month and Settings with its section rail (see
+`AppSidebar`). The toggle means "show me the second column", whatever the open
+view puts in it — which is why it's labelled *Show/Hide sidebar* rather than
+naming the tree.
 
 ## How a view gets into the bar
 
@@ -80,7 +83,7 @@ the stores:
 
 | Control | Why it's shell chrome |
 | --- | --- |
-| tree toggle | changes a grid track of `.app` |
+| sidebar toggle | changes a grid track of `.app` |
 | back / forward (`NavHistoryButtons`) | navigation history is `useViewState` |
 | inspector toggle | `inspectorOpen` is `useViewState`, and the drawer is a column of the main pane |
 

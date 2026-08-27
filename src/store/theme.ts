@@ -11,7 +11,6 @@
  */
 import { create } from "zustand";
 import { appSettings } from "@/services";
-import type { AppView } from "./viewState";
 
 export type ThemePref = "system" | "light" | "dark";
 type Resolved = "light" | "dark";
@@ -52,15 +51,10 @@ interface AppearanceConfig {
   /** Whether the shell's icon ribbon is slid open (icons + labels) rather than
    *  collapsed to icons only. On by default. */
   ribbonExpanded?: boolean;
-  /** Views whose note-tree column is hidden, as a plain array (JSON has no Set).
-   *  Absent = the built-in defaults; an empty array means "shown everywhere". */
-  treeHiddenViews?: string[];
+  /** Whether the shell's second column — the note tree, or whatever the open
+   *  view puts in its place — is hidden. Shown by default. */
+  sidebarHidden?: boolean;
 }
-
-/** Views that open with the note tree hidden until the user says otherwise:
- *  a board, a canvas and a settings page have nothing to do with the tree, and
- *  every mockup frame for them is drawn without it. */
-const TREE_HIDDEN_BY_DEFAULT: readonly AppView[] = ["kanban", "graph", "settings"];
 
 function systemDark(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
@@ -104,9 +98,11 @@ interface ThemeState {
   dyslexiaFont: boolean;
   /** Icon ribbon slid open (icons + labels); open by default. */
   ribbonExpanded: boolean;
-  /** Views whose note-tree column is currently hidden. Per-view rather than
-   *  global so the tree can stay on in Notes while Kanban runs full width. */
-  treeHiddenViews: ReadonlySet<AppView>;
+  /** The shell's second column is hidden. One flag for the whole app, not one
+   *  per view: it's a preference about how much chrome you want on screen, and
+   *  having to re-open the tree after every view switch is the opposite of
+   *  remembering it. */
+  sidebarHidden: boolean;
   /** Change the preference, apply it, and persist it. */
   setTheme: (theme: ThemePref) => void;
   /** Change the clock format and persist it. */
@@ -119,8 +115,8 @@ interface ThemeState {
   setDyslexiaFont: (enabled: boolean) => void;
   /** Slide the icon ribbon open/closed and persist it. */
   setRibbonExpanded: (expanded: boolean) => void;
-  /** Show/hide the note-tree column for ONE view, and persist it. */
-  toggleTree: (view: AppView) => void;
+  /** Show/hide the shell's second column, and persist it. */
+  toggleSidebar: () => void;
   /** Load the persisted preference and start tracking the OS theme. */
   load: () => Promise<void>;
 }
@@ -138,7 +134,7 @@ export const useTheme = create<ThemeState>((set, get) => {
       editorFontSize,
       dyslexiaFont,
       ribbonExpanded,
-      treeHiddenViews,
+      sidebarHidden,
     } = get();
     void appSettings
       .write(SETTINGS_NAME, {
@@ -148,7 +144,7 @@ export const useTheme = create<ThemeState>((set, get) => {
         editorFontSize,
         dyslexiaFont,
         ribbonExpanded,
-        treeHiddenViews: [...treeHiddenViews],
+        sidebarHidden,
       } satisfies AppearanceConfig)
       .catch(() => {});
   };
@@ -161,7 +157,7 @@ export const useTheme = create<ThemeState>((set, get) => {
   editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   dyslexiaFont: false,
   ribbonExpanded: true,
-  treeHiddenViews: new Set(TREE_HIDDEN_BY_DEFAULT),
+  sidebarHidden: false,
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
     applyToDom(resolved);
@@ -190,10 +186,8 @@ export const useTheme = create<ThemeState>((set, get) => {
     set({ ribbonExpanded });
     persist();
   },
-  toggleTree: (view) => {
-    const next = new Set(get().treeHiddenViews);
-    if (!next.delete(view)) next.add(view);
-    set({ treeHiddenViews: next });
+  toggleSidebar: () => {
+    set({ sidebarHidden: !get().sidebarHidden });
     persist();
   },
   load: async () => {
@@ -221,9 +215,7 @@ export const useTheme = create<ThemeState>((set, get) => {
           : EDITOR_FONT_SIZE_DEFAULT;
     const dyslexiaFont = cfg?.dyslexiaFont ?? false;
     const ribbonExpanded = cfg?.ribbonExpanded ?? true;
-    const treeHiddenViews = new Set(
-      (cfg?.treeHiddenViews as AppView[] | undefined) ?? TREE_HIDDEN_BY_DEFAULT,
-    );
+    const sidebarHidden = cfg?.sidebarHidden ?? false;
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     applyEditorFontSize(editorFontSize);
@@ -236,7 +228,7 @@ export const useTheme = create<ThemeState>((set, get) => {
       editorFontSize,
       dyslexiaFont,
       ribbonExpanded,
-      treeHiddenViews,
+      sidebarHidden,
     });
   },
   };
