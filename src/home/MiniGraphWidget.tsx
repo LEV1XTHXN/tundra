@@ -40,7 +40,7 @@ export function MiniGraphWidget({ refreshKey, onOpenNote }: WidgetProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const nodeColor = readPaletteColor("--graph-node", "#3b5249");
+    const nodeColor = readPaletteColor("--graph-node", "#186b46");
     let sigma: Sigma | undefined;
     let layout: FA2Layout | undefined;
     let stopTimer: ReturnType<typeof setTimeout> | undefined;

@@ -51,10 +51,10 @@
   --pal-text-primary: #171717;
   --pal-text-secondary: #5e6662;
   --pal-text-tertiary: #8d9591;
-  --pal-accent: #3b5249;
-  --pal-accent-hover: #4a675b;
-  --pal-accent-pressed: #30423b;
-  --pal-accent-subtle: #e0e8e4;
+  --pal-accent: #186b46;
+  --pal-accent-hover: #1e8356;
+  --pal-accent-pressed: #135437;
+  --pal-accent-subtle: #d8ecdc;
   --pal-border: #dce2de;
   --pal-divider: #e5e9e6;
 
@@ -69,7 +69,7 @@
      calls it `accent`. shadcn's `--accent` is the hover/selected BACKGROUND;
      our palette calls that `accentSubtle`. The names cross over — see docs. */
   --primary: var(--pal-accent);
-  --primary-foreground: #ffffff; /* 8.44:1 on the accent */
+  --primary-foreground: #ffffff; /* 6.50:1 on the accent */
   --secondary: var(--pal-background-alt);
   --secondary-foreground: var(--pal-text-primary);
   --muted: var(--pal-background-alt);
@@ -97,7 +97,7 @@
 
   /* --- Tokens with no shadcn equivalent -------------------------------- */
   /* The accent used as TEXT / icon / border / focus ring rather than as a
-     fill. Light mode can use the accent itself (8.44:1 on the background); in
+     fill. Light mode can use the accent itself (6.50:1 on the background); in
      dark it must not — see `.dark` below. Rule of thumb: filling a shape →
      `--primary`; colouring a glyph or a 1px line → `--accent-text`. */
   --accent-text: var(--pal-accent);
@@ -124,8 +124,9 @@
   --graph-pill: var(--pal-surface-elevated);
   --graph-pill-fg: var(--pal-text-primary);
   /* The home mini-graph's single node colour (the full view colours nodes by
-     TAG_PALETTE instead). Dark can't chain to --accent-text — that's a
-     color-mix — so it repeats that mix's resolved value. */
+     TAG_PALETTE instead). Light chains to the accent itself; dark points at
+     --accent-text, which is a literal there precisely so this chain still
+     ends in a hex. */
   --graph-node: var(--pal-accent);
 }
 
@@ -140,26 +141,25 @@
   --pal-text-primary: #f5f5f5;
   --pal-text-secondary: #b7bbb8;
   --pal-text-tertiary: #808683;
-  --pal-accent: #3b5249;
-  --pal-accent-hover: #4a675b;
-  --pal-accent-pressed: #30423b;
-  --pal-accent-subtle: #50685f;
+  --pal-accent: #186b46;
+  --pal-accent-hover: #1e8356;
+  --pal-accent-pressed: #135437;
+  --pal-accent-subtle: #215140;
   --pal-border: #383838;
   --pal-divider: #2d2d2d;
 
   /* --- The only mappings that differ by theme -------------------------- */
-  --primary-foreground: var(--pal-text-primary); /* 7.74:1 on the accent */
-  /* The accent is identical in both themes, which works for a fill (white on
-     it clears 7.7:1) but not for text: #3b5249 on #171717 is 2.12:1. So dark
-     mode lightens it toward the primary text colour instead of introducing a
-     second hand-picked green. 50% resolves to ≈#93a09a — 6.60:1 on the
-     background, 4.86:1 on the most elevated surface. Raising the percentage
-     makes it greener and lowers contrast; 55% is the floor that still clears
-     AA everywhere. */
-  --accent-text: color-mix(in oklab, var(--pal-accent) 50%, var(--pal-text-primary));
+  --primary-foreground: var(--pal-text-primary); /* 5.96:1 on the accent */
+  /* The accent is identical in both themes, which works for a fill (#f5f5f5 on
+     it clears 5.96:1) but not for text: #186b46 on #171717 is 2.76:1. So dark
+     mode gets its own, lighter green rather than reusing the fill — #5cb884,
+     7.38:1 on the background and 5.43:1 on the most elevated surface. Written
+     as a literal because `--graph-node` chains to this value and sigma cannot
+     parse a `color-mix()` read back off a custom property (see below). */
+  --accent-text: #5cb884;
   --destructive: oklch(0.704 0.191 22.216);
   --graph-edge: #525955; /* 2.49:1 on the dark canvas */
-  --graph-node: #93a09a; /* == --accent-text resolved; must stay plain hex */
+  --graph-node: var(--accent-text);
 }
 
 @theme inline {
