@@ -434,7 +434,7 @@ export function Home({
   );
 
   return (
-    <ViewFrame title={t("home.title")} actions={actions} headerClassName={cfg.background ? "home-glass" : undefined}>
+    <ViewFrame title={t("home.title")} actions={actions}>
       {cfg.widgets.length === 0 ? (
         <div className="centered muted">{t("home.noWidgets")}</div>
       ) : (

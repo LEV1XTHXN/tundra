@@ -20,6 +20,7 @@ import { useHomeBackground } from "@/store/homeBackground";
 import { homeBackgroundStyle } from "@/home/HomeBackgroundPicker";
 import { Onboarding } from "./Onboarding";
 import { Ribbon } from "./Ribbon";
+import { TopBarHost } from "./TopBar";
 import { AppSidebar } from "./AppSidebar";
 import { MainPane } from "./MainPane";
 import { ErrorToast } from "./ErrorToast";
@@ -47,6 +48,11 @@ export default function App() {
   // The ribbon's width is a grid track on `.app`, so the shell owns the class
   // that widens it when the ribbon is slid open.
   const ribbonExpanded = useTheme((s) => s.ribbonExpanded);
+  // The note-tree column is a grid track too, and it's per-view: a board or the
+  // graph canvas runs full width while Notes keeps its tree. Hidden means the
+  // aside isn't rendered at all — a zero-width track would still paint its
+  // right-hand border as a stray hairline.
+  const treeHidden = useTheme((s) => s.treeHiddenViews.has(currentView));
   // Home's background customization (`store/homeBackground.ts`, written by
   // `Home.tsx`) bleeds behind the WHOLE shell — ribbon + sidebar, not just
   // Home's own body — but only while Home is actually showing; every other
@@ -87,33 +93,43 @@ export default function App() {
 
   return (
     <div
-      className={cn("app", ribbonExpanded && "ribbon-open", isHomeWithBackground && "home-bg")}
+      className={cn(
+        "app",
+        ribbonExpanded && "ribbon-open",
+        treeHidden && "tree-hidden",
+        isHomeWithBackground && "home-bg",
+      )}
       style={isHomeWithBackground ? homeBackgroundStyle(homeBackground, vaultInfo.path) : undefined}
     >
-      <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
+      <TopBarHost>
+        <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
 
-      <AppSidebar
-        vaultInfo={vaultInfo}
-        treeData={treeData}
-        noteActions={noteActions}
-        deletion={deletion}
-        creation={creation}
-        onSwitchVault={switchVault}
-        onDeleteVault={deleteVault}
-        onError={setError}
-      />
+        {!treeHidden && (
+          <AppSidebar
+            vaultInfo={vaultInfo}
+            treeData={treeData}
+            noteActions={noteActions}
+            deletion={deletion}
+            creation={creation}
+            onSearch={() => setSearchOpen(true)}
+            onSwitchVault={switchVault}
+            onDeleteVault={deleteVault}
+            onError={setError}
+          />
+        )}
 
-      <MainPane
-        vaultInfo={vaultInfo}
-        treeData={treeData}
-        noteSummaries={noteSummaries}
-        refreshTree={refreshTree}
-        setError={setError}
-        editorRefreshToken={editorRefreshToken}
-        bumpEditor={bumpEditor}
-        templateActions={templateActions}
-        deletion={deletion}
-      />
+        <MainPane
+          vaultInfo={vaultInfo}
+          treeData={treeData}
+          noteSummaries={noteSummaries}
+          refreshTree={refreshTree}
+          setError={setError}
+          editorRefreshToken={editorRefreshToken}
+          bumpEditor={bumpEditor}
+          templateActions={templateActions}
+          deletion={deletion}
+        />
+      </TopBarHost>
 
       <ErrorToast error={error} />
 

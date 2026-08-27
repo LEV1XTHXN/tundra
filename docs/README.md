@@ -16,6 +16,7 @@ would also have to, drop a note here.
 - [`file-watcher.md`](file-watcher.md) — how external-change detection works, and the `notify` "reads look like changes" gotcha that caused an infinite reload loop (open a note → reloads every second).
 - [`ui-fonts.md`](ui-fonts.md) — the UI font (Inter), why text looks thin on WebKitGTK/WKWebView, and the one-knob global weight nudge (`--ui-text-weight`).
 - [`theming.md`](theming.md) — the colour token system: the `--pal-*` palette under the shadcn tokens, why "accent" means two different things, `--border` vs `--divider`, the dark-mode `--accent-text` derivation, and why the graph's tokens must stay plain hex.
+- [`app-shell.md`](app-shell.md) — the shell's grid + single top bar: how a view portals its title/actions into it, which controls belong to the shell rather than to a view, per-view note-tree visibility, and breadcrumbs.
 - [`graph-and-views.md`](graph-and-views.md) — the shell view switcher, the sigma/graphology graph view (imperative + FA2 worker), and the vault-scoped `.vault/config/*.json` store (Phase 2 step 4).
 - [`keybindings.md`](keybindings.md) — the rebindable keybinding system (registry + matcher + app-scoped persistence), the Settings dialog, and the ProseMirror-based find-in-note.
 - [`kanban-and-tags.md`](kanban-and-tags.md) — the Kanban board view, the note tag system, the column↔tag drag automation, and `#tag` search in the global palette.

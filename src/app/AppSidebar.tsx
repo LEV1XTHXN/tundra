@@ -1,3 +1,6 @@
+import { Plus, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
 import type { TreeNode, VaultInfo } from "@/services";
 import { NavTree } from "@/nav/NavTree";
 import { CalendarSidebar } from "@/calendar/CalendarSidebar";
@@ -14,6 +17,9 @@ interface AppSidebarProps {
   noteActions: NoteActions;
   deletion: Deletion;
   creation: CreationDialogs;
+  /** Open the search palette — the sidebar's search field is a shortcut to the
+   *  same overlay the ribbon and ⌘K already open, not a second search UI. */
+  onSearch: () => void;
   /** Switch to a different (known, opened-elsewhere, or brand-new) vault —
    *  from `useVaultSession`; the vault-name switcher's only entry point. */
   onSwitchVault: (path: string) => Promise<void>;
@@ -26,9 +32,13 @@ interface AppSidebarProps {
 
 /**
  * The tree panel, between the icon ribbon and the main pane: the vault name
- * (which doubles as the vault switcher) and the folder/note tree, nothing else.
- * Creating, renaming and deleting all happen on the tree's right-click menu, so
- * this panel carries no buttons of its own.
+ * (which doubles as the vault switcher), a search field, the folder/note tree,
+ * and a new-note row pinned to the bottom.
+ *
+ * The search field is a button wearing an input's clothes — there is one search
+ * surface (the ⌘K palette) and this is a third door into it, so it deliberately
+ * has no text box of its own to get out of sync. Renaming, moving and deleting
+ * still live on the tree's right-click menu.
  *
  * The one exception is the Calendar view, which swaps the tree for a mini month
  * (`CalendarSidebar`) — a calendar is navigated by date, not by note, so the
@@ -45,10 +55,12 @@ export function AppSidebar({
   noteActions,
   deletion,
   creation,
+  onSearch,
   onSwitchVault,
   onDeleteVault,
   onError,
 }: AppSidebarProps) {
+  const { t } = useTranslation();
   const view = useViewState((s) => s.view);
   const openNoteId = useViewState((s) => s.openNoteId);
   const expandedFolders = useWorkspace((s) => s.expandedFolders);
@@ -67,29 +79,40 @@ export function AppSidebar({
       {view === "calendar" ? (
         <CalendarSidebar />
       ) : (
-        <NavTree
-          tree={treeData}
-          vaultPath={vaultInfo.path}
-          openNoteId={openNoteId}
-          expandedFolders={expandedFolders}
-          onToggleFolder={toggleFolder}
-          onSelectNote={openNote}
-          onOpenFolder={openFolder}
-          onMoveNote={noteActions.onMoveNote}
-          onMoveFolder={noteActions.onMoveFolder}
-          onRenameNote={noteActions.onRenameNote}
-          onRenameFolder={noteActions.onRenameFolder}
-          onRequestDeleteNote={deletion.onRequestDeleteNote}
-          onRequestDeleteFolder={deletion.onRequestDeleteFolder}
-          onSetNoteIcon={noteActions.onSetNoteIcon}
-          onRequestDeleteGroup={deletion.onRequestDeleteGroup}
-          onNewNote={(folder) => void noteActions.onNewNote(folder)}
-          onNewFolder={(parent, label) => creation.onNewFolder({ parent, label })}
-          onNewFolderInGroup={(groupId, label) =>
-            creation.onNewFolder({ parent: "", groupId, label })
-          }
-          onNewGroup={creation.onNewGroup}
-        />
+        <>
+          <button className="sidebar-search" onClick={onSearch}>
+            <Search className="h-[15px] w-[15px]" />
+            <span className="sidebar-search-label">{t("ribbon.search")}</span>
+            <kbd className="sidebar-search-kbd">⌘K</kbd>
+          </button>
+          <NavTree
+            tree={treeData}
+            vaultPath={vaultInfo.path}
+            openNoteId={openNoteId}
+            expandedFolders={expandedFolders}
+            onToggleFolder={toggleFolder}
+            onSelectNote={openNote}
+            onOpenFolder={openFolder}
+            onMoveNote={noteActions.onMoveNote}
+            onMoveFolder={noteActions.onMoveFolder}
+            onRenameNote={noteActions.onRenameNote}
+            onRenameFolder={noteActions.onRenameFolder}
+            onRequestDeleteNote={deletion.onRequestDeleteNote}
+            onRequestDeleteFolder={deletion.onRequestDeleteFolder}
+            onSetNoteIcon={noteActions.onSetNoteIcon}
+            onRequestDeleteGroup={deletion.onRequestDeleteGroup}
+            onNewNote={(folder) => void noteActions.onNewNote(folder)}
+            onNewFolder={(parent, label) => creation.onNewFolder({ parent, label })}
+            onNewFolderInGroup={(groupId, label) =>
+              creation.onNewFolder({ parent: "", groupId, label })
+            }
+            onNewGroup={creation.onNewGroup}
+          />
+          <button className="sidebar-new-note" onClick={() => void noteActions.onNewNote()}>
+            <Plus className="h-4 w-4" />
+            {t("nav.newNote")}
+          </button>
+        </>
       )}
     </aside>
   );

@@ -1,8 +1,7 @@
-import { PanelRight } from "lucide-react";
 import type { NoteSummary } from "@/services";
 import { NoteEditor } from "@/editor/NoteEditor";
 import { NoteInspector } from "@/inspector/NoteInspector";
-import { NavHistoryButtons } from "./NavHistoryButtons";
+import { TopBar } from "./TopBar";
 import { useViewState } from "@/store/viewState";
 
 interface EditorPaneProps {
@@ -16,10 +15,15 @@ interface EditorPaneProps {
 
 /**
  * The Notes view: the block editor for the open note (or a placeholder), plus
- * the collapsible right-hand note-metadata inspector (backlinks, stats…). The
- * editor's `key` includes `editorRefreshToken` so an external rename/icon change
- * remounts it and reloads from disk. Reads the open note + inspector state from
+ * the right-hand note-metadata inspector (backlinks, stats…). The editor's
+ * `key` includes `editorRefreshToken` so an external rename/icon change remounts
+ * it and reloads from disk. Reads the open note + inspector state from
  * `useViewState`.
+ *
+ * The breadcrumb and the note's action buttons are contributed to the shell's
+ * top bar from inside the editor (`editor/EditorHeader.tsx`), which is where
+ * their handlers live; the inspector's own toggle is shell chrome and lives in
+ * `TopBar.tsx`.
  */
 export function EditorPane({
   vaultPath,
@@ -32,12 +36,11 @@ export function EditorPane({
   const openNoteId = useViewState((s) => s.openNoteId);
   const inspectorOpen = useViewState((s) => s.inspectorOpen);
   const setInspectorOpen = useViewState((s) => s.setInspectorOpen);
-  const toggleInspector = useViewState((s) => s.toggleInspector);
 
   if (!openNoteId) {
     return (
       <>
-        <NavHistoryButtons floating />
+        <TopBar title="Notes" />
         <div className="centered muted">Select or create a note.</div>
       </>
     );
@@ -45,9 +48,6 @@ export function EditorPane({
 
   return (
     <>
-      {/* Browser-style back/forward, pinned to the pane's top-left (mirrors the
-          top-right inspector toggle). */}
-      <NavHistoryButtons floating />
       <NoteEditor
         key={`${openNoteId}:${editorRefreshToken}`}
         noteId={openNoteId}
@@ -57,18 +57,6 @@ export function EditorPane({
         onSaved={refreshTree}
         onNeedsReload={bumpEditor}
       />
-      {/* Note-metadata inspector — a collapsible right drawer. Slides off-screen
-          when closed. */}
-      {!inspectorOpen && (
-        <button
-          className="inspector-toggle"
-          onClick={toggleInspector}
-          title="Note info"
-          aria-label="Open note info panel"
-        >
-          <PanelRight className="h-4 w-4" />
-        </button>
-      )}
       <NoteInspector
         noteId={openNoteId}
         vaultPath={vaultPath}

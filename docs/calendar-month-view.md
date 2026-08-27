@@ -19,21 +19,21 @@ a rounded top-left corner; the right and bottom edges have no rule at all (they'
 the window edge), and everything inside is a cell's own
 `border-right`/`border-bottom`, cleared on the last column and row.
 
-Owning those two edges is back-to-front from what you'd expect — the view header
-and the sidebar already draw a line in both places — so both are turned
+Owning those two edges is back-to-front from what you'd expect — the shell's top
+bar and the sidebar already draw a line in both places — so both are turned
 transparent while the calendar is showing:
 
 ```css
-.app:has(.calendar) .sidebar                  { border-right-color: transparent; }
-.view-frame:has(.calendar) .view-frame-header { border-bottom-color: transparent; }
+.app:has(.calendar) .sidebar { border-right-color: transparent; }
+.app:has(.calendar) .topbar  { border-bottom-color: transparent; }
 ```
 
 Two reasons, and both need the swap:
 
 - The sidebar spans the full window height, so its border leaves a stub of
-  vertical line beside the view header, hanging above the grid's corner.
+  vertical line beside the top bar, hanging above the grid's corner.
 - A corner can only be *rounded* if one element draws both of its edges. With the
-  header owning the top line and the grid the left one, the best you get is a hard
+  bar owning the top line and the grid the left one, the best you get is a hard
   L of two elements' borders.
 
 The scope is `.calendar` — the view root, present in **both** modes — rather than

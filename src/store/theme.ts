@@ -11,6 +11,7 @@
  */
 import { create } from "zustand";
 import { appSettings } from "@/services";
+import type { AppView } from "./viewState";
 
 export type ThemePref = "system" | "light" | "dark";
 type Resolved = "light" | "dark";
@@ -49,9 +50,17 @@ interface AppearanceConfig {
    *  default; scoped to note/quick-note content only, not the app chrome. */
   dyslexiaFont?: boolean;
   /** Whether the shell's icon ribbon is slid open (icons + labels) rather than
-   *  collapsed to icons only. Off by default — the ribbon is icon-first. */
+   *  collapsed to icons only. On by default. */
   ribbonExpanded?: boolean;
+  /** Views whose note-tree column is hidden, as a plain array (JSON has no Set).
+   *  Absent = the built-in defaults; an empty array means "shown everywhere". */
+  treeHiddenViews?: string[];
 }
+
+/** Views that open with the note tree hidden until the user says otherwise:
+ *  a board, a canvas and a settings page have nothing to do with the tree, and
+ *  every mockup frame for them is drawn without it. */
+const TREE_HIDDEN_BY_DEFAULT: readonly AppView[] = ["kanban", "graph", "settings"];
 
 function systemDark(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
@@ -93,8 +102,11 @@ interface ThemeState {
   editorFontSize: EditorFontSizePref;
   /** Dyslexia-friendly editor content font; off by default. */
   dyslexiaFont: boolean;
-  /** Icon ribbon slid open (icons + labels); collapsed to icons by default. */
+  /** Icon ribbon slid open (icons + labels); open by default. */
   ribbonExpanded: boolean;
+  /** Views whose note-tree column is currently hidden. Per-view rather than
+   *  global so the tree can stay on in Notes while Kanban runs full width. */
+  treeHiddenViews: ReadonlySet<AppView>;
   /** Change the preference, apply it, and persist it. */
   setTheme: (theme: ThemePref) => void;
   /** Change the clock format and persist it. */
@@ -107,6 +119,8 @@ interface ThemeState {
   setDyslexiaFont: (enabled: boolean) => void;
   /** Slide the icon ribbon open/closed and persist it. */
   setRibbonExpanded: (expanded: boolean) => void;
+  /** Show/hide the note-tree column for ONE view, and persist it. */
+  toggleTree: (view: AppView) => void;
   /** Load the persisted preference and start tracking the OS theme. */
   load: () => Promise<void>;
 }
@@ -117,7 +131,15 @@ export const useTheme = create<ThemeState>((set, get) => {
   /** Write the whole appearance blob from current state — every setter calls
    *  this after `set()`, so a new preference only has to be added in one place. */
   const persist = () => {
-    const { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded } = get();
+    const {
+      theme,
+      timeFormat,
+      showModifiedOnHover,
+      editorFontSize,
+      dyslexiaFont,
+      ribbonExpanded,
+      treeHiddenViews,
+    } = get();
     void appSettings
       .write(SETTINGS_NAME, {
         theme,
@@ -126,6 +148,7 @@ export const useTheme = create<ThemeState>((set, get) => {
         editorFontSize,
         dyslexiaFont,
         ribbonExpanded,
+        treeHiddenViews: [...treeHiddenViews],
       } satisfies AppearanceConfig)
       .catch(() => {});
   };
@@ -137,7 +160,8 @@ export const useTheme = create<ThemeState>((set, get) => {
   showModifiedOnHover: false,
   editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   dyslexiaFont: false,
-  ribbonExpanded: false,
+  ribbonExpanded: true,
+  treeHiddenViews: new Set(TREE_HIDDEN_BY_DEFAULT),
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
     applyToDom(resolved);
@@ -166,6 +190,12 @@ export const useTheme = create<ThemeState>((set, get) => {
     set({ ribbonExpanded });
     persist();
   },
+  toggleTree: (view) => {
+    const next = new Set(get().treeHiddenViews);
+    if (!next.delete(view)) next.add(view);
+    set({ treeHiddenViews: next });
+    persist();
+  },
   load: async () => {
     // Track OS theme changes once, so "system" updates live without a restart.
     if (!mediaWired && typeof window !== "undefined" && window.matchMedia) {
@@ -190,12 +220,24 @@ export const useTheme = create<ThemeState>((set, get) => {
           ? LEGACY_FONT_SIZE_PX[rawFontSize] ?? EDITOR_FONT_SIZE_DEFAULT
           : EDITOR_FONT_SIZE_DEFAULT;
     const dyslexiaFont = cfg?.dyslexiaFont ?? false;
-    const ribbonExpanded = cfg?.ribbonExpanded ?? false;
+    const ribbonExpanded = cfg?.ribbonExpanded ?? true;
+    const treeHiddenViews = new Set(
+      (cfg?.treeHiddenViews as AppView[] | undefined) ?? TREE_HIDDEN_BY_DEFAULT,
+    );
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     applyEditorFontSize(editorFontSize);
     applyDyslexiaFont(dyslexiaFont);
-    set({ theme, resolved, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded });
+    set({
+      theme,
+      resolved,
+      timeFormat,
+      showModifiedOnHover,
+      editorFontSize,
+      dyslexiaFont,
+      ribbonExpanded,
+      treeHiddenViews,
+    });
   },
   };
 });

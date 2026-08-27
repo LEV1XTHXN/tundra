@@ -93,11 +93,11 @@ boundary disappear.
 
 ### The calendar's chrome frame
 
-`.sidebar` and `.ribbon` are `--card`, and so is the view header **while the
-calendar is showing** (`.view-frame:has(.calendar) .view-frame-header`). Left
-rail + top bar therefore read as one continuous frame around the grid, whose
+`.sidebar` and `.ribbon` are `--card`, and so is the shell's top bar **while the
+calendar is showing** (`.app:has(.calendar) .topbar`). Left rail + top bar
+therefore read as one continuous frame around the grid, whose
 cells stay on `--background`. Only the calendar does this — it's the one view
-whose body is full-bleed right up to the header, so a tone difference there
+whose body is full-bleed right up to the bar, so a tone difference there
 lands as a visible seam instead of as padding. The rule sits with the other
 `:has(.calendar)` rules that hand the grid its own outer edges, and covers month
 and week alike because `.calendar` is the view root, not a per-mode class.

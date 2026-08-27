@@ -55,6 +55,12 @@
     "expandSidebar": "Expand sidebar",
     "collapse": "Collapse"
   },
+  "topbar": {
+    "hideTree": "Hide note tree",
+    "showTree": "Show note tree",
+    "hideInspector": "Hide note info",
+    "showInspector": "Show note info"
+  },
   "settings": {
     "title": "Settings",
     "description": "Customize how Tundra works.",

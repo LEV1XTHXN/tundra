@@ -55,6 +55,12 @@
     "expandSidebar": "Seitenleiste ausklappen",
     "collapse": "Einklappen"
   },
+  "topbar": {
+    "hideTree": "Notizbaum ausblenden",
+    "showTree": "Notizbaum einblenden",
+    "hideInspector": "Notizinfo ausblenden",
+    "showInspector": "Notizinfo einblenden"
+  },
   "settings": {
     "title": "Einstellungen",
     "description": "Passen Sie Tundra nach Ihren Wünschen an.",

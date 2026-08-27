@@ -333,16 +333,167 @@ body,
   border-color: var(--primary-pressed);
 }
 
-/* App shell: icon ribbon | note-tree panel | main pane. The ribbon's width is a
-   custom property so sliding it open (icons -> icons + labels) is one variable. */
+/* App shell: one top bar across the whole window, and under it
+   icon ribbon | note-tree panel | main pane. The ribbon's width is a custom
+   property so sliding it open (icons -> icons + labels) is one variable.
+
+   `.tree-hidden` drops the tree column entirely rather than collapsing it to
+   0px — the aside carries a right-hand border, which at zero width would still
+   paint as a stray hairline down the middle of the view. App.tsx stops
+   rendering the aside in step with this class. */
 .app {
   --ribbon-width: 2.75rem;
+  --topbar-height: 44px;
   display: grid;
   grid-template-columns: var(--ribbon-width) 260px 1fr;
+  grid-template-rows: var(--topbar-height) 1fr;
   height: 100vh;
 }
 .app.ribbon-open {
   --ribbon-width: 11rem;
+}
+.app.tree-hidden {
+  grid-template-columns: var(--ribbon-width) 1fr;
+}
+
+/* --------------------------------------------------------------------------
+   Top bar — the shell's single header row (app/TopBar.tsx). Spans every column;
+   the lead segment lines up with the ribbon beneath it, so the divider under
+   the bar and the ribbon's right edge read as one continuous frame.
+   -------------------------------------------------------------------------- */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.9rem;
+  min-width: 0;
+  background: var(--background);
+  border-bottom: 1px solid var(--divider);
+}
+/* Home's custom background bleeds behind the whole shell; the bar joins the
+   ribbon and sidebar in wearing the frosted scrim rather than an opaque fill. */
+.app.home-bg .topbar {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+.topbar-lead {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Matches the ribbon column minus the bar's own padding, so the rule under
+     the lead segment sits exactly above the ribbon's border. */
+  width: calc(var(--ribbon-width) - 0.9rem);
+  flex: none;
+  border-right: 1px solid var(--divider);
+  margin-right: 0.75rem;
+  transition: width 0.15s ease;
+}
+.topbar-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+.topbar-titles {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.topbar-crumb {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: none;
+  font-size: 0.8125rem;
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+}
+.topbar-crumb-label {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The bar is one row, so a view's second line becomes a dimmed suffix. */
+.topbar-subtitle {
+  font-size: 0.8125rem;
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+  flex: none;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex: none;
+}
+
+/* Every control in the bar: 28px tall, hairline-outlined, quiet until it is
+   toggled on — at which point it takes the accent's subtle background, the one
+   piece of colour the bar carries. */
+.topbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 0.4375rem;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.topbar-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.topbar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.topbar-button.active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+/* Outlined variant, for the bar's labelled controls (Home's "Customize", the
+   graph's "Local graph"). */
+.topbar-button.outlined {
+  padding: 0 0.6875rem;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+.topbar-button.outlined.active {
+  border-color: var(--accent-text);
+}
+/* Shell chrome that has to sit after the view's own actions. */
+.topbar-trail {
+  flex: none;
+}
+/* The fallback `TopBar` renders when there's no bar above it to portal into —
+   a view mounted on its own, which is how the tests do it. Never seen in the
+   app; styled only so it isn't a pile of unspaced text if it ever is. */
+.topbar-detached {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem var(--view-padding-x);
+  border-bottom: 1px solid var(--divider);
 }
 
 .sidebar {
@@ -354,6 +505,67 @@ body,
   gap: 0.5rem;
   min-height: 0;
   overflow: hidden;
+}
+
+/* A button wearing an input's clothes. There is exactly one search surface (the
+   ⌘K palette) and this is a third door into it, so it deliberately has no text
+   box of its own that could fall out of sync with the palette's. */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--subtle-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-search:hover {
+  border-color: var(--accent-text);
+}
+.sidebar-search-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-search-kbd {
+  flex: none;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  color: var(--subtle-foreground);
+}
+
+/* Pinned under the tree. Creating a note is otherwise a right-click away, which
+   is fine once you know it and invisible until then. */
+.sidebar-new-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-new-note:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .vault-name {
@@ -688,60 +900,14 @@ body,
 /* Shared shell every top-level view renders into (ViewFrame.tsx) — a
    consistent title+actions header and a body with uniform padding/scroll, so
    Home/Graph/Calendar/Kanban/Quick notes all feel like one frame instead of
-   each inventing its own layout. */
+   each inventing its own layout. The title row itself lives in the shell's top
+   bar (`.topbar`); what's left here is the body. */
 .view-frame {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.view-frame-header {
-  flex-shrink: 0;
-  padding: 1.75rem var(--view-padding-x) 1.1rem;
-  border-bottom: 1px solid var(--divider);
-}
-/* Home's own header, when a background is set (`headerClassName="home-glass"`
-   in Home.tsx) — same frosted-glass scrim as the widgets/ribbon/sidebar.
-   Scoped to this one class rather than `.view-frame-header` itself, so it
-   never leaks into Graph/Calendar/Kanban/etc.'s headers. */
-.view-frame-header.home-glass {
-  background: color-mix(in oklch, var(--card) 88%, transparent);
-  backdrop-filter: blur(6px);
-}
-.view-frame-header-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.view-frame-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-.view-frame-title {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-.view-frame-subtitle {
-  margin: 0;
-  font-size: 0.85rem;
-}
-.view-frame-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  /* Keep right-aligned now that the header row leads with the nav-history
-     buttons (so it no longer relies on `justify-content: space-between`). */
-  margin-left: auto;
-}
-.view-frame-toolbar {
-  margin-top: 1rem;
 }
 .view-frame-body {
   flex: 1;
@@ -2134,8 +2300,7 @@ body,
   font-size: 0.85rem;
   font-weight: 600;
 }
-.inspector-close,
-.inspector-toggle {
+.inspector-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2147,61 +2312,18 @@ body,
   color: var(--muted-foreground);
   cursor: pointer;
 }
-.inspector-close:hover,
-.inspector-toggle:hover {
+.inspector-close:hover {
   background: var(--accent);
   color: var(--foreground);
 }
 
-/* Floating open-button, pinned to the pane's top-right when the drawer is shut. */
-.inspector-toggle {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  z-index: 19;
-  background: var(--card);
-  border: 1px solid var(--border);
-}
-
-/* Browser-style back/forward history buttons, top-left of every view. Inline by
-   default (sits at the start of a ViewFrame header row); `.nav-history-floating`
-   pins it to the pane's top-left corner in the editor (mirrors .inspector-toggle). */
+/* Browser-style back/forward, in the top bar's lead segment. The buttons
+   themselves are `.topbar-button`s; this only groups them. */
 .nav-history {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-}
-.nav-history-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.nav-history-button:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.nav-history-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.nav-history-floating {
-  position: absolute;
-  top: 0.6rem;
-  left: 0.6rem;
-  z-index: 19;
-  padding: 2px;
-  border-radius: var(--radius-md);
-  background: var(--card);
-  border: 1px solid var(--border);
 }
 
 .inspector-body {
@@ -2697,14 +2819,19 @@ body,
   /* Transparent rather than `none`, so the 1px stays and nothing shifts. */
   border-right-color: transparent;
 }
-.view-frame:has(.calendar) .view-frame-header {
+.app:has(.calendar) .topbar {
   border-bottom-color: transparent;
   /* Same surface as the sidebar/ribbon (`.sidebar`/`.ribbon` are also
      `--card`), so the chrome reads as ONE frame — a left rail and a top bar of
      the same tone — wrapping the grid, which keeps the plain `--background` of
      its cells. Only the calendar needs this: it's the one view whose body runs
      full-bleed right up to the header, so any tone difference there lands as a
-     visible seam rather than as padding. Covers month and week alike. */
+     visible seam rather than as padding. Covers month and week alike.
+
+     Dropping the bar's bottom border along with it is intentional: over the
+     ribbon and the tree column the bar is now the same tone as what's beneath,
+     so the line would cut the frame in half; over the grid, the grid's own top
+     border replaces it. */
   background: var(--card);
 }
 /* Continues the header's surface behind the grid, so the notch left by the

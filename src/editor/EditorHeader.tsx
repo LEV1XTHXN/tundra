@@ -1,6 +1,7 @@
 import { BookmarkPlus, ImageIcon, LayoutTemplate, Pin } from "lucide-react";
 
 import type { Banner, Icon } from "@/services";
+import { TopBar } from "@/app/TopBar";
 import { Input } from "@/components/ui/input";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { IconPicker } from "@/nav/IconPicker";
@@ -8,6 +9,9 @@ import { BannerPicker, DEFAULT_BANNER } from "./NoteBanner";
 
 interface EditorHeaderProps {
   vaultPath: string;
+  /** Folders between the vault's notes root and this document, for the top
+   *  bar's breadcrumb. Empty for a root note or a template. */
+  crumbs: readonly string[];
   /** Template mode hides note-only chrome (add-banner, use/save-template, pin). */
   isTemplateMode: boolean;
   icon: Icon | null | undefined;
@@ -23,12 +27,17 @@ interface EditorHeaderProps {
 }
 
 /**
- * The note editor's header row: icon picker, title input, and the note-only
- * action buttons (add-banner, use/save-template, pin). Pure presentation — all
- * state and persistence live in the editor hooks; this just wires their handlers.
+ * The note editor's header: the icon picker and title input, which sit in the
+ * document itself, plus the note-only action buttons (add-banner,
+ * use/save-template, pin) — those go up into the shell's top bar, alongside the
+ * breadcrumb, since they act on the document rather than being part of it.
+ *
+ * Pure presentation: all state and persistence live in the editor hooks, this
+ * just wires their handlers.
  */
 export function EditorHeader({
   vaultPath,
+  crumbs,
   isTemplateMode,
   icon,
   onIconChange,
@@ -42,67 +51,75 @@ export function EditorHeader({
   onSaveAsTemplate,
 }: EditorHeaderProps) {
   return (
-    <div className="editor-header">
-      <IconPicker
-        onChange={onIconChange}
-        trigger={
-          <button className="editor-title-icon-button" title="Set icon">
-            <NoteIcon icon={icon} vaultPath={vaultPath} className="h-14 w-14" />
-          </button>
+    <>
+      <TopBar
+        crumbs={crumbs}
+        title={title || "Untitled"}
+        actions={
+          <>
+            {/* Add-banner entry point — only when there's no cover yet; once a
+                banner exists it's changed/removed from the strip's own controls. */}
+            {!isTemplateMode && !banner && (
+              <BannerPicker
+                banner={banner}
+                vaultPath={vaultPath}
+                onChange={(b) => onBannerChange(b ?? DEFAULT_BANNER)}
+                trigger={
+                  <button className="topbar-button" title="Add banner" aria-label="Add banner">
+                    <ImageIcon className="h-4 w-4" />
+                  </button>
+                }
+              />
+            )}
+            {/* Template actions — note mode only (a template doesn't use/save
+                templates of itself). */}
+            {!isTemplateMode && (
+              <>
+                <button
+                  className="topbar-button"
+                  onClick={onUseTemplate}
+                  title="Use template — insert a saved template"
+                  aria-label="Use template"
+                >
+                  <LayoutTemplate className="h-4 w-4" />
+                </button>
+                <button
+                  className="topbar-button"
+                  onClick={onSaveAsTemplate}
+                  title="Save this note as a template"
+                  aria-label="Save as template"
+                >
+                  <BookmarkPlus className="h-4 w-4" />
+                </button>
+                <button
+                  className={`topbar-button${pinned ? " active" : ""}`}
+                  onClick={onTogglePin}
+                  title={pinned ? "Unpin from Home" : "Pin to Home"}
+                  aria-pressed={pinned}
+                >
+                  <Pin className="h-4 w-4" fill={pinned ? "currentColor" : "none"} />
+                </button>
+              </>
+            )}
+          </>
         }
       />
-      <Input
-        className="h-auto border-none bg-transparent px-0 text-4xl md:text-4xl font-bold leading-tight shadow-none focus-visible:ring-0 dark:bg-transparent"
-        value={title}
-        placeholder="Untitled"
-        onChange={(e) => onTitleChange(e.target.value)}
-      />
-      {/* Add-banner entry point — only when there's no cover yet; once a
-          banner exists it's changed/removed from the strip's own controls. */}
-      {!isTemplateMode && !banner && (
-        <BannerPicker
-          banner={banner}
-          vaultPath={vaultPath}
-          onChange={(b) => onBannerChange(b ?? DEFAULT_BANNER)}
+      <div className="editor-header">
+        <IconPicker
+          onChange={onIconChange}
           trigger={
-            <button className="editor-icon-button" title="Add banner" aria-label="Add banner">
-              <ImageIcon className="h-5 w-5" />
+            <button className="editor-title-icon-button" title="Set icon">
+              <NoteIcon icon={icon} vaultPath={vaultPath} className="h-14 w-14" />
             </button>
           }
         />
-      )}
-      {/* Template actions — note mode only (a template doesn't use/save
-          templates of itself). */}
-      {!isTemplateMode && (
-        <>
-          <button
-            className="editor-icon-button"
-            onClick={onUseTemplate}
-            title="Use template — insert a saved template"
-            aria-label="Use template"
-          >
-            <LayoutTemplate className="h-5 w-5" />
-          </button>
-          <button
-            className="editor-icon-button"
-            onClick={onSaveAsTemplate}
-            title="Save this note as a template"
-            aria-label="Save as template"
-          >
-            <BookmarkPlus className="h-5 w-5" />
-          </button>
-        </>
-      )}
-      {!isTemplateMode && (
-        <button
-          className={`editor-icon-button${pinned ? " pinned" : ""}`}
-          onClick={onTogglePin}
-          title={pinned ? "Unpin from Home" : "Pin to Home"}
-          aria-pressed={pinned}
-        >
-          <Pin className="h-5 w-5" fill={pinned ? "currentColor" : "none"} />
-        </button>
-      )}
-    </div>
+        <Input
+          className="h-auto border-none bg-transparent px-0 text-4xl md:text-4xl font-bold leading-tight shadow-none focus-visible:ring-0 dark:bg-transparent"
+          value={title}
+          placeholder="Untitled"
+          onChange={(e) => onTitleChange(e.target.value)}
+        />
+      </div>
+    </>
   );
 }

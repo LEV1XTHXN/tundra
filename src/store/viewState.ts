@@ -18,7 +18,8 @@ export type AppView =
   | "folder"
   | "tags"
   | "templates"
-  | "template";
+  | "template"
+  | "settings";
 
 /** Which grid the Calendar view is showing. Lives in the store rather than in
  *  CalendarView because the shell sidebar's mini month drills into a day's WEEK

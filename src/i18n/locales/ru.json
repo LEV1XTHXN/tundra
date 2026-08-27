@@ -55,6 +55,12 @@
     "expandSidebar": "Развернуть боковую панель",
     "collapse": "Свернуть"
   },
+  "topbar": {
+    "hideTree": "Скрыть дерево заметок",
+    "showTree": "Показать дерево заметок",
+    "hideInspector": "Скрыть сведения о заметке",
+    "showInspector": "Показать сведения о заметке"
+  },
   "settings": {
     "title": "Настройки",
     "description": "Настройте работу Tundra.",
