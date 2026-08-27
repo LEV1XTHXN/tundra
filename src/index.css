@@ -441,9 +441,16 @@ body,
   flex: none;
 }
 
-/* Every control in the bar: 28px tall, hairline-outlined, quiet until it is
-   toggled on — at which point it takes the accent's subtle background, the one
-   piece of colour the bar carries. */
+/* Every control in the bar is 28px tall and quiet until it's toggled on, at
+   which point it takes the accent's subtle background — the one piece of colour
+   the bar carries.
+
+   Where it sits decides whether it's outlined. The lead segment's chrome (tree
+   toggle, back/forward) is borderless, so the segment reads as part of the bar
+   rather than as three buttons; a view's own actions are outlined, so they read
+   as controls belonging to the thing on screen. That's a property of the slot,
+   not of the button, so `.topbar-actions` grants the outline rather than every
+   call site remembering to ask for it. */
 .topbar-button {
   display: inline-flex;
   align-items: center;
@@ -453,7 +460,7 @@ body,
   min-width: 28px;
   padding: 0 0.4375rem;
   border: none;
-  border-radius: 7px;
+  border-radius: 6px;
   background: none;
   color: var(--muted-foreground);
   font-size: 0.8rem;
@@ -471,17 +478,24 @@ body,
   background: var(--accent);
   color: var(--accent-foreground);
 }
-/* Outlined variant, for the bar's labelled controls (Home's "Customize", the
-   graph's "Local graph"). */
-.topbar-button.outlined {
-  padding: 0 0.6875rem;
+
+.topbar-actions .topbar-button,
+.topbar-trail {
   border: 1px solid var(--border);
+  border-radius: 7px;
   color: var(--foreground);
 }
-.topbar-button.outlined.active {
+.topbar-actions .topbar-button.active,
+.topbar-trail.active {
   border-color: var(--accent-text);
 }
-/* Shell chrome that has to sit after the view's own actions. */
+/* Room for a label beside the icon (Home's "Customize", the calendar's
+   "Today"). Icon-only controls keep the tighter default. */
+.topbar-button.outlined {
+  padding: 0 0.6875rem;
+}
+/* Shell chrome that has to sit after the view's own actions — outlined with
+   them, since that's where it reads as belonging. */
 .topbar-trail {
   flex: none;
 }
@@ -1835,26 +1849,9 @@ body,
   white-space: nowrap;
 }
 
-.editor-icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.editor-icon-button:hover {
-  background: var(--accent);
-}
-
-/* The note's own icon sits next to the H1-sized title, so it needs to be far
-   larger than the toolbar action buttons — a fixed 36px box (`.editor-icon-button`)
-   would clamp it. This one wraps its content and keeps a hover affordance. */
+/* The note's own icon sits next to the H1-sized title, so it wraps its content
+   rather than sitting in a fixed box the way the note's action buttons do (those
+   are `.topbar-button`s in the shell's top bar now). Keeps a hover affordance. */
 .editor-title-icon-button {
   display: flex;
   align-items: center;
@@ -1870,11 +1867,6 @@ body,
 
 .editor-title-icon-button:hover {
   background: var(--accent);
-}
-
-/* Pinned state of the editor's pin button (Phase 2 step 6). */
-.editor-icon-button.pinned {
-  color: var(--accent-text);
 }
 
 .icon-picker-content {
@@ -4401,6 +4393,12 @@ body,
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
+}
+/* The board menu is a control of its own; "+" belongs to the tab strip and
+   stays quiet beside it. */
+.kanban-board-menu {
+  border: 1px solid var(--border);
+  color: var(--foreground);
 }
 .kanban-tab-add:hover,
 .kanban-board-menu:hover {
