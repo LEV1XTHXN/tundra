@@ -344,6 +344,9 @@ body,
 .app {
   --ribbon-width: 2.75rem;
   --topbar-height: 44px;
+  /* Three 28px controls and the 2px gaps between them, plus a little air before
+     the segment's rule — the floor `.topbar-lead` can never go below. */
+  --topbar-lead-min: 5.9rem;
   display: grid;
   grid-template-columns: var(--ribbon-width) 260px 1fr;
   grid-template-rows: var(--topbar-height) 1fr;
@@ -381,9 +384,11 @@ body,
   display: flex;
   align-items: center;
   gap: 2px;
-  /* Matches the ribbon column minus the bar's own padding, so the rule under
-     the lead segment sits exactly above the ribbon's border. */
-  width: calc(var(--ribbon-width) - 0.9rem);
+  /* Lines the segment's rule up with the ribbon's right-hand border, so the two
+     read as one frame — but never below what its three 28px buttons need. The
+     ribbon collapses to 2.75rem, which would otherwise squeeze the segment to
+     about 30px and spill the back/forward buttons onto the breadcrumb. */
+  width: max(calc(var(--ribbon-width) - 0.9rem), var(--topbar-lead-min));
   flex: none;
   border-right: 1px solid var(--divider);
   margin-right: 0.75rem;
