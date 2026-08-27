@@ -2606,20 +2606,54 @@ body,
   color: var(--primary-foreground);
 }
 
-/* --- Settings dialog ----------------------------------------------------- */
-.settings-body {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 1rem;
-  min-height: 20rem;
-}
-
+/* --- Settings view ------------------------------------------------------- */
+/* --- Settings rail (settings/SettingsRail.tsx) ---------------------------
+   Fills the shell sidebar's slot while Settings is open, the same swap the
+   Calendar makes for its mini month. Sections are grouped; the search filters
+   section names only. */
 .settings-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  border-right: 1px solid var(--border);
-  padding-right: 0.5rem;
+  gap: 0.9rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-rail-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--subtle-foreground);
+}
+.settings-rail-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.settings-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-rail-group-title {
+  margin: 0 0 0.2rem 0.5rem;
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--subtle-foreground);
 }
 
 .settings-rail-item {
@@ -2627,10 +2661,10 @@ body,
   background: transparent;
   border: none;
   color: var(--muted-foreground);
-  padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .settings-rail-item:hover {
@@ -2639,13 +2673,117 @@ body,
 }
 
 .settings-rail-item.active {
-  background: var(--muted);
-  color: var(--foreground);
+  background: var(--accent);
+  color: var(--accent-foreground);
   font-weight: 600;
 }
 
+.settings-rail-empty {
+  font-size: 0.8rem;
+  padding: 0 0.5rem;
+}
+
+/* --- Settings pane -------------------------------------------------------
+   The view's body: one section at a time, headed by the section's own name and
+   a line saying what it covers. Capped in width — a settings row is a label on
+   the left and a control on the right, and past ~46rem the two lose each
+   other. */
 .settings-pane {
   min-width: 0;
+  max-width: 46rem;
+}
+.settings-pane-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.settings-pane-desc {
+  margin: 0.25rem 0 1.5rem;
+  font-size: 0.9rem;
+}
+
+/* A label/sublabel pair on the left, one control on the right. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--divider);
+}
+.settings-row-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.settings-row-label {
+  font-size: 0.95rem;
+}
+.settings-row-sublabel {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.settings-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.settings-row-action:hover {
+  border-color: var(--accent-text);
+}
+
+/* Three shortcuts worth knowing, at the foot of Appearance, with a way through
+   to the section that rebinds them. */
+.settings-headline-shortcuts {
+  margin-top: 2rem;
+}
+.settings-headline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+.settings-headline-title {
+  margin: 0;
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+.settings-headline-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.settings-headline-link:hover {
+  text-decoration: underline;
+}
+.settings-kbd {
+  flex: none;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
 }
 
 .keybindings {
@@ -4070,9 +4208,83 @@ body,
   cursor: pointer;
 }
 .settings-theme-option.active {
-  border-color: var(--ring);
+  border-color: var(--accent-text);
   background: var(--accent);
   color: var(--accent-foreground);
+}
+
+/* A miniature of the app — chrome rail beside a page of text — above each theme
+   card's label. These are the ONLY literal colours outside the palette block
+   that aren't a user-picked swatch, and deliberately so: the card has to show a
+   theme you are NOT currently in, so it cannot use tokens, which always resolve
+   to the theme in effect. They come straight from the palette table in
+   docs/theming.md; if the palette moves, move these with it. */
+.settings-theme-preview {
+  display: flex;
+  width: 100%;
+  height: 3.25rem;
+  margin-bottom: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.settings-theme-preview-rail {
+  width: 28%;
+  flex: none;
+}
+.settings-theme-preview-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+}
+.settings-theme-preview-line {
+  height: 0.3rem;
+  border-radius: 999px;
+}
+.settings-theme-preview-line.short {
+  width: 55%;
+}
+.settings-theme-preview-light .settings-theme-preview-rail {
+  background: #f2f4f2;
+}
+.settings-theme-preview-light .settings-theme-preview-page {
+  background: #ffffff;
+}
+.settings-theme-preview-light .settings-theme-preview-line {
+  background: #dce2de;
+}
+.settings-theme-preview-dark .settings-theme-preview-rail {
+  background: #252525;
+}
+.settings-theme-preview-dark .settings-theme-preview-page {
+  background: #171717;
+}
+.settings-theme-preview-dark .settings-theme-preview-line {
+  background: #383838;
+}
+/* "System" is both themes side by side — the only honest picture of a setting
+   whose answer depends on the OS. It paints the split itself and blanks the
+   rail/page/line children: a miniature that was half one theme and half the
+   other would need every child cut down the same line, and the split alone
+   already says it. */
+.settings-theme-preview-system {
+  background: linear-gradient(
+    90deg,
+    #f2f4f2 0 28%,
+    #ffffff 28% 50%,
+    #252525 50% 78%,
+    #171717 78% 100%
+  );
+}
+.settings-theme-preview-system .settings-theme-preview-rail,
+.settings-theme-preview-system .settings-theme-preview-page {
+  background: none;
+}
+.settings-theme-preview-system .settings-theme-preview-line {
+  display: none;
 }
 .settings-theme-option-label {
   font-weight: 600;

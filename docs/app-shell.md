@@ -157,3 +157,47 @@ moved out of the first week row's cells into a strip of their own. That removed
 `MONTH_WEEKDAY_REM` and the per-row `headRem` special case that fed the lane
 cap, the row capacity *and* the all-day overlay's offset. See
 [`calendar-month-view.md`](calendar-month-view.md).
+
+## Settings is a view, not a dialog
+
+It used to be a `Dialog` with a 150px rail inside it. It's now `AppView`
+`"settings"`, which changes three things:
+
+- the **ribbon's Settings entry is a `kind: "view"`** like every other entry —
+  it navigates instead of opening an overlay, so back/forward reach it and the
+  ribbon shows it as the active section;
+- the **section list is a rail in the shell sidebar** (`SettingsRail.tsx`),
+  swapped in by `AppSidebar` exactly as the Calendar swaps in its mini month;
+- the pane is `SettingsView.tsx`, code-split like the other non-editor views.
+
+The two halves are in different parts of the tree, so which section is open
+lives in `useViewState.settingsSection`, and the section list itself lives in
+`settings/sections.ts` — the one file that knows what exists, in what order and
+under which group. `SETTINGS_GROUPS` is derived from `SETTINGS_SECTIONS` rather
+than listed a second time, so a section can't name a group the rail won't draw.
+
+The old **Appearance** section was three questions on one long page; it's now
+three sections — Appearance (theme, clock, comfort toggles), Editor (how note
+content is set) and Language. **Keybindings** is called *Shortcuts* in the UI;
+its id is unchanged, because renaming it would orphan the persisted overrides
+keyed by it. **Vault** is new and read-only: it names the open vault and opens
+its folder in the file manager. Switching, adding and deleting vaults stay on
+the sidebar's vault-name menu (`VaultSwitcher`), which is where you already are
+when you're thinking about vaults.
+
+The rail's search filters **section names only**. Matching individual control
+labels would mean enumerating every section's strings in a second place, and
+they'd drift the first time one was reworded.
+
+`ImportDialog` stays a dialog — it's a wizard that needs the whole window — and
+`MainPane` passes Settings the two callbacks that reach back into shell-owned
+flows: the post-cleanup tree refresh and the import launcher.
+
+### The theme cards paint literal colours
+
+`.settings-theme-preview-*` are the only literal hexes outside `index.css`'s
+palette block that aren't a user-picked swatch. They have to be: a card showing
+the Light theme while you're in Dark cannot use tokens, because tokens always
+resolve to the theme in effect. They're copied from the palette table in
+[`theming.md`](theming.md) — if the palette moves, move them with it. "System"
+paints itself as a split down the middle rather than picking a side.

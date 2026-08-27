@@ -65,12 +65,38 @@
     "title": "Einstellungen",
     "description": "Passen Sie Tundra nach Ihren Wünschen an.",
     "sections": {
-      "appearance": "Erscheinungsbild",
+      "appearance": "Darstellung",
+      "editor": "Editor",
+      "language": "Sprache",
       "keybindings": "Tastenkürzel",
       "dictionaries": "Wörterbücher",
-      "backup": "Sicherung",
+      "vault": "Tresor",
       "import": "Import",
+      "backup": "Sicherung",
       "maintenance": "Wartung"
+    },
+    "sectionDescriptions": {
+      "appearance": "Thema, Uhr und die kleinen Komforteinstellungen. Änderungen gelten sofort.",
+      "editor": "Wie Notiztext gesetzt wird — Größe und Schriftart.",
+      "language": "Die Sprache aller Texte in der App.",
+      "keybindings": "Die Tastenkürzel aller Befehle, frei belegbar.",
+      "dictionaries": "Rechtschreibsprachen und eigene Wörter.",
+      "vault": "Wo der geöffnete Tresor auf der Festplatte liegt.",
+      "import": "Notizen aus einer anderen App übernehmen.",
+      "backup": "Den ganzen Tresor in ein Archiv außerhalb sichern.",
+      "maintenance": "Aufräumen abgeleiteter und verwaister Dateien."
+    },
+    "groups": {
+      "lookAndFeel": "Erscheinungsbild",
+      "workspace": "Arbeitsbereich",
+      "data": "Daten"
+    },
+    "searchPlaceholder": "Einstellungen durchsuchen",
+    "searchEmpty": "Kein passender Bereich.",
+    "vault": {
+      "title": "Geöffneter Tresor",
+      "description": "Der Ordner, in dem alle Notizen und Anhänge liegen. Tresor wechseln oder hinzufügen geht über den Tresornamen in der Seitenleiste.",
+      "reveal": "Im Dateimanager anzeigen"
     },
     "appearance": {
       "title": "Erscheinungsbild",
@@ -94,7 +120,9 @@
       "accessibility": "Barrierefreiheit",
       "dyslexiaFont": "Legasthenie-freundliche Schrift (OpenDyslexic) im Editor verwenden",
       "noteHover": "Notiz-Hover",
-      "showModifiedOnHover": "Datum der letzten Änderung beim Überfahren einer Notiz anzeigen"
+      "showModifiedOnHover": "Datum der letzten Änderung beim Überfahren einer Notiz anzeigen",
+      "headlineShortcuts": "Wichtigste Tastenkürzel",
+      "openShortcuts": "Tastenkürzel öffnen"
     },
     "dictionaries": {
       "title": "Wörterbücher",

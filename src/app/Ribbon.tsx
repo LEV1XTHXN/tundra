@@ -4,9 +4,9 @@
  * app-settings blob, so it survives a restart).
  *
  * Two kinds of entry live here: *views*, which swap the main pane via
- * `useViewState`, and *actions*, which open an overlay the shell already owns
- * (the search palette, the settings dialog). Settings is pinned to the bottom.
- * Replaces the old stacked text view-switcher + sidebar action buttons.
+ * `useViewState`, and *actions* — now just one, the search palette, which is an
+ * overlay rather than a destination. Settings is a view like any other, pinned
+ * to the bottom of the strip.
  */
 import {
   CalendarDays,
@@ -30,7 +30,7 @@ import { useViewState, type AppView } from "@/store/viewState";
 
 type RibbonItem =
   | { kind: "view"; id: AppView; labelKey: string; icon: LucideIcon }
-  | { kind: "action"; id: "search" | "settings"; labelKey: string; icon: LucideIcon };
+  | { kind: "action"; id: "search"; labelKey: string; icon: LucideIcon };
 
 /** Ribbon entries in display order. `Settings` is rendered separately, pinned to
  *  the bottom of the strip. */
@@ -47,7 +47,7 @@ const ITEMS: RibbonItem[] = [
 ];
 
 const SETTINGS_ITEM: RibbonItem = {
-  kind: "action",
+  kind: "view",
   id: "settings",
   labelKey: "ribbon.settings",
   icon: Settings,
@@ -55,10 +55,9 @@ const SETTINGS_ITEM: RibbonItem = {
 
 interface RibbonProps {
   onSearch: () => void;
-  onSettings: () => void;
 }
 
-export function Ribbon({ onSearch, onSettings }: RibbonProps) {
+export function Ribbon({ onSearch }: RibbonProps) {
   const { t } = useTranslation();
   const view = useViewState((s) => s.view);
   const setView = useViewState((s) => s.setView);
@@ -88,8 +87,7 @@ export function Ribbon({ onSearch, onSettings }: RibbonProps) {
         aria-label={label}
         onClick={() => {
           if (item.kind === "view") setView(item.id);
-          else if (item.id === "search") onSearch();
-          else onSettings();
+          else onSearch();
         }}
       >
         <item.icon className="ribbon-item-icon h-[18px] w-[18px]" />

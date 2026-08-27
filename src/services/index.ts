@@ -107,6 +107,10 @@ export const vault = {
    *  erased) and it leaves the known-vaults list. Resolves `true` when the
    *  deleted vault was the open one, which leaves NO vault open. */
   delete: (path: string): Promise<boolean> => unwrap(commands.deleteVault(path)),
+  /** Show the vault's folder in the OS file manager. The one place the app
+   *  hands the user their own directory — the vault is a plain folder they own
+   *  (CLAUDE.md §5.1), and Settings is where they go to find out where. */
+  reveal: (path: string): Promise<void> => openPath(path),
 };
 
 /**

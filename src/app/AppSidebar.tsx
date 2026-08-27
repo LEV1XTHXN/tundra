@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TreeNode, VaultInfo } from "@/services";
 import { NavTree } from "@/nav/NavTree";
 import { CalendarSidebar } from "@/calendar/CalendarSidebar";
+import { SettingsRail } from "@/settings/SettingsRail";
 import { useViewState } from "@/store/viewState";
 import { useWorkspace } from "@/store/workspace";
 import { VaultSwitcher } from "./VaultSwitcher";
@@ -40,9 +41,10 @@ interface AppSidebarProps {
  * has no text box of its own to get out of sync. Renaming, moving and deleting
  * still live on the tree's right-click menu.
  *
- * The one exception is the Calendar view, which swaps the tree for a mini month
- * (`CalendarSidebar`) — a calendar is navigated by date, not by note, so the
- * tree is dead weight there. Every other view keeps the tree.
+ * Two views swap the tree for something of their own: the Calendar for a mini
+ * month (`CalendarSidebar`) — a calendar is navigated by date, not by note —
+ * and Settings for its section rail (`SettingsRail`). Every other view keeps
+ * the tree, or hides the column entirely (see `store/theme.ts`).
  *
  * Nav *view* state (open note) is read straight from `useViewState`, and the
  * expanded folders from `useWorkspace` (which persists them per vault, so the
@@ -78,6 +80,8 @@ export function AppSidebar({
       />
       {view === "calendar" ? (
         <CalendarSidebar />
+      ) : view === "settings" ? (
+        <SettingsRail />
       ) : (
         <>
           <button className="sidebar-search" onClick={onSearch}>

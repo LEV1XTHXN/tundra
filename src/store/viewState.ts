@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { SettingsSectionId } from "@/settings/sections";
+
 /**
  * The top-level view the shell is showing (Phase 2 step 4). The editor/nav are
  * the note-editing view; graph, quick notes, and home are peers switched via the
@@ -102,6 +104,13 @@ interface ViewState {
   setCalendarTarget: (date: Date | null) => void;
   /** Set the target day and switch to the Calendar view in one step. */
   openCalendarOn: (date: Date) => void;
+
+  /** Which Settings section the view is showing. Lives here, not in the view,
+   *  because the section list is a rail in the shell sidebar — outside the view
+   *  entirely, exactly like the Calendar's mini month drives its cursor.
+   *  Transient view state; never part of a navigation location. */
+  settingsSection: SettingsSectionId;
+  setSettingsSection: (section: SettingsSectionId) => void;
 
   /** Bumped when something OUTSIDE the Calendar view asks it to open its
    *  "new event" dialog — the sidebar's New event button, which sits next to
@@ -252,6 +261,9 @@ export const useViewState = create<ViewState>((set, get) => {
     set({ calendarTarget: date, calendarCursor: date, calendarMode: "week" });
     recordNav({ view: "calendar" });
   },
+
+  settingsSection: "appearance",
+  setSettingsSection: (settingsSection) => set({ settingsSection }),
 
   newEventRequest: 0,
   requestNewEvent: () => set((state) => ({ newEventRequest: state.newEventRequest + 1 })),

@@ -8,7 +8,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { SearchPalette } from "@/search/SearchPalette";
-import { SettingsDialog } from "@/settings/SettingsDialog";
 import { ImportDialog } from "@/import/ImportDialog";
 import { obsidianAdapter } from "@/import/obsidianAdapter";
 import { notionAdapter } from "@/import/notionAdapter";
@@ -69,7 +68,6 @@ export default function App() {
     currentView === "home" && homeBackground !== null && homeBackgroundVault === vaultInfo?.path;
   const [editorRefreshToken, bumpEditor] = useEditorRefresh();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importAdapter, setImportAdapter] = useState<SourceAdapter>(obsidianAdapter);
 
@@ -102,7 +100,7 @@ export default function App() {
       style={isHomeWithBackground ? homeBackgroundStyle(homeBackground, vaultInfo.path) : undefined}
     >
       <TopBarHost>
-        <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
+          <Ribbon onSearch={() => setSearchOpen(true)} />
 
         {!treeHidden && (
           <AppSidebar
@@ -128,25 +126,19 @@ export default function App() {
           bumpEditor={bumpEditor}
           templateActions={templateActions}
           deletion={deletion}
+          onCleaned={noteActions.onVaultCleaned}
+          onOpenImport={(source) => {
+            setImportAdapter(
+              source === "notion" ? notionAdapter : source === "anytype" ? anytypeAdapter : obsidianAdapter,
+            );
+            setImportOpen(true);
+          }}
         />
       </TopBarHost>
 
       <ErrorToast error={error} />
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onCleaned={noteActions.onVaultCleaned}
-        onOpenImport={(source) => {
-          setSettingsOpen(false);
-          setImportAdapter(
-            source === "notion" ? notionAdapter : source === "anytype" ? anytypeAdapter : obsidianAdapter,
-          );
-          setImportOpen(true);
-        }}
-      />
 
       <ImportDialog
         open={importOpen}

@@ -32,6 +32,12 @@ const TagsView = lazy(() => import("@/tags/TagsView").then((m) => ({ default: m.
 const TemplatesView = lazy(() =>
   import("@/templates/TemplatesView").then((m) => ({ default: m.TemplatesView })),
 );
+// Settings pulls in every preference surface (keybinding registry, dictionary
+// management, backup) — code-split like the other non-editor views so none of
+// it loads until someone opens Settings.
+const SettingsView = lazy(() =>
+  import("@/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
 
 interface MainPaneProps {
   vaultInfo: VaultInfo;
@@ -43,6 +49,10 @@ interface MainPaneProps {
   bumpEditor: () => void;
   templateActions: TemplateActions;
   deletion: Deletion;
+  /** Settings' two escapes into shell-owned flows: the post-cleanup tree
+   *  refresh, and the import wizard (a dialog — it needs the whole window). */
+  onCleaned?: (deletedIds: string[]) => void;
+  onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void;
 }
 
 /**
@@ -61,6 +71,8 @@ export function MainPane({
   bumpEditor,
   templateActions,
   deletion,
+  onCleaned,
+  onOpenImport,
 }: MainPaneProps) {
   const view = useViewState((s) => s.view);
   const openNoteId = useViewState((s) => s.openNoteId);
@@ -181,6 +193,18 @@ export function MainPane({
           onDone={templateActions.onDoneEditingTemplate}
           setError={setError}
         />
+      )}
+
+      {view === "settings" && (
+        <Suspense
+          fallback={
+            <ViewFrame title="Settings">
+              <div className="centered muted">Loading settings…</div>
+            </ViewFrame>
+          }
+        >
+          <SettingsView vaultInfo={vaultInfo} onCleaned={onCleaned} onOpenImport={onOpenImport} />
+        </Suspense>
       )}
 
       {view === "quicknotes" && <QuickNoteView vaultPath={vaultInfo.path} onError={setError} />}

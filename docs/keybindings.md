@@ -68,12 +68,14 @@ These commands are generic; future settings sections reuse them with a different
 
 ## Settings UI
 
-**`src/settings/SettingsDialog.tsx`** — shadcn `Dialog`, a left rail of sections
-(only **Keybindings** today; structured so Appearance/Backup/etc. slot in) and the
-keybindings pane. Each row: label + description, a **Record** button that captures
-the next combo (capture-phase listener + `stopPropagation`, so it never leaks to
-the global dispatcher; Esc cancels), a per-row **Reset**, and an inline conflict
-warning. Footer has **Reset all**. Opened from the sidebar's **Settings** button.
+**`src/settings/SettingsView.tsx`** — Settings is a top-level view (see
+[`app-shell.md`](app-shell.md)); its section list is a rail in the shell
+sidebar (`SettingsRail.tsx`) and **Shortcuts** is one of its sections. Each row:
+label + description, a **Record** button that captures the next combo
+(capture-phase listener + `stopPropagation`, so it never leaks to the global
+dispatcher; Esc cancels), a per-row **Reset**, and an inline conflict warning.
+Footer has **Reset all**. Reached from the ribbon's **Settings** entry, or from
+the "Open Shortcuts" link at the foot of Appearance.
 
 ## Find in note (`Ctrl+F`)
 

@@ -66,11 +66,37 @@
     "description": "Customize how Tundra works.",
     "sections": {
       "appearance": "Appearance",
-      "keybindings": "Keybindings",
+      "editor": "Editor",
+      "language": "Language",
+      "keybindings": "Shortcuts",
       "dictionaries": "Dictionaries",
-      "backup": "Backup",
+      "vault": "Vault",
       "import": "Import",
+      "backup": "Backup",
       "maintenance": "Maintenance"
+    },
+    "sectionDescriptions": {
+      "appearance": "Theme, clock and the small comfort settings. Changes apply immediately.",
+      "editor": "How note content is set — size and typeface.",
+      "language": "The language every string in the app is shown in.",
+      "keybindings": "Every command's shortcut, rebindable.",
+      "dictionaries": "Spellcheck languages and your own words.",
+      "vault": "Where the open vault lives on disk.",
+      "import": "Bring notes in from another app.",
+      "backup": "Snapshot the whole vault to an archive outside it.",
+      "maintenance": "Housekeeping for the vault's derived and orphaned files."
+    },
+    "groups": {
+      "lookAndFeel": "Look and feel",
+      "workspace": "Workspace",
+      "data": "Data"
+    },
+    "searchPlaceholder": "Search settings",
+    "searchEmpty": "No matching section.",
+    "vault": {
+      "title": "Open vault",
+      "description": "The folder every note and attachment lives in. Switching or adding a vault is on the vault name in the sidebar.",
+      "reveal": "Show in file manager"
     },
     "appearance": {
       "title": "Appearance",
@@ -94,7 +120,9 @@
       "accessibility": "Accessibility",
       "dyslexiaFont": "Use a dyslexia-friendly font (OpenDyslexic) in the editor",
       "noteHover": "Note hover",
-      "showModifiedOnHover": "Show last-modified date when hovering a note"
+      "showModifiedOnHover": "Show last-modified date when hovering a note",
+      "headlineShortcuts": "Most-used shortcuts",
+      "openShortcuts": "Open Shortcuts"
     },
     "dictionaries": {
       "title": "Dictionaries",
