@@ -103,6 +103,15 @@ interface ViewState {
   /** Set the target day and switch to the Calendar view in one step. */
   openCalendarOn: (date: Date) => void;
 
+  /** Bumped when something OUTSIDE the Calendar view asks it to open its
+   *  "new event" dialog — the sidebar's New event button, which sits next to
+   *  the mini month you'd pick the day with but has no access to the view's own
+   *  dialog state. A counter rather than a boolean so two consecutive asks are
+   *  two distinct values; CalendarView reacts to the change, not to a flag it
+   *  would then have to clear. Transient view state, like the cursor. */
+  newEventRequest: number;
+  requestNewEvent: () => void;
+
   /** A day inside the period the Calendar view is showing — the month/week its
    *  grid is scrolled to. Lives here rather than in CalendarView because the
    *  sidebar's mini month (shown while the Calendar view is open) drives the
@@ -243,6 +252,9 @@ export const useViewState = create<ViewState>((set, get) => {
     set({ calendarTarget: date, calendarCursor: date, calendarMode: "week" });
     recordNav({ view: "calendar" });
   },
+
+  newEventRequest: 0,
+  requestNewEvent: () => set((state) => ({ newEventRequest: state.newEventRequest + 1 })),
 
   calendarCursor: new Date(),
   setCalendarCursor: (date) => set({ calendarCursor: date }),

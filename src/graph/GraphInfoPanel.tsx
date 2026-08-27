@@ -7,6 +7,7 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { GraphColorMode } from "./nodeColor";
 
 export interface GraphStats {
@@ -97,20 +98,12 @@ export function GraphInfoPanel({
 
         <label className="graph-setting graph-setting-row">
           <span>{t("graph.showNames")}</span>
-          <input
-            type="checkbox"
-            checked={showLabels}
-            onChange={(e) => onToggleLabels(e.target.checked)}
-          />
+          <Switch checked={showLabels} onCheckedChange={onToggleLabels} />
         </label>
 
         <label className="graph-setting graph-setting-row">
           <span>{t("graph.sizeByConnections")}</span>
-          <input
-            type="checkbox"
-            checked={sizeByDegree}
-            onChange={(e) => onSizeByDegree(e.target.checked)}
-          />
+          <Switch checked={sizeByDegree} onCheckedChange={onSizeByDegree} />
         </label>
 
         <label className="graph-setting">

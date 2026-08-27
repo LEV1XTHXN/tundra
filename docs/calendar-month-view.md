@@ -75,21 +75,22 @@ measurement covers all 42 cells) minus the head and the lanes the week's bars
 occupy, divided by the row height.
 
 Those heights live as rem constants in `CalendarView.tsx`
-(`MONTH_HEAD_REM`, `ALLDAY_LANE_REM`, `MONTH_ROW_REM`, `MONTH_MORE_REM`,
-`MONTH_WEEKDAY_REM` — the lane one has no `MONTH_` prefix because week mode's
-all-day strip draws the same bar and offsets by the same pitch) and
-**must match** `.calendar-cell-head` /
-`.calendar-allday-bar` / `.calendar-event-row` / `.calendar-more` /
-`.calendar-weekday-label` in `index.css`. A drift shows up as a wrong "+N more"
-count, not as a layout break — so it's easy to miss. (Same contract
-`HOUR_HEIGHT_REM` already has with the week view's hour grid.)
+(`MONTH_HEAD_REM`, `ALLDAY_LANE_REM`, `MONTH_ROW_REM`, `MONTH_MORE_REM` — the
+lane one has no `MONTH_` prefix because week mode's all-day strip draws the same
+bar and offsets by the same pitch) and **must match** `.calendar-cell-head` /
+`.calendar-allday-bar` / `.calendar-event-row` / `.calendar-more` in
+`index.css`. A drift shows up as a wrong "+N more" count, not as a layout
+break — so it's easy to miss. (Same contract `HOUR_HEIGHT_REM` already has with
+the week view's hour grid.)
 
-There is no weekday header strip: the weekday names head the **first week row's
-cells** (`.calendar-cell-head.with-weekday`), as in Google Calendar. So that row's
-head is `MONTH_HEAD_REM + MONTH_WEEKDAY_REM` tall while the rest are
-`MONTH_HEAD_REM` — hence the per-row `headRem`, which feeds *three* things: the
-lane cap, the row capacity, and the bar overlay's `top` offset. Miss one and the
-first row either mis-counts its overflow or hangs its bars over the labels.
+The weekday names sit in a **strip of their own** (`.calendar-weekdays`) above
+the week rows. They used to head the first week row's cells, Google-Calendar
+style, which cost that row an extra `MONTH_WEEKDAY_REM` of head and made
+`headRem` per-row — feeding *three* things (the lane cap, the row capacity, and
+the bar overlay's `top` offset) with a value that differed for week 0 alone.
+The strip makes every row identical, so there is one head height and no
+first-row special case. Keep it that way: a strip is also why the names stay put
+when the cursor pages to a month with a different number of weeks.
 
 Lanes are capped too: if a week stacks more periods than fit, the extra bars
 count toward the day's overflow instead of spilling out of the cell. Before the

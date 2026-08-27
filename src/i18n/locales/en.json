@@ -162,6 +162,10 @@
   "graph": {
     "title": "Graph",
     "closePanel": "Close (Alt+I)",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomFit": "Fit to view",
+    "zoomControls": "Zoom",
     "openPanel": "Graph info & settings (Alt+I)",
     "empty": "No links yet — connect notes with [[links]] to see them here.",
     "loadError": "Couldn't load the graph: {{error}}",
@@ -178,6 +182,13 @@
     "lineLength": "Line length"
   },
   "calendar": {
+    "nextUp": "Next up",
+    "today": "Today",
+    "untitledEvent": "(untitled)",
+    "month": "Month",
+    "week": "Week",
+    "previous": "Previous",
+    "next": "Next",
     "newEvent": "New event",
     "editEvent": "Edit event…",
     "deleteEvent": "Delete event",
@@ -263,6 +274,7 @@
     "addAWidget": "Add a widget",
     "allWidgetsAdded": "Every widget is already on your dashboard.",
     "removeWidget": "Remove widget",
+    "widgetMenu": "Widget options",
     "noGapTitle": "No gap between widgets",
     "flush": "Flush",
     "noBorderTitle": "No card border/background around widgets",
@@ -285,6 +297,11 @@
       "clock": { "title": "Clock", "description": "Local time and date" },
       "storage": { "title": "Storage", "description": "Note, tag, and group counts" },
       "streak": { "title": "Streak", "description": "Consecutive days logged in" },
+      "board": {
+        "title": "Board",
+        "description": "The first Kanban board's columns, at a glance.",
+        "empty": "No boards yet."
+      },
       "miniGraph": {
         "title": "Graph",
         "description": "A preview of your link graph",
@@ -307,6 +324,7 @@
     "notes": "Notes",
     "tags": "Tags",
     "groups": "Groups",
+    "dayStreak": "Day streak",
     "streakLabel_one": "day in a row",
     "streakLabel_other": "days in a row",
     "toggleClockFormat": "Toggle 12h/24h time"
@@ -373,6 +391,7 @@
   },
   "kanban": {
     "title": "Kanban",
+    "noBoard": "No board",
     "loading": "Loading kanban…",
     "boardsAriaLabel": "Kanban boards",
     "newBoard": "New board",

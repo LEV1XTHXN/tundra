@@ -109,3 +109,51 @@ fall out of sync with the palette's.
 `.sidebar-new-note` is pinned under the tree. Creating a note was otherwise only
 on the tree's right-click menu, which is fine once you know it and invisible
 until then.
+
+## What the view surfaces got, and what they didn't
+
+Restyling the six mocked views mostly meant pointing existing markup at the
+bar's control classes. Three things are worth writing down, because they're
+places the mockups asked for something the data model doesn't have — or where
+the code already had a better answer.
+
+**Every control that lands in the bar wears `.topbar-button`.** Home's toolbar
+buttons, the graph's panel toggle, the calendar's `‹ Today ›` and Templates'
+"New template" each used to have a bespoke class with its own height and
+padding. They're all one control now (`.topbar-button`, plus `.outlined` when
+it carries a label), so the bar can't look like five views' worth of buttons in
+a row. The two segmented controls — Kanban's board tabs and the calendar's
+`Week | Month` — keep their own classes, since a segment group isn't a button.
+
+**The Home "Vault" card trades the folder-group count for the day streak**, as
+the mockups show. Group count measured a sidebar convenience rather than the
+vault; the streak is what people look for. The standalone Streak widget stays
+for anyone who wants it big.
+
+**The calendar's "Show" filter list is not implemented.** The mockup lists named
+calendars (Work / Personal / Travel / Reading) to toggle. An `Event` has a
+`color` and nothing else — no calendar, no category — so those names would have
+to be invented, and inferring them from whichever tag happens to own a colour
+would be wrong the moment a colour isn't a tag's. That's a data-model feature,
+not a revamp. "Next up" **is** implemented: it's a pure derivation from
+`calendar.range()`, and it answers the question the mini month can't once you've
+paged away from today.
+
+**The graph's "Local graph" button is not implemented** either, for the same
+reason: there is no neighbourhood-subgraph mode to toggle. The legend and the
+zoom/fit controls are new and real — the legend is built *inside* `recolorGraph`
+as it assigns each node's colour, so it can only ever say what the canvas
+actually painted.
+
+**Notes shows tags in one place, not two.** The mockup draws tag chips under the
+note title *and* in the inspector. The inspector loads and edits them already;
+a second copy in the document would mean a second data path for a read-only
+echo, so the document keeps just the icon and the title.
+
+### The month grid's weekday strip
+
+Worth its own note because it changed a documented contract: the weekday names
+moved out of the first week row's cells into a strip of their own. That removed
+`MONTH_WEEKDAY_REM` and the per-row `headRem` special case that fed the lane
+cap, the row capacity *and* the all-day overlay's offset. See
+[`calendar-month-view.md`](calendar-month-view.md).

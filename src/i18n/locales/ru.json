@@ -166,6 +166,10 @@
   "graph": {
     "title": "Граф",
     "closePanel": "Закрыть (Alt+I)",
+    "zoomIn": "Приблизить",
+    "zoomOut": "Отдалить",
+    "zoomFit": "Вписать в экран",
+    "zoomControls": "Масштаб",
     "openPanel": "Сведения и настройки графа (Alt+I)",
     "empty": "Пока нет связей — свяжите заметки через [[links]], чтобы увидеть их здесь.",
     "loadError": "Не удалось загрузить граф: {{error}}",
@@ -182,6 +186,13 @@
     "lineLength": "Длина линий"
   },
   "calendar": {
+    "nextUp": "Далее",
+    "today": "Сегодня",
+    "untitledEvent": "(без названия)",
+    "month": "Месяц",
+    "week": "Неделя",
+    "previous": "Назад",
+    "next": "Вперёд",
     "newEvent": "Новое событие",
     "editEvent": "Изменить событие…",
     "deleteEvent": "Удалить событие",
@@ -267,6 +278,7 @@
     "addAWidget": "Добавить виджет",
     "allWidgetsAdded": "Все виджеты уже добавлены на панель.",
     "removeWidget": "Удалить виджет",
+    "widgetMenu": "Параметры виджета",
     "noGapTitle": "Без отступов между виджетами",
     "flush": "Встык",
     "noBorderTitle": "Без рамки/фона у виджетов",
@@ -289,6 +301,11 @@
       "clock": { "title": "Часы", "description": "Местное время и дата" },
       "storage": { "title": "Хранилище", "description": "Счётчики заметок, тегов и групп" },
       "streak": { "title": "Серия", "description": "Подряд идущие дни активности" },
+      "board": {
+        "title": "Доска",
+        "description": "Колонки первой канбан-доски — кратко.",
+        "empty": "Досок пока нет."
+      },
       "miniGraph": {
         "title": "Граф",
         "description": "Предпросмотр графа связей",
@@ -311,6 +328,7 @@
     "notes": "Заметки",
     "tags": "Теги",
     "groups": "Группы",
+    "dayStreak": "Дней подряд",
     "streakLabel_one": "день подряд",
     "streakLabel_few": "дня подряд",
     "streakLabel_many": "дней подряд",
@@ -383,6 +401,7 @@
   },
   "kanban": {
     "title": "Канбан",
+    "noBoard": "Нет доски",
     "loading": "Загрузка канбана…",
     "boardsAriaLabel": "Доски канбана",
     "newBoard": "Новая доска",

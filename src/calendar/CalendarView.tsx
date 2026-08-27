@@ -25,7 +25,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Link2, Plus, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link2, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { calendar, notes } from "@/services";
@@ -127,9 +127,6 @@ const WEEK_EVENT_WIDTH_PCT = 80;
 const MONTH_HEAD_REM = 1.75;
 const MONTH_ROW_REM = 1.35;
 const MONTH_MORE_REM = 1.2;
-/** The weekday label ("MON") that heads each cell of the FIRST week row only —
- * extra head height that row alone pays for. */
-const MONTH_WEEKDAY_REM = 1.1;
 
 /** A day's vault-relative key (`yyyy-MM-dd`), matching the `NoteDate` date form. */
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
@@ -179,6 +176,17 @@ export function CalendarView({
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [noteDates, setNoteDates] = useState<NoteDateEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
+
+  // The sidebar's New event button lives outside this view, so it asks for the
+  // dialog by bumping a counter rather than reaching in. Skipping the initial
+  // value keeps the dialog shut when the view first mounts.
+  const newEventRequest = useViewState((s) => s.newEventRequest);
+  const lastNewEventRequest = useRef(newEventRequest);
+  useEffect(() => {
+    if (newEventRequest === lastNewEventRequest.current) return;
+    lastNewEventRequest.current = newEventRequest;
+    setDialog({ kind: "event", day: useViewState.getState().calendarCursor });
+  }, [newEventRequest]);
 
   // The visible grid: whole weeks covering the month, or a single week.
   const days = useMemo(() => {
@@ -330,33 +338,42 @@ export function CalendarView({
     [setCursor, setMode],
   );
 
+  // "+ Event" is deliberately NOT here: the mockups put it at the foot of the
+  // calendar sidebar, next to the mini month you'd have used to pick the day.
   const calendarActions = (
-    <div className="calendar-controls">
-      <div className="calendar-modes">
-        <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>
-          Month
-        </button>
+    <>
+      <div className="calendar-modes" role="group" aria-label={t("ribbon.calendar")}>
         <button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>
-          Week
+          {t("calendar.week")}
+        </button>
+        <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>
+          {t("calendar.month")}
         </button>
       </div>
-      <button className="calendar-nav" onClick={() => shift(-1)} aria-label="Previous">
-        ‹
+      <button
+        className="topbar-button"
+        onClick={() => shift(-1)}
+        title={t("calendar.previous")}
+        aria-label={t("calendar.previous")}
+      >
+        <ChevronLeft className="h-4 w-4" />
       </button>
-      <button className="calendar-nav" onClick={() => setCursor(new Date())}>
-        Today
+      <button className="topbar-button outlined" onClick={() => setCursor(new Date())}>
+        {t("calendar.today")}
       </button>
-      <button className="calendar-nav" onClick={() => shift(1)} aria-label="Next">
-        ›
+      <button
+        className="topbar-button"
+        onClick={() => shift(1)}
+        title={t("calendar.next")}
+        aria-label={t("calendar.next")}
+      >
+        <ChevronRight className="h-4 w-4" />
       </button>
-      <Button size="sm" onClick={() => setDialog({ kind: "event", day: cursor })}>
-        <Plus className="h-4 w-4" /> Event
-      </Button>
-    </div>
+    </>
   );
 
   return (
-    <ViewFrame title={heading} actions={calendarActions} fullBleed>
+    <ViewFrame crumbs={[t("ribbon.calendar")]} title={heading} actions={calendarActions} fullBleed>
     <div className="calendar">
       {mode === "month" && (
         <MonthGrid
@@ -535,11 +552,11 @@ function MonthGrid({
     [],
   );
 
-  // `EEEEEE` — the two-letter short form — in every language: "Mo Tu We",
-  // "Пн Вт Ср", "Mo Di Mi". (`EEE` is three letters, and picks up a trailing dot
-  // in German: "Mo.".) Same token the mini month uses, so the two agree.
+  // `EEE` — the short form: "Mon Tue Wed", "Пн Вт Ср", "Mo Di Mi". The strip is
+  // a row of its own with a full cell's width to spend, unlike the mini month,
+  // which has to fit seven labels into a widget and uses `EEEEEE`.
   const weekdayLabels = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => format(addDays(days[0], i), "EEEEEE", { locale: dateLocale })),
+    () => Array.from({ length: 7 }, (_, i) => format(addDays(days[0], i), "EEE", { locale: dateLocale })),
     [days, dateLocale],
   );
 
@@ -555,14 +572,23 @@ function MonthGrid({
 
   return (
     <div className="calendar-month">
+      {/* Weekday names get a strip of their own rather than heading the first
+          week's cells. That makes every week row identical — one head height
+          for the capacity maths instead of a first-row special case — and keeps
+          the names put when the cursor pages to a month with a different number
+          of weeks. */}
+      <div className="calendar-weekdays">
+        {weekdayLabels.map((label) => (
+          <span key={label} className="calendar-weekday-label">
+            {label}
+          </span>
+        ))}
+      </div>
       <div className="calendar-month-body" ref={bodyRef}>
-        {weeks.map((week, weekIndex) => {
+        {weeks.map((week) => {
           const bars = packWeek(week, events);
           const laneCount = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
-          // The weekday names head the first row's cells (no separate strip), so
-          // that row's head is taller — and it, not the constant, is what the
-          // capacity maths and the bar overlay's offset must use.
-          const headRem = weekIndex === 0 ? MONTH_HEAD_REM + MONTH_WEEKDAY_REM : MONTH_HEAD_REM;
+          const headRem = MONTH_HEAD_REM;
           // Lanes eat the same vertical space the rows want; cap them so a day
           // stacked with periods still has room for a "+N more".
           const laneLimit =
@@ -610,12 +636,7 @@ function MonthGrid({
                           }`}
                           onClick={cellClick(day)}
                         >
-                          <div
-                            className={`calendar-cell-head${weekIndex === 0 ? " with-weekday" : ""}`}
-                          >
-                            {weekIndex === 0 && (
-                              <span className="calendar-weekday-label">{weekdayLabels[col]}</span>
-                            )}
+                          <div className="calendar-cell-head">
                             <span className="calendar-daynum">
                               {format(day, day.getDate() === 1 ? "d MMM" : "d", { locale: dateLocale })}
                             </span>

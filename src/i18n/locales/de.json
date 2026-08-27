@@ -162,6 +162,10 @@
   "graph": {
     "title": "Graph",
     "closePanel": "Schließen (Alt+I)",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "zoomFit": "Einpassen",
+    "zoomControls": "Zoom",
     "openPanel": "Grapheninfo & -einstellungen (Alt+I)",
     "empty": "Noch keine Verknüpfungen — verbinden Sie Notizen mit [[links]], um sie hier zu sehen.",
     "loadError": "Graph konnte nicht geladen werden: {{error}}",
@@ -178,6 +182,13 @@
     "lineLength": "Linienlänge"
   },
   "calendar": {
+    "nextUp": "Als Nächstes",
+    "today": "Heute",
+    "untitledEvent": "(ohne Titel)",
+    "month": "Monat",
+    "week": "Woche",
+    "previous": "Zurück",
+    "next": "Weiter",
     "newEvent": "Neues Ereignis",
     "editEvent": "Ereignis bearbeiten…",
     "deleteEvent": "Ereignis löschen",
@@ -263,6 +274,7 @@
     "addAWidget": "Widget hinzufügen",
     "allWidgetsAdded": "Alle Widgets sind bereits auf Ihrem Dashboard.",
     "removeWidget": "Widget entfernen",
+    "widgetMenu": "Widget-Optionen",
     "noGapTitle": "Kein Abstand zwischen Widgets",
     "flush": "Bündig",
     "noBorderTitle": "Kein Rahmen/Hintergrund um Widgets",
@@ -285,6 +297,11 @@
       "clock": { "title": "Uhr", "description": "Lokale Uhrzeit und Datum" },
       "storage": { "title": "Speicher", "description": "Anzahl an Notizen, Tags und Gruppen" },
       "streak": { "title": "Serie", "description": "Aufeinanderfolgende aktive Tage" },
+      "board": {
+        "title": "Board",
+        "description": "Die Spalten des ersten Kanban-Boards auf einen Blick.",
+        "empty": "Noch keine Boards."
+      },
       "miniGraph": {
         "title": "Graph",
         "description": "Eine Vorschau Ihres Verknüpfungsgraphen",
@@ -307,6 +324,7 @@
     "notes": "Notizen",
     "tags": "Tags",
     "groups": "Gruppen",
+    "dayStreak": "Tage in Folge",
     "streakLabel_one": "Tag in Folge",
     "streakLabel_other": "Tage in Folge",
     "toggleClockFormat": "12/24-Stunden-Format umschalten"
@@ -373,6 +391,7 @@
   },
   "kanban": {
     "title": "Kanban",
+    "noBoard": "Kein Board",
     "loading": "Kanban wird geladen…",
     "boardsAriaLabel": "Kanban-Boards",
     "newBoard": "Neues Board",

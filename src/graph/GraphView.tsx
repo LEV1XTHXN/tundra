@@ -15,7 +15,7 @@
  * live sigma/graph/layout instances through refs — it never rebuilds them.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Maximize, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Graph from "graphology";
 import Sigma from "sigma";
@@ -80,6 +80,17 @@ const DEFAULT_NODE_SIZE_SCALE = 1;
 const DEFAULT_EDGE_LENGTH = 1;
 const DEFAULT_COLOR_MODE: GraphColorMode = "folder";
 const DEFAULT_SIZE_BY_DEGREE = true;
+/** Legend label for notes that sit at the notes root (folder mode's `""`). */
+const ROOT_FOLDER_LABEL = "/";
+/** The legend is a strip along the canvas's bottom edge, not a list — past a
+ *  dozen swatches it stops being readable and starts being a wall. */
+const LEGEND_MAX = 12;
+
+/** The i18n key suffix for a colour mode, so the legend can title itself with
+ *  the same word the panel's "Colour by" select uses. */
+function colorModeKey(mode: GraphColorMode): string {
+  return mode === "folder" ? "Folder" : mode === "tag" ? "Tag" : "Cluster";
+}
 
 /** Persisted graph view state (CLAUDE.md §5.2: `.vault/config/graph-view.json`).
  *  Camera + the panel's display settings; filters/pinned positions are future
@@ -118,6 +129,9 @@ export function GraphView() {
   const [nodeSizeScale, setNodeSizeScale] = useState(DEFAULT_NODE_SIZE_SCALE);
   const [edgeLength, setEdgeLength] = useState(DEFAULT_EDGE_LENGTH);
   const [colorMode, setColorMode] = useState<GraphColorMode>(DEFAULT_COLOR_MODE);
+  /** What the canvas is currently colouring by, as label + swatch. Filled by
+   *  `recolorGraph`, which is the only thing that assigns node colours. */
+  const [legend, setLegend] = useState<{ label: string; color: string }[]>([]);
   const [sizeByDegree, setSizeByDegree] = useState(DEFAULT_SIZE_BY_DEGREE);
 
   // Live instances, reachable by the panel's handlers without rebuilding them.
@@ -248,20 +262,41 @@ export function GraphView() {
     if (!graph) return;
     const tagColors = useTagColors.getState().colors;
     const neutral = neutralColorRef.current;
+    // Collected as we go, so the legend can only ever say what the canvas
+    // actually painted — there's no second pass to fall out of step with.
+    // Insertion-ordered, and de-duplicated by label.
+    const legendEntries = new Map<string, string>();
     graph.updateEachNodeAttributes(
       (_n, attr) => {
         if (mode === "folder") {
-          attr.color = folderColorRef.current((attr.folder as string) ?? "");
+          const folder = (attr.folder as string) ?? "";
+          attr.color = folderColorRef.current(folder);
+          legendEntries.set(folder || ROOT_FOLDER_LABEL, attr.color as string);
         } else if (mode === "cluster") {
-          attr.color = clusterColor((attr.cluster as number) ?? 0);
+          const cluster = (attr.cluster as number) ?? 0;
+          attr.color = clusterColor(cluster);
+          legendEntries.set(`${cluster + 1}`, attr.color as string);
         } else {
           const tag = attr.tag as string | null;
           attr.color = tag ? (tagColors[tag] ?? tagColorRef.current(tag)) : neutral;
+          if (tag) legendEntries.set(tag, attr.color as string);
         }
         return attr;
       },
       { attributes: ["color"] },
     );
+    setLegend([...legendEntries].map(([label, color]) => ({ label, color })));
+  }, []);
+
+  /** Zoom/fit, driven straight off sigma's camera. */
+  const zoomBy = useCallback((direction: "in" | "out") => {
+    const camera = sigmaRef.current?.getCamera();
+    if (!camera) return;
+    if (direction === "in") camera.animatedZoom({ duration: 200 });
+    else camera.animatedUnzoom({ duration: 200 });
+  }, []);
+  const zoomFit = useCallback(() => {
+    sigmaRef.current?.getCamera().animatedReset({ duration: 200 });
   }, []);
 
   const onColorMode = useCallback(
@@ -659,13 +694,13 @@ export function GraphView() {
       title={t("graph.title")}
       fullBleed
       actions={
-        status === "ready" &&
-        !panelOpen && (
+        status === "ready" && (
           <button
-            className="graph-panel-toggle"
+            className={`topbar-button${panelOpen ? " active" : ""}`}
             onClick={togglePanel}
-            title={t("graph.openPanel")}
-            aria-label={t("graph.openPanel")}
+            title={panelOpen ? t("graph.closePanel") : t("graph.openPanel")}
+            aria-label={panelOpen ? t("graph.closePanel") : t("graph.openPanel")}
+            aria-pressed={panelOpen}
           >
             <SlidersHorizontal className="h-4 w-4" />
           </button>
@@ -696,6 +731,35 @@ export function GraphView() {
             onSizeByDegree={onSizeByDegree}
             onClose={() => setPanelOpen(false)}
           />
+        )}
+
+        {status === "ready" && legend.length > 0 && (
+          <div className="graph-legend">
+            <span className="graph-legend-title">{t(`graph.colorBy${colorModeKey(colorMode)}`)}</span>
+            {legend.slice(0, LEGEND_MAX).map((entry) => (
+              <span key={entry.label} className="graph-legend-item">
+                <span className="graph-legend-dot" style={{ background: entry.color }} />
+                {entry.label}
+              </span>
+            ))}
+            {legend.length > LEGEND_MAX && (
+              <span className="graph-legend-more">+{legend.length - LEGEND_MAX}</span>
+            )}
+          </div>
+        )}
+
+        {status === "ready" && (
+          <div className="graph-zoom" role="group" aria-label={t("graph.zoomControls")}>
+            <button onClick={() => zoomBy("in")} title={t("graph.zoomIn")} aria-label={t("graph.zoomIn")}>
+              <Plus className="h-4 w-4" />
+            </button>
+            <button onClick={() => zoomBy("out")} title={t("graph.zoomOut")} aria-label={t("graph.zoomOut")}>
+              <Minus className="h-4 w-4" />
+            </button>
+            <button onClick={zoomFit} title={t("graph.zoomFit")} aria-label={t("graph.zoomFit")}>
+              <Maximize className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
     </ViewFrame>

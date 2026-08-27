@@ -393,7 +393,6 @@ export function KanbanView({
       <button className="kanban-tab-add" onClick={openCreateBoard} title={t("kanban.newBoard")} aria-label={t("kanban.newBoard")}>
         <Plus className="h-4 w-4" />
       </button>
-      <div className="kanban-tabs-spacer" />
       {board && (
         <Popover>
           <PopoverTrigger asChild>
@@ -419,14 +418,19 @@ export function KanbanView({
 
   if (loading) {
     return (
-      <ViewFrame title={t("kanban.title")} fullBleed>
+      <ViewFrame crumbs={[t("kanban.title")]} title={t("kanban.loading")} fullBleed>
         <div className="centered muted">{t("kanban.loading")}</div>
       </ViewFrame>
     );
   }
 
   return (
-    <ViewFrame title={t("kanban.title")} toolbar={boardTabs} fullBleed>
+    <ViewFrame
+      crumbs={[t("kanban.title")]}
+      title={board?.name ?? t("kanban.noBoard")}
+      actions={boardTabs}
+      fullBleed
+    >
     <div className="kanban">
       {!board ? (
         <div className="centered muted kanban-empty">
