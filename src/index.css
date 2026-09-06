@@ -344,8 +344,8 @@ body,
 .app {
   --ribbon-width: 2.75rem;
   --topbar-height: 44px;
-  /* Three 28px controls and the 2px gaps between them, plus a little air before
-     the segment's rule — the floor `.topbar-lead` can never go below. */
+  /* Three 28px controls and the 2px gaps between them, plus a little air after
+     them — the floor `.topbar-lead` can never go below. */
   --topbar-lead-min: 5.9rem;
   display: grid;
   grid-template-columns: var(--ribbon-width) 260px 1fr;
@@ -361,8 +361,8 @@ body,
 
 /* --------------------------------------------------------------------------
    Top bar — the shell's single header row (app/TopBar.tsx). Spans every column;
-   the lead segment lines up with the ribbon beneath it, so the divider under
-   the bar and the ribbon's right edge read as one continuous frame.
+   the lead segment is as wide as the ribbon beneath it, so the breadcrumb
+   starts on the same line as the sidebar's content.
    -------------------------------------------------------------------------- */
 .topbar {
   grid-column: 1 / -1;
@@ -384,13 +384,12 @@ body,
   display: flex;
   align-items: center;
   gap: 2px;
-  /* Lines the segment's rule up with the ribbon's right-hand border, so the two
-     read as one frame — but never below what its three 28px buttons need. The
-     ribbon collapses to 2.75rem, which would otherwise squeeze the segment to
-     about 30px and spill the back/forward buttons onto the breadcrumb. */
+  /* Matches the ribbon's width, so the slot after it starts where the sidebar
+     does — but never below what its three 28px buttons need. The ribbon
+     collapses to 2.75rem, which would otherwise squeeze the segment to about
+     30px and spill the back/forward buttons onto the breadcrumb. */
   width: max(calc(var(--ribbon-width) - 0.9rem), var(--topbar-lead-min));
   flex: none;
-  border-right: 1px solid var(--divider);
   margin-right: 0.75rem;
   transition: width 0.15s ease;
 }
