@@ -22,9 +22,9 @@ import {
   Palette,
   Pin,
   Plus,
+  Kanban as KanbanIcon,
   Search as SearchIcon,
   Waypoints,
-  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import GridLayout, { useContainerWidth } from "react-grid-layout";
@@ -38,6 +38,7 @@ import { localizeError } from "@/i18n/errors";
 import { i18next } from "@/i18n";
 import { HomeBackgroundPicker, type HomeBackground } from "./HomeBackgroundPicker";
 import { WidgetAddMenu } from "./WidgetAddMenu";
+import { WidgetMenu } from "./WidgetMenu";
 import {
   CalendarWidget,
   ClockWidget,
@@ -45,6 +46,7 @@ import {
   QuickCaptureWidget,
   RecentWidget,
   SearchWidget,
+  BoardWidget,
   StorageWidget,
   StreakWidget,
   type WidgetProps,
@@ -65,7 +67,8 @@ type WidgetId =
   | "clock"
   | "storage"
   | "streak"
-  | "miniGraph";
+  | "miniGraph"
+  | "board";
 
 /** One widget's position + span on the grid, in whole cells. */
 interface GridPos {
@@ -107,7 +110,7 @@ const CELL_MIN = 150; // px — minimum width of one cell (drives the column cou
 const ROW_RATIO = 1.15; // row height per cell-width unit (tall enough for the calendar)
 const ROW_MIN = 120; // px — floor so a 1×1 cell always fits a small widget
 const ROW_MAX = 460; // px — cap so a wide single-column layout can't fill the screen
-const GAP = 16; // px — react-grid-layout margin
+const GAP = 14; // px — react-grid-layout margin
 
 interface WidgetMeta {
   id: WidgetId;
@@ -185,6 +188,13 @@ const WIDGET_META: WidgetMeta[] = [
       </Suspense>
     ),
   },
+  {
+    id: "board",
+    titleKey: "home.widgets.board.title",
+    descriptionKey: "home.widgets.board.description",
+    icon: KanbanIcon,
+    render: (p) => <BoardWidget {...p} />,
+  },
 ];
 
 const DEFAULT_WIDGETS: WidgetId[] = [
@@ -197,6 +207,7 @@ const DEFAULT_WIDGETS: WidgetId[] = [
   "storage",
   "streak",
   "miniGraph",
+  "board",
 ];
 
 /** Seed position for a widget with no saved layout yet (a brand-new vault, or
@@ -218,6 +229,7 @@ const DEFAULT_POS: Partial<Record<WidgetId, GridPos>> = {
   storage: { x: 2, y: 6, w: 2, h: 2 },
   streak: { x: 4, y: 6, w: 2, h: 2 },
   miniGraph: { x: 2, y: 8, w: 4, h: 4 },
+  board: { x: 0, y: 12, w: 4, h: 4 },
 };
 
 /** A widget can be resized down to ~half its default span (rounded, floored
@@ -380,13 +392,17 @@ export function Home({
   const gap = cfg.flush ? 0 : GAP;
 
   const actions = (
-    <div className="home-actions">
+    <>
       {editMode && (
         <WidgetAddMenu
           available={available}
           onAdd={(id) => add(id as WidgetId)}
           trigger={
-            <button className="home-toolbar-btn" title={t("home.addWidget")} disabled={available.length === 0}>
+            <button
+              className="topbar-button outlined"
+              title={t("home.addWidget")}
+              disabled={available.length === 0}
+            >
               <Plus className="h-3.5 w-3.5" />
               {t("home.addWidget")}
             </button>
@@ -396,14 +412,14 @@ export function Home({
       {editMode && (
         <div className="home-style-toggles">
           <button
-            className={`home-toolbar-btn${cfg.flush ? " active" : ""}`}
+            className={`topbar-button outlined${cfg.flush ? " active" : ""}`}
             onClick={toggleFlush}
             title={t("home.noGapTitle")}
           >
             {t("home.flush")}
           </button>
           <button
-            className={`home-toolbar-btn${cfg.frameless ? " active" : ""}`}
+            className={`topbar-button outlined${cfg.frameless ? " active" : ""}`}
             onClick={toggleFrameless}
             title={t("home.noBorderTitle")}
           >
@@ -417,24 +433,28 @@ export function Home({
         onChange={setBackground}
         onError={onError}
         trigger={
-          <button className="home-toolbar-btn" title={t("home.background")} aria-label={t("home.background")}>
+          <button
+            className="topbar-button outlined"
+            title={t("home.background")}
+            aria-label={t("home.background")}
+          >
             <Palette className="h-3.5 w-3.5" />
           </button>
         }
       />
       <button
-        className={`home-toolbar-btn${editMode ? " active" : ""}`}
+        className={`topbar-button outlined${editMode ? " active" : ""}`}
         onClick={() => setEditMode((v) => !v)}
         title={editMode ? t("home.doneCustomizing") : t("home.customizeLayout")}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
         {editMode ? t("home.done") : t("home.customize")}
       </button>
-    </div>
+    </>
   );
 
   return (
-    <ViewFrame title={t("home.title")} actions={actions} headerClassName={cfg.background ? "home-glass" : undefined}>
+    <ViewFrame title={t("home.title")} actions={actions}>
       {cfg.widgets.length === 0 ? (
         <div className="centered muted">{t("home.noWidgets")}</div>
       ) : (
@@ -480,13 +500,9 @@ export function Home({
                 <section key={id} className="widget">
                   <div className="widget-header">
                     <h2 className="widget-title">{titleOf(id, t)}</h2>
-                    {editMode && (
-                      <div className="widget-controls">
-                        <button onClick={() => remove(id)} title={t("home.removeWidget")} aria-label={t("home.removeWidget")}>
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
+                    <div className="widget-controls">
+                      <WidgetMenu onRemove={() => remove(id)} />
+                    </div>
                   </div>
                   <div className="widget-body">{renderWidget(id, widgetProps)}</div>
                 </section>

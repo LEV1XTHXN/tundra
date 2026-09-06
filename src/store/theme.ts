@@ -49,8 +49,11 @@ interface AppearanceConfig {
    *  default; scoped to note/quick-note content only, not the app chrome. */
   dyslexiaFont?: boolean;
   /** Whether the shell's icon ribbon is slid open (icons + labels) rather than
-   *  collapsed to icons only. Off by default — the ribbon is icon-first. */
+   *  collapsed to icons only. On by default. */
   ribbonExpanded?: boolean;
+  /** Whether the shell's second column — the note tree, or whatever the open
+   *  view puts in its place — is hidden. Shown by default. */
+  sidebarHidden?: boolean;
 }
 
 function systemDark(): boolean {
@@ -93,8 +96,13 @@ interface ThemeState {
   editorFontSize: EditorFontSizePref;
   /** Dyslexia-friendly editor content font; off by default. */
   dyslexiaFont: boolean;
-  /** Icon ribbon slid open (icons + labels); collapsed to icons by default. */
+  /** Icon ribbon slid open (icons + labels); open by default. */
   ribbonExpanded: boolean;
+  /** The shell's second column is hidden. One flag for the whole app, not one
+   *  per view: it's a preference about how much chrome you want on screen, and
+   *  having to re-open the tree after every view switch is the opposite of
+   *  remembering it. */
+  sidebarHidden: boolean;
   /** Change the preference, apply it, and persist it. */
   setTheme: (theme: ThemePref) => void;
   /** Change the clock format and persist it. */
@@ -107,6 +115,8 @@ interface ThemeState {
   setDyslexiaFont: (enabled: boolean) => void;
   /** Slide the icon ribbon open/closed and persist it. */
   setRibbonExpanded: (expanded: boolean) => void;
+  /** Show/hide the shell's second column, and persist it. */
+  toggleSidebar: () => void;
   /** Load the persisted preference and start tracking the OS theme. */
   load: () => Promise<void>;
 }
@@ -117,7 +127,15 @@ export const useTheme = create<ThemeState>((set, get) => {
   /** Write the whole appearance blob from current state — every setter calls
    *  this after `set()`, so a new preference only has to be added in one place. */
   const persist = () => {
-    const { theme, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded } = get();
+    const {
+      theme,
+      timeFormat,
+      showModifiedOnHover,
+      editorFontSize,
+      dyslexiaFont,
+      ribbonExpanded,
+      sidebarHidden,
+    } = get();
     void appSettings
       .write(SETTINGS_NAME, {
         theme,
@@ -126,6 +144,7 @@ export const useTheme = create<ThemeState>((set, get) => {
         editorFontSize,
         dyslexiaFont,
         ribbonExpanded,
+        sidebarHidden,
       } satisfies AppearanceConfig)
       .catch(() => {});
   };
@@ -137,7 +156,8 @@ export const useTheme = create<ThemeState>((set, get) => {
   showModifiedOnHover: false,
   editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   dyslexiaFont: false,
-  ribbonExpanded: false,
+  ribbonExpanded: true,
+  sidebarHidden: false,
   setTheme: (theme) => {
     const resolved = resolvePref(theme);
     applyToDom(resolved);
@@ -166,6 +186,10 @@ export const useTheme = create<ThemeState>((set, get) => {
     set({ ribbonExpanded });
     persist();
   },
+  toggleSidebar: () => {
+    set({ sidebarHidden: !get().sidebarHidden });
+    persist();
+  },
   load: async () => {
     // Track OS theme changes once, so "system" updates live without a restart.
     if (!mediaWired && typeof window !== "undefined" && window.matchMedia) {
@@ -190,12 +214,22 @@ export const useTheme = create<ThemeState>((set, get) => {
           ? LEGACY_FONT_SIZE_PX[rawFontSize] ?? EDITOR_FONT_SIZE_DEFAULT
           : EDITOR_FONT_SIZE_DEFAULT;
     const dyslexiaFont = cfg?.dyslexiaFont ?? false;
-    const ribbonExpanded = cfg?.ribbonExpanded ?? false;
+    const ribbonExpanded = cfg?.ribbonExpanded ?? true;
+    const sidebarHidden = cfg?.sidebarHidden ?? false;
     const resolved = resolvePref(theme);
     applyToDom(resolved);
     applyEditorFontSize(editorFontSize);
     applyDyslexiaFont(dyslexiaFont);
-    set({ theme, resolved, timeFormat, showModifiedOnHover, editorFontSize, dyslexiaFont, ribbonExpanded });
+    set({
+      theme,
+      resolved,
+      timeFormat,
+      showModifiedOnHover,
+      editorFontSize,
+      dyslexiaFont,
+      ribbonExpanded,
+      sidebarHidden,
+    });
   },
   };
 });

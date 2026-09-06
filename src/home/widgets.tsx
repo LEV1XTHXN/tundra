@@ -11,14 +11,14 @@ import { Flame } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-import { config, notes, quickNote, search, tags as tagsService } from "@/services";
-import type { Block, NoteSummary, SearchHit } from "@/services";
+import { config, kanban, notes, quickNote, search, tags as tagsService } from "@/services";
+import type { Block, KanbanBoard, NoteSummary, SearchHit } from "@/services";
 import { MiniMonth } from "@/calendar/MiniMonth";
 import { NoteIcon } from "@/nav/NoteIcon";
 import { useViewState } from "@/store/viewState";
 import { useTheme } from "@/store/theme";
 import { useActivity } from "@/store/activity";
-import { useFolderGroups } from "@/store/folderGroups";
+import { useTagColors } from "@/store/tagColors";
 import { useDateLocale } from "@/i18n/dateLocale";
 import { localizeError } from "@/i18n/errors";
 
@@ -254,14 +254,16 @@ export function CalendarWidget({}: WidgetProps) {
   return <MiniMonth cursor={cursor} onCursorChange={setCursor} onSelectDay={openCalendarOn} />;
 }
 
-/** Vault size at a glance: note/tag/group counts. Groups (sidebar folder
- *  groupings, `store/folderGroups.ts`) are frontend-only UI state, so their
- *  count comes straight from that store rather than a service call. */
+/** Vault size at a glance: notes, tags, and the current usage streak. The third
+ *  slot used to be the folder-group count, which measured a sidebar convenience
+ *  rather than the vault; the streak is the number people actually look for
+ *  here, and the standalone Streak widget stays for anyone who wants it big. */
 export function StorageWidget({ refreshKey }: WidgetProps) {
   const { t } = useTranslation();
   const [noteCount, setNoteCount] = useState<number | null>(null);
   const [tagCount, setTagCount] = useState<number | null>(null);
-  const groupCount = useFolderGroups((s) => s.groups.length);
+  const currentStreak = useActivity((s) => s.currentStreak);
+  const streakLoaded = useActivity((s) => s.loaded);
 
   useEffect(() => {
     let cancelled = false;
@@ -293,8 +295,8 @@ export function StorageWidget({ refreshKey }: WidgetProps) {
         <span className="storage-stat-label">{t("home.tags")}</span>
       </div>
       <div className="storage-stat">
-        <span className="storage-stat-value">{groupCount}</span>
-        <span className="storage-stat-label">{t("home.groups")}</span>
+        <span className="storage-stat-value">{streakLoaded ? currentStreak : "–"}</span>
+        <span className="storage-stat-label">{t("home.dayStreak")}</span>
       </div>
     </div>
   );
@@ -312,6 +314,69 @@ export function StreakWidget({}: WidgetProps) {
       <Flame className="streak-icon h-8 w-8" />
       <span className="streak-count">{loaded ? currentStreak : "–"}</span>
       <span className="streak-label">{t("home.streakLabel", { count: currentStreak })}</span>
+    </div>
+  );
+}
+
+/**
+ * A Kanban board at a glance: each column with its tag colour, its count, and
+ * the first couple of notes in it. Shows the vault's first board — a Home card
+ * is a summary, and "which board" is a choice the Kanban view itself exists to
+ * make.
+ *
+ * One `kanban.boards()` call is enough: a column already carries its ordered
+ * `note_ids`, so the counts need no second query. Titles come from the note
+ * summaries the shell has already loaded.
+ */
+export function BoardWidget({ refreshKey, onOpenNote }: WidgetProps) {
+  const { t } = useTranslation();
+  const [board, setBoard] = useState<KanbanBoard | null>(null);
+  const [titles, setTitles] = useState<Map<string, NoteSummary>>(new Map());
+  const setView = useViewState((s) => s.setView);
+  const tagColors = useTagColors((s) => s.colors);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([kanban.boards(), notes.list()])
+      .then(([boards, list]) => {
+        if (cancelled) return;
+        setBoard(boards[0] ?? null);
+        setTitles(new Map(list.map((n) => [n.id, n])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  if (!board || board.columns.length === 0) {
+    return <p className="widget-empty muted">{t("home.widgets.board.empty")}</p>;
+  }
+
+  return (
+    <div className="board-widget">
+      <button className="board-widget-name" onClick={() => setView("kanban")}>
+        {board.name}
+      </button>
+      <div className="board-widget-columns">
+        {board.columns.map((col) => (
+          <div key={col.id} className="board-widget-column">
+            <div className="board-widget-column-head">
+              <span
+                className="board-widget-dot"
+                style={col.tag && tagColors[col.tag] ? { background: tagColors[col.tag] } : undefined}
+              />
+              <span className="board-widget-column-name">{col.name}</span>
+              <span className="board-widget-count">{col.note_ids.length}</span>
+            </div>
+            {col.note_ids.slice(0, 2).map((id) => (
+              <button key={id} className="board-widget-card" onClick={() => onOpenNote(id)}>
+                {titles.get(id)?.title || t("common.untitled")}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

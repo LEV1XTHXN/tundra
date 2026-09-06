@@ -1,21 +1,20 @@
 /**
- * The settings surface (CLAUDE.md §6.2 `settings`): appearance, keybindings,
- * dictionaries, backup, import, maintenance. Preferences are owned by their
- * stores (persisted via Rust); React only renders and captures input.
+ * The settings surface (CLAUDE.md §6.2 `settings`) — a top-level view like any
+ * other, not a dialog. Preferences are owned by their stores (persisted via
+ * Rust); React only renders and captures input.
+ *
+ * The section list is a rail in the shell sidebar's slot (`SettingsRail.tsx`),
+ * the same swap the Calendar view does with its mini month; which section is
+ * open lives in `useViewState` so the two halves agree. This file is the pane:
+ * one section component per entry in `SETTINGS_SECTIONS`.
  *
  * Tags and Templates are deliberately NOT here — each is a top-level view of its
  * own, reached from the shell's icon ribbon.
  */
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { FolderOpen, RotateCcw, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ViewFrame } from "@/components/ViewFrame";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,70 +23,78 @@ import { eventToBinding, formatBinding } from "@/keybindings/binding";
 import { findConflicts, useKeybindings } from "@/store/keybindings";
 import { EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_MIN, useTheme, type ThemePref, type TimeFormatPref } from "@/store/theme";
 import { useLocale } from "@/store/locale";
+import { useViewState } from "@/store/viewState";
+import { SETTINGS_SECTIONS, type SettingsSectionId } from "./sections";
 import { SUPPORTED_LANGUAGES, NEEDS_REVIEW } from "@/i18n";
 import { localizeError } from "@/i18n/errors";
-import { appSettings, attachments, backup, notes, pickDirectory, spellcheck } from "@/services";
-import type { CleanupReport, SpellLanguages } from "@/services";
+import { appSettings, attachments, backup, notes, pickDirectory, spellcheck, vault } from "@/services";
+import type { CleanupReport, SpellLanguages, VaultInfo } from "@/services";
 
-interface SettingsDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+interface SettingsViewProps {
+  vaultInfo: VaultInfo;
   /** Called after a vault cleanup with the ids that were deleted, so the app can
    *  refresh the note tree and close the open note if it was one of them. */
   onCleaned?: (deletedIds: string[]) => void;
-  /** Open the import flow for the given source app (closes this dialog first
-   *  — it needs the full window). */
+  /** Open the import flow for the given source app — a dialog, because it needs
+   *  the full window and a wizard's worth of steps. */
   onOpenImport?: (source: "obsidian" | "notion" | "anytype") => void;
 }
 
-const SECTION_IDS = ["appearance", "keybindings", "dictionaries", "backup", "import", "maintenance"] as const;
-type SectionId = (typeof SECTION_IDS)[number];
-
-export function SettingsDialog({
-  open,
-  onOpenChange,
+/** The pane for one section. Keeps the switch in one place, next to the section
+ *  list it has to stay in step with. */
+function SectionPane({
+  section,
+  vaultInfo,
   onCleaned,
   onOpenImport,
-}: SettingsDialogProps) {
+}: SettingsViewProps & { section: SettingsSectionId }) {
+  switch (section) {
+    case "appearance":
+      return <AppearanceSection />;
+    case "editor":
+      return <EditorSection />;
+    case "language":
+      return <LanguageSection />;
+    case "keybindings":
+      return <KeybindingsSection />;
+    case "dictionaries":
+      return <DictionariesSection />;
+    case "vault":
+      return <VaultSection vaultInfo={vaultInfo} />;
+    case "import":
+      return <ImportSection onOpenImport={onOpenImport} />;
+    case "backup":
+      return <BackupSection />;
+    case "maintenance":
+      return <MaintenanceSection onCleaned={onCleaned} />;
+  }
+}
+
+export function SettingsView({ vaultInfo, onCleaned, onOpenImport }: SettingsViewProps) {
   const { t } = useTranslation();
-  const [section, setSection] = useState<SectionId>("keybindings");
+  const section = useViewState((s) => s.settingsSection);
+  const meta = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="settings-dialog sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{t("settings.title")}</DialogTitle>
-          <DialogDescription>{t("settings.description")}</DialogDescription>
-        </DialogHeader>
-        <div className="settings-body">
-          <nav className="settings-rail" aria-label="Settings sections">
-            {SECTION_IDS.map((id) => (
-              <button
-                key={id}
-                className={`settings-rail-item${section === id ? " active" : ""}`}
-                onClick={() => setSection(id)}
-              >
-                {t(`settings.sections.${id}`)}
-              </button>
-            ))}
-          </nav>
-          <div className="settings-pane">
-            {section === "appearance" && <AppearanceSection />}
-            {section === "keybindings" && <KeybindingsSection />}
-            {section === "dictionaries" && <DictionariesSection />}
-            {section === "backup" && <BackupSection />}
-            {section === "import" && <ImportSection onOpenImport={onOpenImport} />}
-            {section === "maintenance" && <MaintenanceSection onCleaned={onCleaned} />}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <ViewFrame title={t("settings.title")}>
+      <div className="settings-pane">
+        <h2 className="settings-pane-title">{t(`settings.sections.${meta.id}`)}</h2>
+        <p className="settings-pane-desc muted">{t(`settings.sectionDescriptions.${meta.id}`)}</p>
+        <SectionPane
+          section={meta.id}
+          vaultInfo={vaultInfo}
+          onCleaned={onCleaned}
+          onOpenImport={onOpenImport}
+        />
+      </div>
+    </ViewFrame>
   );
 }
 
-/** Appearance section (Phase 3 step 6): theme preference (system/light/dark)
- *  and clock format (24h/12h), applied app-wide via the theme store and
- *  persisted through Rust app-settings. */
+/** Appearance: the theme, the clock, and the two small comfort toggles. What
+ *  the app LOOKS like — the editor's own type settings are their own section,
+ *  and the interface language a third, because those are three different
+ *  questions that used to share one very long page. */
 function AppearanceSection() {
   const { t } = useTranslation();
   const theme = useTheme((s) => s.theme);
@@ -96,12 +103,6 @@ function AppearanceSection() {
   const setTimeFormat = useTheme((s) => s.setTimeFormat);
   const showModifiedOnHover = useTheme((s) => s.showModifiedOnHover);
   const setShowModifiedOnHover = useTheme((s) => s.setShowModifiedOnHover);
-  const editorFontSize = useTheme((s) => s.editorFontSize);
-  const setEditorFontSize = useTheme((s) => s.setEditorFontSize);
-  const dyslexiaFont = useTheme((s) => s.dyslexiaFont);
-  const setDyslexiaFont = useTheme((s) => s.setDyslexiaFont);
-  const language = useLocale((s) => s.language);
-  const setLanguage = useLocale((s) => s.setLanguage);
   const options: { id: ThemePref; label: string; desc: string }[] = [
     { id: "system", label: t("settings.appearance.themeSystem"), desc: t("settings.appearance.themeSystemDesc") },
     { id: "light", label: t("settings.appearance.themeLight"), desc: t("settings.appearance.themeLightDesc") },
@@ -124,31 +125,21 @@ function AppearanceSection() {
             className={`settings-theme-option${theme === o.id ? " active" : ""}`}
             onClick={() => setTheme(o.id)}
           >
+            {/* A miniature of the app: a chrome rail beside a page of text. It
+                paints the target theme's own colours literally, because the
+                point is to show a theme you are NOT currently in. */}
+            <span className={`settings-theme-preview settings-theme-preview-${o.id}`} aria-hidden="true">
+              <span className="settings-theme-preview-rail" />
+              <span className="settings-theme-preview-page">
+                <span className="settings-theme-preview-line" />
+                <span className="settings-theme-preview-line short" />
+              </span>
+            </span>
             <span className="settings-theme-option-label">{o.label}</span>
             <span className="muted settings-theme-option-desc">{o.desc}</span>
           </button>
         ))}
       </div>
-
-      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.language")}</h3>
-      <p className="muted settings-section-desc">{t("settings.appearance.languageDesc")}</p>
-      <label className="settings-field">
-        <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
-          <SelectTrigger aria-label={t("settings.appearance.language")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SUPPORTED_LANGUAGES.map((l) => (
-              <SelectItem key={l.code} value={l.code}>
-                {l.nativeLabel}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
-      {NEEDS_REVIEW[language] && (
-        <p className="muted settings-section-desc">{t("settings.appearance.languageReviewNotice")}</p>
-      )}
 
       <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.clockFormat")}</h3>
       <p className="muted settings-section-desc">{t("settings.appearance.clockFormatDesc")}</p>
@@ -167,7 +158,57 @@ function AppearanceSection() {
         ))}
       </div>
 
-      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.fontSize")}</h3>
+      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.noteHover")}</h3>
+      <label className="settings-check">
+        <Switch checked={showModifiedOnHover} onCheckedChange={setShowModifiedOnHover} />
+        {t("settings.appearance.showModifiedOnHover")}
+      </label>
+
+      <HeadlineShortcuts />
+    </div>
+  );
+}
+
+/** The three shortcuts worth knowing on day one, read-only, with a way through
+ *  to the section that rebinds them. Fixed rather than "most used": tracking
+ *  usage would mean recording what someone presses, which is a lot of machinery
+ *  and a little surveillance for a list of three. */
+const HEADLINE_COMMANDS: CommandId[] = ["search.global", "note.new", "inspector.toggle"];
+
+function HeadlineShortcuts() {
+  const { t } = useTranslation();
+  const bindings = useKeybindings((s) => s.bindings);
+  const setSection = useViewState((s) => s.setSettingsSection);
+
+  return (
+    <div className="settings-headline-shortcuts">
+      <div className="settings-headline-head">
+        <h3 className="settings-headline-title">{t("settings.appearance.headlineShortcuts")}</h3>
+        <button className="settings-headline-link" onClick={() => setSection("keybindings")}>
+          {t("settings.appearance.openShortcuts")} →
+        </button>
+      </div>
+      {HEADLINE_COMMANDS.map((id) => (
+        <div key={id} className="settings-row">
+          <span className="settings-row-label">{t(`keybindings.commands.${id.replace(".", "_")}.label`)}</span>
+          <kbd className="settings-kbd">{formatBinding(bindings[id])}</kbd>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Editor: how note content is set. Scoped to the document, not the chrome —
+ *  both settings here change what you write in, never the app around it. */
+function EditorSection() {
+  const { t } = useTranslation();
+  const editorFontSize = useTheme((s) => s.editorFontSize);
+  const setEditorFontSize = useTheme((s) => s.setEditorFontSize);
+  const dyslexiaFont = useTheme((s) => s.dyslexiaFont);
+  const setDyslexiaFont = useTheme((s) => s.setDyslexiaFont);
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">{t("settings.appearance.fontSize")}</h3>
       <p className="muted settings-section-desc">{t("settings.appearance.fontSizeDesc")}</p>
       <label className="settings-slider">
         <span className="settings-slider-head">
@@ -189,12 +230,65 @@ function AppearanceSection() {
         <Switch checked={dyslexiaFont} onCheckedChange={setDyslexiaFont} />
         {t("settings.appearance.dyslexiaFont")}
       </label>
+    </div>
+  );
+}
 
-      <h3 className="settings-section-title settings-section-title-spaced">{t("settings.appearance.noteHover")}</h3>
-      <label className="settings-check">
-        <Switch checked={showModifiedOnHover} onCheckedChange={setShowModifiedOnHover} />
-        {t("settings.appearance.showModifiedOnHover")}
+/** Interface language. One control, but it changes every string in the app, so
+ *  it earns a row of its own rather than being the third heading down a page. */
+function LanguageSection() {
+  const { t } = useTranslation();
+  const language = useLocale((s) => s.language);
+  const setLanguage = useLocale((s) => s.setLanguage);
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">{t("settings.appearance.language")}</h3>
+      <p className="muted settings-section-desc">{t("settings.appearance.languageDesc")}</p>
+      <label className="settings-field">
+        <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
+          <SelectTrigger aria-label={t("settings.appearance.language")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((l) => (
+              <SelectItem key={l.code} value={l.code}>
+                {l.nativeLabel}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
+      {NEEDS_REVIEW[language] && (
+        <p className="muted settings-section-desc">{t("settings.appearance.languageReviewNotice")}</p>
+      )}
+    </div>
+  );
+}
+
+/** Where the open vault is on disk. Read-only: switching, adding and deleting
+ *  vaults all live on the sidebar's vault-name menu (`VaultSwitcher`), which is
+ *  where you already are when you're thinking about vaults. This tells you
+ *  which one you're in and gets you to it in a file manager. */
+function VaultSection({ vaultInfo }: { vaultInfo: VaultInfo }) {
+  const { t } = useTranslation();
+  return (
+    <div className="settings-section">
+      <h3 className="settings-section-title">{t("settings.vault.title")}</h3>
+      <p className="muted settings-section-desc">{t("settings.vault.description")}</p>
+      <div className="settings-row">
+        <div className="settings-row-labels">
+          <span className="settings-row-label">{vaultInfo.name}</span>
+          <span className="settings-row-sublabel muted">{vaultInfo.path}</span>
+        </div>
+        <button
+          className="settings-row-action"
+          onClick={() => void vault.reveal(vaultInfo.path)}
+          title={t("settings.vault.reveal")}
+        >
+          <FolderOpen className="h-4 w-4" />
+          {t("settings.vault.reveal")}
+        </button>
+      </div>
     </div>
   );
 }

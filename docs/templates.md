@@ -48,9 +48,8 @@ Two paths, both landing in the same on-disk format:
    note header (`BookmarkPlus` icon). Prompts for a name
    (`src/templates/SaveAsTemplateDialog.tsx`), then `templates.create(name)` +
    `templates.save(...)` with the note's live blocks and icon.
-2. **Author from scratch / manage** — either the **Templates section in the
-   sidebar** (`src/nav/SidebarSections.tsx`) or Settings ▸ **Templates**
-   (`TemplatesSection` in `src/settings/SettingsDialog.tsx`). "+"/"New template"
+2. **Author from scratch / manage** — the **Templates view**, a ribbon
+   destination of its own (`src/templates/TemplatesView.tsx`). "+"/"New template"
    creates a blank one and opens it for editing; rows open for edit, with delete.
 
 The template list is held in a small store, `src/store/templates.ts`
@@ -73,8 +72,8 @@ drag-and-drop are note/folder-specific):
   delete (routed through App's shared `AlertDialog`, `PendingDelete` kind
   `"template"`).
 
-Editing launched from the sidebar returns to the prior view on "Done"; launched
-from Settings it reopens the Settings dialog (`templateReturn` ref in `App.tsx`).
+Editing returns to the view it was launched from on "Done" (`templateReturn` ref
+in `App.tsx`).
 
 ### Editing a template reuses `NoteEditor`
 

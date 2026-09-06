@@ -51,10 +51,10 @@
   --pal-text-primary: #171717;
   --pal-text-secondary: #5e6662;
   --pal-text-tertiary: #8d9591;
-  --pal-accent: #3b5249;
-  --pal-accent-hover: #4a675b;
-  --pal-accent-pressed: #30423b;
-  --pal-accent-subtle: #e0e8e4;
+  --pal-accent: #186b46;
+  --pal-accent-hover: #1e8356;
+  --pal-accent-pressed: #135437;
+  --pal-accent-subtle: #d8ecdc;
   --pal-border: #dce2de;
   --pal-divider: #e5e9e6;
 
@@ -69,7 +69,7 @@
      calls it `accent`. shadcn's `--accent` is the hover/selected BACKGROUND;
      our palette calls that `accentSubtle`. The names cross over — see docs. */
   --primary: var(--pal-accent);
-  --primary-foreground: #ffffff; /* 8.44:1 on the accent */
+  --primary-foreground: #ffffff; /* 6.50:1 on the accent */
   --secondary: var(--pal-background-alt);
   --secondary-foreground: var(--pal-text-primary);
   --muted: var(--pal-background-alt);
@@ -97,7 +97,7 @@
 
   /* --- Tokens with no shadcn equivalent -------------------------------- */
   /* The accent used as TEXT / icon / border / focus ring rather than as a
-     fill. Light mode can use the accent itself (8.44:1 on the background); in
+     fill. Light mode can use the accent itself (6.50:1 on the background); in
      dark it must not — see `.dark` below. Rule of thumb: filling a shape →
      `--primary`; colouring a glyph or a 1px line → `--accent-text`. */
   --accent-text: var(--pal-accent);
@@ -124,8 +124,9 @@
   --graph-pill: var(--pal-surface-elevated);
   --graph-pill-fg: var(--pal-text-primary);
   /* The home mini-graph's single node colour (the full view colours nodes by
-     TAG_PALETTE instead). Dark can't chain to --accent-text — that's a
-     color-mix — so it repeats that mix's resolved value. */
+     TAG_PALETTE instead). Light chains to the accent itself; dark points at
+     --accent-text, which is a literal there precisely so this chain still
+     ends in a hex. */
   --graph-node: var(--pal-accent);
 }
 
@@ -140,26 +141,25 @@
   --pal-text-primary: #f5f5f5;
   --pal-text-secondary: #b7bbb8;
   --pal-text-tertiary: #808683;
-  --pal-accent: #3b5249;
-  --pal-accent-hover: #4a675b;
-  --pal-accent-pressed: #30423b;
-  --pal-accent-subtle: #50685f;
+  --pal-accent: #186b46;
+  --pal-accent-hover: #1e8356;
+  --pal-accent-pressed: #135437;
+  --pal-accent-subtle: #215140;
   --pal-border: #383838;
   --pal-divider: #2d2d2d;
 
   /* --- The only mappings that differ by theme -------------------------- */
-  --primary-foreground: var(--pal-text-primary); /* 7.74:1 on the accent */
-  /* The accent is identical in both themes, which works for a fill (white on
-     it clears 7.7:1) but not for text: #3b5249 on #171717 is 2.12:1. So dark
-     mode lightens it toward the primary text colour instead of introducing a
-     second hand-picked green. 50% resolves to ≈#93a09a — 6.60:1 on the
-     background, 4.86:1 on the most elevated surface. Raising the percentage
-     makes it greener and lowers contrast; 55% is the floor that still clears
-     AA everywhere. */
-  --accent-text: color-mix(in oklab, var(--pal-accent) 50%, var(--pal-text-primary));
+  --primary-foreground: var(--pal-text-primary); /* 5.96:1 on the accent */
+  /* The accent is identical in both themes, which works for a fill (#f5f5f5 on
+     it clears 5.96:1) but not for text: #186b46 on #171717 is 2.76:1. So dark
+     mode gets its own, lighter green rather than reusing the fill — #5cb884,
+     7.38:1 on the background and 5.43:1 on the most elevated surface. Written
+     as a literal because `--graph-node` chains to this value and sigma cannot
+     parse a `color-mix()` read back off a custom property (see below). */
+  --accent-text: #5cb884;
   --destructive: oklch(0.704 0.191 22.216);
   --graph-edge: #525955; /* 2.49:1 on the dark canvas */
-  --graph-node: #93a09a; /* == --accent-text resolved; must stay plain hex */
+  --graph-node: var(--accent-text);
 }
 
 @theme inline {
@@ -333,16 +333,185 @@ body,
   border-color: var(--primary-pressed);
 }
 
-/* App shell: icon ribbon | note-tree panel | main pane. The ribbon's width is a
-   custom property so sliding it open (icons -> icons + labels) is one variable. */
+/* App shell: one top bar across the whole window, and under it
+   icon ribbon | note-tree panel | main pane. The ribbon's width is a custom
+   property so sliding it open (icons -> icons + labels) is one variable.
+
+   `.tree-hidden` drops the tree column entirely rather than collapsing it to
+   0px — the aside carries a right-hand border, which at zero width would still
+   paint as a stray hairline down the middle of the view. App.tsx stops
+   rendering the aside in step with this class. */
 .app {
   --ribbon-width: 2.75rem;
+  --topbar-height: 44px;
+  /* Three 28px controls and the 2px gaps between them, plus a little air after
+     them — the floor `.topbar-lead` can never go below. */
+  --topbar-lead-min: 5.9rem;
   display: grid;
   grid-template-columns: var(--ribbon-width) 260px 1fr;
+  grid-template-rows: var(--topbar-height) 1fr;
   height: 100vh;
 }
 .app.ribbon-open {
   --ribbon-width: 11rem;
+}
+.app.tree-hidden {
+  grid-template-columns: var(--ribbon-width) 1fr;
+}
+
+/* --------------------------------------------------------------------------
+   Top bar — the shell's single header row (app/TopBar.tsx). Spans every column;
+   the lead segment is as wide as the ribbon beneath it, so the breadcrumb
+   starts on the same line as the sidebar's content.
+   -------------------------------------------------------------------------- */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.9rem;
+  min-width: 0;
+  background: var(--background);
+  border-bottom: 1px solid var(--divider);
+}
+/* Home's custom background bleeds behind the whole shell; the bar joins the
+   ribbon and sidebar in wearing the frosted scrim rather than an opaque fill. */
+.app.home-bg .topbar {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+.topbar-lead {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Matches the ribbon's width, so the slot after it starts where the sidebar
+     does — but never below what its three 28px buttons need. The ribbon
+     collapses to 2.75rem, which would otherwise squeeze the segment to about
+     30px and spill the back/forward buttons onto the breadcrumb. */
+  width: max(calc(var(--ribbon-width) - 0.9rem), var(--topbar-lead-min));
+  flex: none;
+  margin-right: 0.75rem;
+  transition: width 0.15s ease;
+}
+.topbar-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+.topbar-titles {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.topbar-crumb {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: none;
+  font-size: 0.8125rem;
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+}
+.topbar-crumb-label {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The bar is one row, so a view's second line becomes a dimmed suffix. */
+.topbar-subtitle {
+  font-size: 0.8125rem;
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+  flex: none;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex: none;
+}
+
+/* Every control in the bar is 28px tall and quiet until it's toggled on, at
+   which point it takes the accent's subtle background — the one piece of colour
+   the bar carries.
+
+   Where it sits decides whether it's outlined. The lead segment's chrome (tree
+   toggle, back/forward) is borderless, so the segment reads as part of the bar
+   rather than as three buttons; a view's own actions are outlined, so they read
+   as controls belonging to the thing on screen. That's a property of the slot,
+   not of the button, so `.topbar-actions` grants the outline rather than every
+   call site remembering to ask for it. */
+.topbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 0.4375rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.topbar-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.topbar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.topbar-button.active {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.topbar-actions .topbar-button,
+.topbar-trail {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--foreground);
+}
+.topbar-actions .topbar-button.active,
+.topbar-trail.active {
+  border-color: var(--accent-text);
+}
+/* Room for a label beside the icon (Home's "Customize", the calendar's
+   "Today"). Icon-only controls keep the tighter default. */
+.topbar-button.outlined {
+  padding: 0 0.6875rem;
+}
+/* Shell chrome that has to sit after the view's own actions — outlined with
+   them, since that's where it reads as belonging. */
+.topbar-trail {
+  flex: none;
+}
+/* The fallback `TopBar` renders when there's no bar above it to portal into —
+   a view mounted on its own, which is how the tests do it. Never seen in the
+   app; styled only so it isn't a pile of unspaced text if it ever is. */
+.topbar-detached {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem var(--view-padding-x);
+  border-bottom: 1px solid var(--divider);
 }
 
 .sidebar {
@@ -354,6 +523,67 @@ body,
   gap: 0.5rem;
   min-height: 0;
   overflow: hidden;
+}
+
+/* A button wearing an input's clothes. There is exactly one search surface (the
+   ⌘K palette) and this is a third door into it, so it deliberately has no text
+   box of its own that could fall out of sync with the palette's. */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--subtle-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-search:hover {
+  border-color: var(--accent-text);
+}
+.sidebar-search-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-search-kbd {
+  flex: none;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  color: var(--subtle-foreground);
+}
+
+/* Pinned under the tree. Creating a note is otherwise a right-click away, which
+   is fine once you know it and invisible until then. */
+.sidebar-new-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-new-note:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .vault-name {
@@ -688,60 +918,14 @@ body,
 /* Shared shell every top-level view renders into (ViewFrame.tsx) — a
    consistent title+actions header and a body with uniform padding/scroll, so
    Home/Graph/Calendar/Kanban/Quick notes all feel like one frame instead of
-   each inventing its own layout. */
+   each inventing its own layout. The title row itself lives in the shell's top
+   bar (`.topbar`); what's left here is the body. */
 .view-frame {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.view-frame-header {
-  flex-shrink: 0;
-  padding: 1.75rem var(--view-padding-x) 1.1rem;
-  border-bottom: 1px solid var(--divider);
-}
-/* Home's own header, when a background is set (`headerClassName="home-glass"`
-   in Home.tsx) — same frosted-glass scrim as the widgets/ribbon/sidebar.
-   Scoped to this one class rather than `.view-frame-header` itself, so it
-   never leaks into Graph/Calendar/Kanban/etc.'s headers. */
-.view-frame-header.home-glass {
-  background: color-mix(in oklch, var(--card) 88%, transparent);
-  backdrop-filter: blur(6px);
-}
-.view-frame-header-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.view-frame-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-.view-frame-title {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-.view-frame-subtitle {
-  margin: 0;
-  font-size: 0.85rem;
-}
-.view-frame-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  /* Keep right-aligned now that the header row leads with the nav-history
-     buttons (so it no longer relies on `justify-content: space-between`). */
-  margin-left: auto;
-}
-.view-frame-toolbar {
-  margin-top: 1rem;
 }
 .view-frame-body {
   flex: 1;
@@ -760,36 +944,6 @@ body,
    is `react-grid-layout` (`.react-grid-layout`/`.react-grid-item`, styled by
    its own imported stylesheet) — `.home-widgets`/`.widget` below are our
    classes layered on top of it (see Home.tsx). */
-.home-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-.home-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--foreground);
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.home-toolbar-btn:hover:not(:disabled) {
-  border-color: var(--accent-text);
-}
-.home-toolbar-btn.active {
-  border-color: var(--accent-text);
-  background: var(--accent);
-}
-.home-toolbar-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* The "Add a widget" popover (`WidgetAddMenu.tsx`) — mirrors
    `.vault-switcher-*`'s list-item pattern (icon + title/description row,
    hover highlight) rather than inventing a new one. */
@@ -959,16 +1113,61 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 0.5rem 0.6rem 0.9rem;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
   border-bottom: 1px solid var(--divider);
 }
 .widget-title {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The per-card `···` (`home/WidgetMenu.tsx`). Always present, not just while
+   customizing — it's where a card's own actions live. */
+.widget-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--subtle-foreground);
+  cursor: pointer;
+}
+.widget-menu-trigger:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.widget-menu-popover {
+  width: auto;
+  min-width: 10rem;
+  padding: 0.25rem;
+}
+.widget-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.widget-menu-item:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .widget-controls {
   display: flex;
@@ -997,7 +1196,7 @@ body,
 .widget-body {
   flex: 1;
   min-height: 0;
-  padding: 0.6rem;
+  padding: 0.75rem;
   overflow: auto;
   /* Flex column so a widget can fill the body's height via flex-grow — more
      reliable than percentage height on WebKitGTK (Tauri's Linux engine). */
@@ -1313,25 +1512,118 @@ body,
   display: flex;
   flex: 1;
   align-items: center;
-  justify-content: space-around;
+  justify-content: space-between;
   gap: 0.5rem;
-  text-align: center;
 }
 .storage-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.2rem;
+  min-width: 0;
 }
 .storage-stat-value {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
   line-height: 1;
 }
 .storage-stat-label {
-  font-size: 0.75rem;
+  font-size: 0.69rem;
   color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* Home's Board widget — one Kanban board's columns, side by side. Each column
+   is a mini version of the real one: tag dot, name, count, then its first
+   couple of notes. */
+.board-widget {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.board-widget-name {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.board-widget-name:hover {
+  color: var(--accent-text);
+}
+.board-widget-columns {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+.board-widget-column {
+  display: flex;
+  flex: 1;
+  min-width: 6.5rem;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.4rem;
+  border-radius: var(--radius-md);
+  background: var(--background);
+  /* A short card shows what fits and clips the rest — the board view is one
+     click away for the whole column. */
+  overflow: hidden;
+}
+.board-widget-column-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.board-widget-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--subtle-foreground);
+  flex: none;
+}
+.board-widget-column-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.board-widget-count {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--subtle-foreground);
+}
+.board-widget-card {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.board-widget-card:hover {
+  border-color: var(--accent-text);
 }
 
 /* Home dashboard's Streak widget — consecutive days logged in and editing. */
@@ -1561,26 +1853,9 @@ body,
   white-space: nowrap;
 }
 
-.editor-icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.editor-icon-button:hover {
-  background: var(--accent);
-}
-
-/* The note's own icon sits next to the H1-sized title, so it needs to be far
-   larger than the toolbar action buttons — a fixed 36px box (`.editor-icon-button`)
-   would clamp it. This one wraps its content and keeps a hover affordance. */
+/* The note's own icon sits next to the H1-sized title, so it wraps its content
+   rather than sitting in a fixed box the way the note's action buttons do (those
+   are `.topbar-button`s in the shell's top bar now). Keeps a hover affordance. */
 .editor-title-icon-button {
   display: flex;
   align-items: center;
@@ -1596,11 +1871,6 @@ body,
 
 .editor-title-icon-button:hover {
   background: var(--accent);
-}
-
-/* Pinned state of the editor's pin button (Phase 2 step 6). */
-.editor-icon-button.pinned {
-  color: var(--accent-text);
 }
 
 .icon-picker-content {
@@ -2098,9 +2368,12 @@ body,
 }
 
 /* --------------------------------------------------------------------------
-   Note metadata inspector — a collapsible right-hand drawer. Absolutely
+   Note metadata inspector — the notes view's right-hand column. Absolutely
    positioned inside `.main-pane` and slid off the right edge when closed, so it
-   never consumes layout space until opened.
+   never consumes layout space until opened; while open, `.editor-pane`'s
+   padding-right reserves exactly its width, so it reads as a docked column
+   rather than as something floating over the document. Hence no drop shadow —
+   nothing here is above anything else.
    -------------------------------------------------------------------------- */
 .inspector {
   position: absolute;
@@ -2119,7 +2392,6 @@ body,
 }
 .inspector.open {
   transform: translateX(0);
-  box-shadow: -6px 0 20px rgb(0 0 0 / 0.06);
 }
 
 .inspector-header {
@@ -2134,8 +2406,7 @@ body,
   font-size: 0.85rem;
   font-weight: 600;
 }
-.inspector-close,
-.inspector-toggle {
+.inspector-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2147,61 +2418,18 @@ body,
   color: var(--muted-foreground);
   cursor: pointer;
 }
-.inspector-close:hover,
-.inspector-toggle:hover {
+.inspector-close:hover {
   background: var(--accent);
   color: var(--foreground);
 }
 
-/* Floating open-button, pinned to the pane's top-right when the drawer is shut. */
-.inspector-toggle {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  z-index: 19;
-  background: var(--card);
-  border: 1px solid var(--border);
-}
-
-/* Browser-style back/forward history buttons, top-left of every view. Inline by
-   default (sits at the start of a ViewFrame header row); `.nav-history-floating`
-   pins it to the pane's top-left corner in the editor (mirrors .inspector-toggle). */
+/* Browser-style back/forward, in the top bar's lead segment. The buttons
+   themselves are `.topbar-button`s; this only groups them. */
 .nav-history {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-}
-.nav-history-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.nav-history-button:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.nav-history-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.nav-history-floating {
-  position: absolute;
-  top: 0.6rem;
-  left: 0.6rem;
-  z-index: 19;
-  padding: 2px;
-  border-radius: var(--radius-md);
-  background: var(--card);
-  border: 1px solid var(--border);
 }
 
 .inspector-body {
@@ -2374,20 +2602,54 @@ body,
   color: var(--primary-foreground);
 }
 
-/* --- Settings dialog ----------------------------------------------------- */
-.settings-body {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 1rem;
-  min-height: 20rem;
-}
-
+/* --- Settings view ------------------------------------------------------- */
+/* --- Settings rail (settings/SettingsRail.tsx) ---------------------------
+   Fills the shell sidebar's slot while Settings is open, the same swap the
+   Calendar makes for its mini month. Sections are grouped; the search filters
+   section names only. */
 .settings-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  border-right: 1px solid var(--border);
-  padding-right: 0.5rem;
+  gap: 0.9rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-rail-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--subtle-foreground);
+}
+.settings-rail-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.settings-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-rail-group-title {
+  margin: 0 0 0.2rem 0.5rem;
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--subtle-foreground);
 }
 
 .settings-rail-item {
@@ -2395,10 +2657,10 @@ body,
   background: transparent;
   border: none;
   color: var(--muted-foreground);
-  padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .settings-rail-item:hover {
@@ -2407,13 +2669,117 @@ body,
 }
 
 .settings-rail-item.active {
-  background: var(--muted);
-  color: var(--foreground);
+  background: var(--accent);
+  color: var(--accent-foreground);
   font-weight: 600;
 }
 
+.settings-rail-empty {
+  font-size: 0.8rem;
+  padding: 0 0.5rem;
+}
+
+/* --- Settings pane -------------------------------------------------------
+   The view's body: one section at a time, headed by the section's own name and
+   a line saying what it covers. Capped in width — a settings row is a label on
+   the left and a control on the right, and past ~46rem the two lose each
+   other. */
 .settings-pane {
   min-width: 0;
+  max-width: 46rem;
+}
+.settings-pane-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.settings-pane-desc {
+  margin: 0.25rem 0 1.5rem;
+  font-size: 0.9rem;
+}
+
+/* A label/sublabel pair on the left, one control on the right. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--divider);
+}
+.settings-row-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.settings-row-label {
+  font-size: 0.95rem;
+}
+.settings-row-sublabel {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.settings-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.settings-row-action:hover {
+  border-color: var(--accent-text);
+}
+
+/* Three shortcuts worth knowing, at the foot of Appearance, with a way through
+   to the section that rebinds them. */
+.settings-headline-shortcuts {
+  margin-top: 2rem;
+}
+.settings-headline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+.settings-headline-title {
+  margin: 0;
+  font-size: 0.69rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+.settings-headline-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.settings-headline-link:hover {
+  text-decoration: underline;
+}
+.settings-kbd {
+  flex: none;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
 }
 
 .keybindings {
@@ -2475,37 +2841,19 @@ body,
 }
 
 /* --- Graph info & settings panel ----------------------------------------- */
-/* Sits in ViewFrame's header actions now (was a floating corner button). */
-.graph-panel-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.graph-panel-toggle:hover {
-  color: var(--foreground);
-  border-color: var(--accent-text);
-}
-
+/* Opened from the top bar (`.topbar-button`, wired in GraphView). */
 .graph-panel {
   position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
+  top: 0;
+  right: 0;
+  bottom: 0;
   z-index: 10;
-  width: 240px;
+  width: 250px;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.1);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .graph-panel-header {
@@ -2592,12 +2940,86 @@ body,
   accent-color: var(--primary);
   cursor: pointer;
 }
-.graph-setting input[type="checkbox"] {
-  accent-color: var(--primary);
-  cursor: pointer;
-}
 .graph-setting-select {
   min-width: 7.5rem;
+}
+
+/* --- Graph canvas overlays ------------------------------------------------
+   Two strips pinned to the canvas's own corners (not the panel's), so they stay
+   put whether the panel is open or shut: what the colours mean, bottom-left,
+   and the camera controls, bottom-right. */
+.graph-legend {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: calc(100% - 6rem);
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.78rem;
+  overflow-x: auto;
+}
+.graph-legend-title {
+  font-weight: 600;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.graph-legend-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex: none;
+}
+.graph-legend-more {
+  color: var(--subtle-foreground);
+  white-space: nowrap;
+}
+
+.graph-zoom {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
+}
+/* The panel docks over the canvas's right edge, so the controls step aside
+   rather than sitting underneath it. */
+.graph-view:has(.graph-panel) .graph-zoom {
+  right: calc(250px + 0.75rem);
+}
+.graph-zoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.graph-zoom button + button {
+  border-top: 1px solid var(--divider);
+}
+.graph-zoom button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 /* --- Calendar view (Phase 3 step 2) ---------------------------------- */
@@ -2612,42 +3034,32 @@ body,
   display: flex;
   flex-direction: column;
 }
-/* Header/title now come from ViewFrame; .calendar-controls sits in its actions. */
-.calendar-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
+/* Week | Month, a segmented control in the shell's top bar. One outline around
+   the pair, the active half filled — the rest of the calendar's bar controls
+   are plain `.topbar-button`s. */
 .calendar-modes {
   display: inline-flex;
+  height: 28px;
+  margin-right: 0.25rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: 7px;
   overflow: hidden;
-  margin-right: 0.3rem;
 }
 .calendar-modes button {
-  padding: 0.3rem 0.7rem;
-  font-size: 0.85rem;
+  padding: 0 0.6875rem;
+  font-size: 0.8rem;
   background: transparent;
   border: none;
   cursor: pointer;
   color: var(--muted-foreground);
 }
+.calendar-modes button:hover {
+  color: var(--foreground);
+}
 .calendar-modes button.active {
   background: var(--accent);
   color: var(--accent-foreground);
-}
-.calendar-nav {
-  min-width: 2rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  color: var(--foreground);
-}
-.calendar-nav:hover {
-  background: var(--accent);
+  font-weight: 600;
 }
 /* Month mode (CalendarView.tsx's MonthGrid): one row per week, with the weekday
    names heading the FIRST row's cells rather than sitting in a strip of their
@@ -2697,14 +3109,19 @@ body,
   /* Transparent rather than `none`, so the 1px stays and nothing shifts. */
   border-right-color: transparent;
 }
-.view-frame:has(.calendar) .view-frame-header {
+.app:has(.calendar) .topbar {
   border-bottom-color: transparent;
   /* Same surface as the sidebar/ribbon (`.sidebar`/`.ribbon` are also
      `--card`), so the chrome reads as ONE frame — a left rail and a top bar of
      the same tone — wrapping the grid, which keeps the plain `--background` of
      its cells. Only the calendar needs this: it's the one view whose body runs
      full-bleed right up to the header, so any tone difference there lands as a
-     visible seam rather than as padding. Covers month and week alike. */
+     visible seam rather than as padding. Covers month and week alike.
+
+     Dropping the bar's bottom border along with it is intentional: over the
+     ribbon and the tree column the bar is now the same tone as what's beneath,
+     so the line would cut the frame in half; over the grid, the grid's own top
+     border replaces it. */
   background: var(--card);
 }
 /* Continues the header's surface behind the grid, so the notch left by the
@@ -2748,8 +3165,8 @@ body,
 .calendar-cell.dim .calendar-daynum {
   color: var(--subtle-foreground);
 }
-/* Height must match MONTH_HEAD_REM in CalendarView.tsx — and the first row's
-   `.with-weekday` variant that same constant plus MONTH_WEEKDAY_REM. */
+/* Height must match MONTH_HEAD_REM in CalendarView.tsx. Every week row's head is
+   this height — the weekday names have their own strip above the rows. */
 .calendar-cell-head {
   display: flex;
   flex-direction: column;
@@ -2758,16 +3175,22 @@ body,
   height: 1.75rem;
   flex: none;
 }
-.calendar-cell-head.with-weekday {
-  height: 2.85rem;
+/* Weekday names, a strip of their own above the week rows. Same chrome tone as
+   the sidebar and the top bar, so the frame around the grid stays continuous. */
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  flex: none;
+  background: var(--card);
+  border-bottom: 1px solid var(--divider);
 }
 .calendar-weekday-label {
-  height: 1.1rem;
-  line-height: 1.1rem;
-  font-size: 0.68rem;
+  padding: 0.4rem 0;
+  text-align: center;
+  font-size: 0.66rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
   color: var(--muted-foreground);
 }
 .calendar-daynum {
@@ -2986,6 +3409,83 @@ body,
 }
 .calendar-sidebar-today:hover {
   background: var(--accent);
+}
+
+/* Section heading inside the calendar sidebar — same tier as an inspector
+   section's, since both label a block of a rail. */
+.calendar-sidebar-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+/* What's coming up, under the mini month. */
+.calendar-nextup {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.calendar-nextup-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.25rem 0.35rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+.calendar-nextup-row:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.calendar-nextup-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--subtle-foreground);
+  flex: none;
+  align-self: center;
+}
+.calendar-nextup-when {
+  flex: none;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.calendar-nextup-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pinned to the foot of the rail, mirroring the note tree's New note row. */
+.calendar-sidebar-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding: 0.45rem 0.8rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.calendar-sidebar-new:hover {
+  border-color: var(--accent-text);
 }
 .calendar-notelink {
   display: flex;
@@ -3704,9 +4204,83 @@ body,
   cursor: pointer;
 }
 .settings-theme-option.active {
-  border-color: var(--ring);
+  border-color: var(--accent-text);
   background: var(--accent);
   color: var(--accent-foreground);
+}
+
+/* A miniature of the app — chrome rail beside a page of text — above each theme
+   card's label. These are the ONLY literal colours outside the palette block
+   that aren't a user-picked swatch, and deliberately so: the card has to show a
+   theme you are NOT currently in, so it cannot use tokens, which always resolve
+   to the theme in effect. They come straight from the palette table in
+   docs/theming.md; if the palette moves, move these with it. */
+.settings-theme-preview {
+  display: flex;
+  width: 100%;
+  height: 3.25rem;
+  margin-bottom: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.settings-theme-preview-rail {
+  width: 28%;
+  flex: none;
+}
+.settings-theme-preview-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+}
+.settings-theme-preview-line {
+  height: 0.3rem;
+  border-radius: 999px;
+}
+.settings-theme-preview-line.short {
+  width: 55%;
+}
+.settings-theme-preview-light .settings-theme-preview-rail {
+  background: #f2f4f2;
+}
+.settings-theme-preview-light .settings-theme-preview-page {
+  background: #ffffff;
+}
+.settings-theme-preview-light .settings-theme-preview-line {
+  background: #dce2de;
+}
+.settings-theme-preview-dark .settings-theme-preview-rail {
+  background: #252525;
+}
+.settings-theme-preview-dark .settings-theme-preview-page {
+  background: #171717;
+}
+.settings-theme-preview-dark .settings-theme-preview-line {
+  background: #383838;
+}
+/* "System" is both themes side by side — the only honest picture of a setting
+   whose answer depends on the OS. It paints the split itself and blanks the
+   rail/page/line children: a miniature that was half one theme and half the
+   other would need every child cut down the same line, and the split alone
+   already says it. */
+.settings-theme-preview-system {
+  background: linear-gradient(
+    90deg,
+    #f2f4f2 0 28%,
+    #ffffff 28% 50%,
+    #252525 50% 78%,
+    #171717 78% 100%
+  );
+}
+.settings-theme-preview-system .settings-theme-preview-rail,
+.settings-theme-preview-system .settings-theme-preview-page {
+  background: none;
+}
+.settings-theme-preview-system .settings-theme-preview-line {
+  display: none;
 }
 .settings-theme-option-label {
   font-weight: 600;
@@ -3780,19 +4354,23 @@ body,
   padding: 1rem var(--view-padding-x) 0;
   overflow: hidden;
 }
+/* The board switcher lives in the shell's top bar, so its controls wear the
+   bar's metrics: 28px tall, the active board a filled pill. */
 .kanban-tabs {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   flex-wrap: nowrap;
+  min-width: 0;
   overflow-x: auto;
 }
 .kanban-tab {
-  padding: 0.35rem 0.85rem;
-  font-size: 0.9rem;
+  height: 28px;
+  padding: 0 0.6875rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border: none;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
@@ -3804,29 +4382,32 @@ body,
 }
 .kanban-tab.active {
   background: var(--accent);
-  color: var(--foreground);
-  border-color: var(--border);
+  color: var(--accent-foreground);
 }
 .kanban-tab-add,
 .kanban-board-menu {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 28px;
+  height: 28px;
+  flex: none;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 7px;
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
 }
+/* The board menu is a control of its own; "+" belongs to the tab strip and
+   stays quiet beside it. */
+.kanban-board-menu {
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
 .kanban-tab-add:hover,
 .kanban-board-menu:hover {
   background: var(--accent);
-  color: var(--foreground);
-}
-.kanban-tabs-spacer {
-  flex: 1;
+  color: var(--accent-foreground);
 }
 .kanban-menu {
   display: flex;
@@ -3900,12 +4481,12 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A plain number, pushed to the right of the column head. It counts the cards
+   directly beneath it, so a pill around it is one border too many. */
 .kanban-column-count {
+  margin-left: auto;
   font-size: 0.8rem;
-  color: var(--muted-foreground);
-  background: var(--muted);
-  border-radius: 999px;
-  padding: 0.05rem 0.45rem;
+  color: var(--subtle-foreground);
 }
 .kanban-icon-btn {
   display: inline-flex;
@@ -5321,24 +5902,6 @@ body.calendar-dragging * {
   padding: 0.45rem 0.8rem;
   border-top: 1px solid var(--divider);
   font-size: 0.72rem;
-}
-
-/* A plain header action button for views that need one (Templates' "New
-   template"), matching the density of the rest of the view-frame header. */
-.view-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--foreground);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-.view-action:hover {
-  background: var(--accent);
 }
 
 /* Templates view (TemplatesView.tsx) — a card grid of the vault's templates. */

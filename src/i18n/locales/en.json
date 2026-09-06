@@ -51,20 +51,52 @@
     "tags": "Tags",
     "templates": "Templates",
     "settings": "Settings",
-    "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse to icons",
+    "expandSidebar": "Expand to icons and labels",
     "collapse": "Collapse"
+  },
+  "topbar": {
+    "hideSidebar": "Hide sidebar",
+    "showSidebar": "Show sidebar",
+    "hideInspector": "Hide note info",
+    "showInspector": "Show note info"
   },
   "settings": {
     "title": "Settings",
     "description": "Customize how Tundra works.",
     "sections": {
       "appearance": "Appearance",
-      "keybindings": "Keybindings",
+      "editor": "Editor",
+      "language": "Language",
+      "keybindings": "Shortcuts",
       "dictionaries": "Dictionaries",
-      "backup": "Backup",
+      "vault": "Vault",
       "import": "Import",
+      "backup": "Backup",
       "maintenance": "Maintenance"
+    },
+    "sectionDescriptions": {
+      "appearance": "Theme, clock and the small comfort settings. Changes apply immediately.",
+      "editor": "How note content is set — size and typeface.",
+      "language": "The language every string in the app is shown in.",
+      "keybindings": "Every command's shortcut, rebindable.",
+      "dictionaries": "Spellcheck languages and your own words.",
+      "vault": "Where the open vault lives on disk.",
+      "import": "Bring notes in from another app.",
+      "backup": "Snapshot the whole vault to an archive outside it.",
+      "maintenance": "Housekeeping for the vault's derived and orphaned files."
+    },
+    "groups": {
+      "lookAndFeel": "Look and feel",
+      "workspace": "Workspace",
+      "data": "Data"
+    },
+    "searchPlaceholder": "Search settings",
+    "searchEmpty": "No matching section.",
+    "vault": {
+      "title": "Open vault",
+      "description": "The folder every note and attachment lives in. Switching or adding a vault is on the vault name in the sidebar.",
+      "reveal": "Show in file manager"
     },
     "appearance": {
       "title": "Appearance",
@@ -88,7 +120,9 @@
       "accessibility": "Accessibility",
       "dyslexiaFont": "Use a dyslexia-friendly font (OpenDyslexic) in the editor",
       "noteHover": "Note hover",
-      "showModifiedOnHover": "Show last-modified date when hovering a note"
+      "showModifiedOnHover": "Show last-modified date when hovering a note",
+      "headlineShortcuts": "Most-used shortcuts",
+      "openShortcuts": "Open Shortcuts"
     },
     "dictionaries": {
       "title": "Dictionaries",
@@ -156,6 +190,10 @@
   "graph": {
     "title": "Graph",
     "closePanel": "Close (Alt+I)",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomFit": "Fit to view",
+    "zoomControls": "Zoom",
     "openPanel": "Graph info & settings (Alt+I)",
     "empty": "No links yet — connect notes with [[links]] to see them here.",
     "loadError": "Couldn't load the graph: {{error}}",
@@ -172,6 +210,13 @@
     "lineLength": "Line length"
   },
   "calendar": {
+    "nextUp": "Next up",
+    "today": "Today",
+    "untitledEvent": "(untitled)",
+    "month": "Month",
+    "week": "Week",
+    "previous": "Previous",
+    "next": "Next",
     "newEvent": "New event",
     "editEvent": "Edit event…",
     "deleteEvent": "Delete event",
@@ -257,6 +302,7 @@
     "addAWidget": "Add a widget",
     "allWidgetsAdded": "Every widget is already on your dashboard.",
     "removeWidget": "Remove widget",
+    "widgetMenu": "Widget options",
     "noGapTitle": "No gap between widgets",
     "flush": "Flush",
     "noBorderTitle": "No card border/background around widgets",
@@ -279,6 +325,11 @@
       "clock": { "title": "Clock", "description": "Local time and date" },
       "storage": { "title": "Storage", "description": "Note, tag, and group counts" },
       "streak": { "title": "Streak", "description": "Consecutive days logged in" },
+      "board": {
+        "title": "Board",
+        "description": "The first Kanban board's columns, at a glance.",
+        "empty": "No boards yet."
+      },
       "miniGraph": {
         "title": "Graph",
         "description": "A preview of your link graph",
@@ -301,6 +352,7 @@
     "notes": "Notes",
     "tags": "Tags",
     "groups": "Groups",
+    "dayStreak": "Day streak",
     "streakLabel_one": "day in a row",
     "streakLabel_other": "days in a row",
     "toggleClockFormat": "Toggle 12h/24h time"
@@ -367,6 +419,7 @@
   },
   "kanban": {
     "title": "Kanban",
+    "noBoard": "No board",
     "loading": "Loading kanban…",
     "boardsAriaLabel": "Kanban boards",
     "newBoard": "New board",

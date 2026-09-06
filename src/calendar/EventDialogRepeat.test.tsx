@@ -14,7 +14,7 @@
  * starts there, so fixtures always land in the rendered month.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { addDays, format, set, startOfDay } from "date-fns";
 import type { Event as CalEvent } from "@/services";
 import "@/i18n";
@@ -40,6 +40,7 @@ vi.mock("@/services", () => ({
 }));
 
 const { CalendarView } = await import("./CalendarView");
+const { useViewState } = await import("@/store/viewState");
 
 const TODAY = startOfDay(new Date());
 /** A day in the same month that is neither today nor the 1st (whose cell shows
@@ -110,7 +111,9 @@ describe("event dialog", () => {
   async function openNewEvent() {
     render(<CalendarView onOpenNote={() => {}} onError={() => {}} />);
     await waitFor(() => expect(range).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Event" }));
+    // The New event button lives in the shell sidebar, which isn't mounted
+    // here; it asks the view for the dialog through the store, so do that.
+    act(() => useViewState.getState().requestNewEvent());
     return screen.findByRole("dialog");
   }
 

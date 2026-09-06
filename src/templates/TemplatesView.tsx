@@ -41,8 +41,8 @@ export function TemplatesView({
       title={t("templates.title")}
       subtitle={t("templates.count", { count: templates.length })}
       actions={
-        <button className="view-action" onClick={onNewTemplate}>
-          <FilePlus className="h-4 w-4" /> {t("templates.newTemplate")}
+        <button className="topbar-button outlined" onClick={onNewTemplate}>
+          <FilePlus className="h-3.5 w-3.5" /> {t("templates.newTemplate")}
         </button>
       }
     >

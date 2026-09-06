@@ -8,7 +8,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { SearchPalette } from "@/search/SearchPalette";
-import { SettingsDialog } from "@/settings/SettingsDialog";
 import { ImportDialog } from "@/import/ImportDialog";
 import { obsidianAdapter } from "@/import/obsidianAdapter";
 import { notionAdapter } from "@/import/notionAdapter";
@@ -20,6 +19,7 @@ import { useHomeBackground } from "@/store/homeBackground";
 import { homeBackgroundStyle } from "@/home/HomeBackgroundPicker";
 import { Onboarding } from "./Onboarding";
 import { Ribbon } from "./Ribbon";
+import { TopBarHost } from "./TopBar";
 import { AppSidebar } from "./AppSidebar";
 import { MainPane } from "./MainPane";
 import { ErrorToast } from "./ErrorToast";
@@ -47,6 +47,10 @@ export default function App() {
   // The ribbon's width is a grid track on `.app`, so the shell owns the class
   // that widens it when the ribbon is slid open.
   const ribbonExpanded = useTheme((s) => s.ribbonExpanded);
+  // The second column is a grid track too. Hidden means the aside isn't
+  // rendered at all — a zero-width track would still paint its right-hand
+  // border as a stray hairline.
+  const sidebarHidden = useTheme((s) => s.sidebarHidden);
   // Home's background customization (`store/homeBackground.ts`, written by
   // `Home.tsx`) bleeds behind the WHOLE shell — ribbon + sidebar, not just
   // Home's own body — but only while Home is actually showing; every other
@@ -63,7 +67,6 @@ export default function App() {
     currentView === "home" && homeBackground !== null && homeBackgroundVault === vaultInfo?.path;
   const [editorRefreshToken, bumpEditor] = useEditorRefresh();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importAdapter, setImportAdapter] = useState<SourceAdapter>(obsidianAdapter);
 
@@ -87,50 +90,54 @@ export default function App() {
 
   return (
     <div
-      className={cn("app", ribbonExpanded && "ribbon-open", isHomeWithBackground && "home-bg")}
+      className={cn(
+        "app",
+        ribbonExpanded && "ribbon-open",
+        sidebarHidden && "tree-hidden",
+        isHomeWithBackground && "home-bg",
+      )}
       style={isHomeWithBackground ? homeBackgroundStyle(homeBackground, vaultInfo.path) : undefined}
     >
-      <Ribbon onSearch={() => setSearchOpen(true)} onSettings={() => setSettingsOpen(true)} />
+      <TopBarHost>
+          <Ribbon onSearch={() => setSearchOpen(true)} />
 
-      <AppSidebar
-        vaultInfo={vaultInfo}
-        treeData={treeData}
-        noteActions={noteActions}
-        deletion={deletion}
-        creation={creation}
-        onSwitchVault={switchVault}
-        onDeleteVault={deleteVault}
-        onError={setError}
-      />
+        {!sidebarHidden && (
+          <AppSidebar
+            vaultInfo={vaultInfo}
+            treeData={treeData}
+            noteActions={noteActions}
+            deletion={deletion}
+            creation={creation}
+            onSearch={() => setSearchOpen(true)}
+            onSwitchVault={switchVault}
+            onDeleteVault={deleteVault}
+            onError={setError}
+          />
+        )}
 
-      <MainPane
-        vaultInfo={vaultInfo}
-        treeData={treeData}
-        noteSummaries={noteSummaries}
-        refreshTree={refreshTree}
-        setError={setError}
-        editorRefreshToken={editorRefreshToken}
-        bumpEditor={bumpEditor}
-        templateActions={templateActions}
-        deletion={deletion}
-      />
+        <MainPane
+          vaultInfo={vaultInfo}
+          treeData={treeData}
+          noteSummaries={noteSummaries}
+          refreshTree={refreshTree}
+          setError={setError}
+          editorRefreshToken={editorRefreshToken}
+          bumpEditor={bumpEditor}
+          templateActions={templateActions}
+          deletion={deletion}
+          onCleaned={noteActions.onVaultCleaned}
+          onOpenImport={(source) => {
+            setImportAdapter(
+              source === "notion" ? notionAdapter : source === "anytype" ? anytypeAdapter : obsidianAdapter,
+            );
+            setImportOpen(true);
+          }}
+        />
+      </TopBarHost>
 
       <ErrorToast error={error} />
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} onSelectNote={openNote} />
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onCleaned={noteActions.onVaultCleaned}
-        onOpenImport={(source) => {
-          setSettingsOpen(false);
-          setImportAdapter(
-            source === "notion" ? notionAdapter : source === "anytype" ? anytypeAdapter : obsidianAdapter,
-          );
-          setImportOpen(true);
-        }}
-      />
 
       <ImportDialog
         open={importOpen}

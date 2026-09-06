@@ -17,6 +17,7 @@ import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 
 import type { Note, NoteSummary } from "@/services";
+import { noteCrumbs } from "@/app/breadcrumbs";
 import { useTheme } from "@/store/theme";
 import { localizeError } from "@/i18n/errors";
 import { FileOpenButton } from "./FileOpenButton";
@@ -132,6 +133,12 @@ function LoadedNoteEditor({
   onNeedsReload?: () => void;
 }) {
   const isTemplateMode = mode === "template";
+  // Breadcrumb for the top bar: the note's folders, from the summary the tree
+  // already loaded. A template lives outside `notes/`, so it has none.
+  const crumbs = useMemo(
+    () => (isTemplateMode ? [] : noteCrumbs(noteSummaries.get(note.id)?.path)),
+    [isTemplateMode, noteSummaries, note.id],
+  );
   const editor = useNoteBlockEditor({ note, vaultPath });
   const editorPaneRef = useRef<HTMLDivElement>(null);
   // Editor theme follows the app-wide Appearance setting (Phase 3 step 6);
@@ -229,6 +236,7 @@ function LoadedNoteEditor({
         )}
         <EditorHeader
           vaultPath={vaultPath}
+          crumbs={crumbs}
           isTemplateMode={isTemplateMode}
           icon={save.icon}
           onIconChange={save.setIcon}

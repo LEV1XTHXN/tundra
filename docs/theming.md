@@ -33,10 +33,10 @@ would wipe the palette.
 | `--pal-text-primary` | `#171717` | `#f5f5f5` |
 | `--pal-text-secondary` | `#5e6662` | `#b7bbb8` |
 | `--pal-text-tertiary` | `#8d9591` | `#808683` |
-| `--pal-accent` | `#3b5249` | `#3b5249` |
-| `--pal-accent-hover` | `#4a675b` | `#4a675b` |
-| `--pal-accent-pressed` | `#30423b` | `#30423b` |
-| `--pal-accent-subtle` | `#e0e8e4` | `#50685f` |
+| `--pal-accent` | `#186b46` | `#186b46` |
+| `--pal-accent-hover` | `#1e8356` | `#1e8356` |
+| `--pal-accent-pressed` | `#135437` | `#135437` |
+| `--pal-accent-subtle` | `#d8ecdc` | `#215140` |
 | `--pal-border` | `#dce2de` | `#383838` |
 | `--pal-divider` | `#e5e9e6` | `#2d2d2d` |
 
@@ -93,11 +93,11 @@ boundary disappear.
 
 ### The calendar's chrome frame
 
-`.sidebar` and `.ribbon` are `--card`, and so is the view header **while the
-calendar is showing** (`.view-frame:has(.calendar) .view-frame-header`). Left
-rail + top bar therefore read as one continuous frame around the grid, whose
+`.sidebar` and `.ribbon` are `--card`, and so is the shell's top bar **while the
+calendar is showing** (`.app:has(.calendar) .topbar`). Left rail + top bar
+therefore read as one continuous frame around the grid, whose
 cells stay on `--background`. Only the calendar does this — it's the one view
-whose body is full-bleed right up to the header, so a tone difference there
+whose body is full-bleed right up to the bar, so a tone difference there
 lands as a visible seam instead of as padding. The rule sits with the other
 `:has(.calendar)` rules that hand the grid its own outer edges, and covers month
 and week alike because `.calendar` is the view root, not a per-mode class.
@@ -110,36 +110,38 @@ every surface it lands on, and lands *below* the tertiary tone it was imitating.
 
 ## Dark mode and `--accent-text`
 
-The accent is the same `#3b5249` in both themes. As a **fill** that's fine
-(white on it is 8.44:1). As **text** in dark mode it is `2.12:1` on the
+The accent is the same `#186b46` in both themes. As a **fill** that's fine
+(`#f5f5f5` on it is 5.96:1). As **text** in dark mode it is `2.76:1` on the
 background — unreadable.
 
-So dark mode lightens the accent toward the primary text colour rather than
-introducing a second hand-picked green:
+So dark mode declares a second, lighter green rather than deriving one:
 
 ```css
---accent-text: color-mix(in oklab, var(--pal-accent) 50%, var(--pal-text-primary));
+--accent-text: #5cb884;
 ```
-
-That resolves to ≈`#93a09a`.
 
 | Contrast of `--accent-text` (dark) against | ratio |
 | --- | --- |
-| `--pal-background` `#171717` | 6.60:1 |
-| `--pal-surface` `#252525` | 5.65:1 |
-| `--pal-surface-elevated` `#303030` | 4.86:1 |
+| `--pal-background` `#171717` | 7.38:1 |
+| `--pal-surface` `#252525` | 6.31:1 |
+| `--pal-surface-elevated` `#303030` | 5.43:1 |
 
-The `50%` is the tunable knob: higher is greener and lower-contrast. `55%` is
-the floor that still clears AA on every surface.
+It used to be `color-mix(in oklab, var(--pal-accent) 50%, var(--pal-text-primary))`,
+which resolved to a desaturated `#93a09a`. A literal replaced it for two
+reasons: the mockups' dark accent is a real green, not a grey-green, and
+`--graph-node` can now chain to this token instead of duplicating its value
+(see [Graph tokens](#graph-tokens-must-stay-plain-hex) — a `color-mix()` never
+survives being read back off a custom property).
 
 ### Other measured ratios
 
 | Pair | ratio |
 | --- | --- |
-| `--primary-foreground` on `--primary`, light (`#ffffff` on `#3b5249`) | 8.44:1 |
-| `--primary-foreground` on `--primary`, dark (`#f5f5f5` on `#3b5249`) | 7.74:1 |
-| `--accent-foreground` on `--accent`, light (`#171717` on `#e0e8e4`) | 14.37:1 |
-| `--accent-foreground` on `--accent`, dark (`#f5f5f5` on `#50685f`) | 5.52:1 |
+| `--primary-foreground` on `--primary`, light (`#ffffff` on `#186b46`) | 6.50:1 |
+| `--primary-foreground` on `--primary`, dark (`#f5f5f5` on `#186b46`) | 5.96:1 |
+| `--accent-foreground` on `--accent`, light (`#171717` on `#d8ecdc`) | 14.47:1 |
+| `--accent-foreground` on `--accent`, dark (`#f5f5f5` on `#215140`) | 8.32:1 |
+| `--accent-text` on `--background` / `--card`, light | 6.50:1 / 5.88:1 |
 | `--muted-foreground` on `--background` / `--card`, light | 5.91:1 / 5.35:1 |
 | `--subtle-foreground` on `--background` / `--card`, light | 3.07:1 / 2.78:1 |
 | `.find-match` text, light / dark | 10.01:1 / 6.04:1 |
@@ -217,8 +219,8 @@ returns the literal declaration, so a `--graph-*` token defined as a
 `color-mix()` hands sigma the string `"color-mix(in oklab, …)"`, which its
 colour parser rejects — the node or edge renders black. Every `--graph-*` token
 must therefore be a plain hex value or a `var()` chain that ends in one. That's
-why `--graph-node` repeats `#93a09a` in `.dark` instead of pointing at
-`--accent-text`.
+why `--accent-text` is a literal in `.dark` — `--graph-node` points at it, and
+the chain has to bottom out in a hex.
 
 `--graph-edge` is the one value picked by hand rather than mapped from the
 palette: edges are 1px, and at that width an alpha colour composites most of the
